@@ -15,10 +15,18 @@ local wallpapers = dofile(source_dir .. "/wallpaper/init.lua")(common, source_di
 local wallpaper_parser = wallpapers.register(parser)
 local themes = dofile(source_dir .. "/theme/init.lua")(common, source_dir .. "/theme")
 local theme_parser = themes.register(parser)
+local settings = dofile(source_dir .. "/settings/init.lua")(common, source_dir .. "/settings")
+settings.register(parser)
 local options = parser:parse()
 
 -- Bare entry points show help rather than performing any system operation.
-if not options.font and not options.wallpaper and not options.theme then
+if options.settings then
+    local ok, message = pcall(settings.run)
+    if not ok then
+        common.error("Settings command failed: " .. tostring(message))
+        os.exit(1)
+    end
+elseif not options.font and not options.wallpaper and not options.theme then
     common.info(parser:get_help())
 elseif options.font and not (options.search or options.install or options.remove or options.list or options.refresh) then
     common.info(font_parser:get_help())
