@@ -1,0 +1,242 @@
+# Create a Luna theme
+
+## Files
+
+Your theme folder can live anywhere. Each export is a Lua file returning a table.
+
+```text
+my-theme/
+├── colors.lua      Required
+├── hyprland.lua    Optional
+├── fonts.lua       Optional
+└── wallpaper.lua   Optional
+```
+
+| Export | Provides | Installation |
+| --- | --- | --- |
+| `colors.lua` | Shared colors and light/dark mode | Values consumed by applications |
+| `hyprland.lua` | Compositor appearance | Values applied to Hyprland |
+| `fonts.lua` | Font families and default text sizes | Fonts must be installed manually |
+| `wallpaper.lua` | Local images, directories, and public image URLs | Images will be imported or downloaded automatically |
+
+`luna theme install /path/to/my-theme` validates and copies a theme, importing its wallpapers automatically. `luna theme set my-theme` saves a selection only; configuration generation and application integration come later. See the [theme CLI guide](../src/luna-cli/theme/README.md).
+
+## Export rules
+
+- Return tables containing values; do not run commands or modify files.
+- Only the 14 base fields in `colors.lua` are required. All other documented fields are optional.
+- Keep names consistent across themes. Different roles can share the same value.
+- Omit optional files or fields your theme does not supply; no automatic fallback values are implemented yet.
+- Exports are evaluated without process or filesystem APIs and must return declarative tables.
+- Font names select preferences, not packages. Install the fonts yourself, for example with `luna font install`.
+
+## colors.lua: required fields
+
+`mode` is `"dark"` or `"light"`. Every other color field is an opaque `"#RRGGBB"` string.
+
+| Required field | Role |
+| --- | --- |
+| `mode` | Theme appearance mode |
+| `accent` | Main accent color, including filled highlights |
+| `accent_foreground` | Text and icons on an accent fill |
+| `selection` | Selected-content background |
+| `selection_foreground` | Text and icons on selection |
+| `muted` | Subdued fills and decoration; not secondary text |
+| `background` | Default application background |
+| `dark_background` | Darker background surfaces |
+| `darker_background` | Deepest background surfaces |
+| `lighter_background` | Raised or lighter surfaces |
+| `foreground` | Default readable text and icons |
+| `dark_foreground` | Disabled or decorative elements; not ordinary secondary text |
+| `light_foreground` | Lighter readable text and icons |
+| `bright_foreground` | Strong text emphasis; also text on muted fills |
+
+This is a complete minimum color export. Change the values to suit your theme.
+
+```lua
+return {
+    mode = "dark",
+
+    accent = "#7aa2f7",
+    accent_foreground = "#1a1b26",
+    selection = "#292e42",
+    selection_foreground = "#c0caf5",
+    muted = "#414868",
+
+    background = "#1a1b26",
+    dark_background = "#13141c",
+    darker_background = "#0e0e14",
+    lighter_background = "#24283b",
+
+    foreground = "#a9b1d6",
+    dark_foreground = "#565f89",
+    light_foreground = "#b4bee6",
+    bright_foreground = "#c0caf5",
+}
+```
+
+## colors.lua: optional fields
+
+Add optional fields to the same flat table. All use the same `"#RRGGBB"` format.
+
+| Field | Role |
+| --- | --- |
+| `secondary_accent` | Supporting accent color or fill |
+| `secondary_accent_foreground` | Text and icons on a secondary accent fill |
+| `link` | Link text and icons |
+| `comment` | Readable code comments |
+| `error` | Failures and errors |
+| `error_foreground` | Text and icons on an error fill |
+| `warning` | Potential problems requiring attention |
+| `warning_foreground` | Text and icons on a warning fill |
+| `notice` | Attention-worthy notices without warning severity |
+| `notice_foreground` | Text and icons on a notice fill |
+| `success` | Successful actions and positive states |
+| `success_foreground` | Text and icons on a success fill |
+| `info` | Informational states |
+| `info_foreground` | Text and icons on an informational fill |
+| `error_emphasis` | Stronger error color |
+| `warning_emphasis` | Stronger warning color |
+| `success_emphasis` | Stronger success color |
+| `info_emphasis` | Stronger informational color |
+| `link_emphasis` | Stronger link text or icon color |
+| `secondary_accent_emphasis` | Stronger supporting accent color |
+
+- Status colors can color text or icons on a normal background.
+- Supply the matching `_foreground` when using a status or secondary accent as a fill.
+- Emphasis means visual intensity, not necessarily greater brightness.
+- Filled emphasis variants reuse their base role's foreground. Include the base role when exporting a variant.
+- Links remain text or icon colors; they do not need a paired foreground.
+
+See [Tokyo Night's complete color export](bundled/tokyo-night/colors.lua).
+
+## hyprland.lua
+
+Return a nested table using Hyprland's setting sections. Every section and field is optional.
+
+`general` and `decoration` are tables; `decoration.blur` and `decoration.shadow` are nested tables.
+
+| Field path | Type / units | Role |
+| --- | --- | --- |
+| `general.gaps_in` | Nonnegative integer, layout pixels | Space between windows |
+| `general.gaps_out` | Nonnegative integer, layout pixels | Space between windows and screen edges |
+| `general.border_size` | Nonnegative integer, layout pixels | Window border thickness |
+| `decoration.rounding` | Integer, 0–100 layout pixels | Window corner radius |
+| `decoration.active_opacity` | Number, 0–1 | Focused window opacity |
+| `decoration.inactive_opacity` | Number, 0–1 | Unfocused window opacity |
+| `decoration.fullscreen_opacity` | Number, 0–1 | Fullscreen window opacity |
+| `decoration.dim_inactive` | Boolean | Dim unfocused windows |
+| `decoration.dim_strength` | Number, 0–1 | Amount of inactive-window dimming |
+| `decoration.blur.enabled` | Boolean | Enable background blur |
+| `decoration.blur.size` | Positive integer | Blur size |
+| `decoration.blur.passes` | Integer, 1–10 | Blur passes; more increases GPU work |
+| `decoration.shadow.enabled` | Boolean | Enable window shadows |
+| `decoration.shadow.range` | Integer, 0–100 pixels | Shadow extent |
+| `decoration.shadow.render_power` | Integer, 1–4 | Shadow falloff strength |
+
+```lua
+return {
+    general = {
+        gaps_in = 8,
+        gaps_out = 12,
+        border_size = 2,
+    },
+
+    decoration = {
+        rounding = 8,
+        active_opacity = 1,
+        inactive_opacity = 0.95,
+        fullscreen_opacity = 1,
+        dim_inactive = true,
+        dim_strength = 0.1,
+
+        blur = {
+            enabled = true,
+            size = 4,
+            passes = 2,
+        },
+
+        shadow = {
+            enabled = true,
+            range = 12,
+            render_power = 3,
+        },
+    },
+}
+```
+
+Keep keybindings, input behavior, and window rules in the user's Hyprland configuration. This table declares appearance values; it is not a standalone Hyprland configuration.
+
+See [Tokyo Night's Hyprland export](bundled/tokyo-night/hyprland.lua).
+
+## fonts.lua
+
+Every field is optional. Use font family names recognized by Fontconfig.
+
+| Field | Type / units | Role |
+| --- | --- | --- |
+| `ui` | String | Interface font family |
+| `mono` | String | Terminal and code font family |
+| `icons` | String | Icon font family |
+| `size` | Positive number, points | Default interface text size |
+| `mono_size` | Positive number, points | Default terminal and code text size |
+
+```lua
+return {
+    ui = "Inter",
+    mono = "JetBrainsMono Nerd Font",
+    icons = "Symbols Nerd Font",
+
+    size = 11,
+    mono_size = 12,
+}
+```
+
+Fonts must be installed manually. Applying a theme will not install font packages or files. Application padding and layout stay in application configuration.
+
+See [Tokyo Night's font export](bundled/tokyo-night/fonts.lua).
+
+## wallpaper.lua
+
+| Field | Type | Role |
+| --- | --- | --- |
+| `sources` | Optional ordered list of strings | Local image paths, directories, or public direct image URLs |
+
+```lua
+return {
+    sources = {
+        "wallpapers",
+        "images/night.png",
+        "https://example.com/mountain.jpg",
+    },
+}
+```
+
+- Local paths are relative to the theme folder, regardless of where it lives or where commands run.
+- A directory supplies its supported image files without scanning subdirectories recursively.
+- Files, directories, and URLs can be mixed. Omit `sources` or use an empty list to supply no wallpapers.
+- Supported formats: PNG, JPEG, WebP, BMP, and SVG.
+- URLs must be public HTTP(S) direct image links requiring no authentication. Gallery pages are not image sources.
+- `luna theme install` copies local images and downloads URL images into Luna's wallpaper library automatically.
+- Conflicting filenames fail without replacing unrelated wallpapers. Rename conflicting images before installing.
+- Importing wallpapers does not select or display one; use `luna wallpaper set` separately.
+
+See [Tokyo Night's wallpaper export](bundled/tokyo-night/wallpaper.lua).
+
+## Check your theme
+
+- Check every Lua export with `luac -p`.
+- Check ordinary text, links, and comments against their actual backgrounds; aim for at least 4.5:1 contrast.
+- Check every fill/foreground pair, including emphasis variants.
+- Keep low-contrast decoration separate from readable text.
+- Confirm local wallpaper paths exist and URL sources return supported images.
+- Confirm your selected font families are installed.
+
+```sh
+luac -p /path/to/my-theme/colors.lua
+luac -p /path/to/my-theme/hyprland.lua
+luac -p /path/to/my-theme/fonts.lua
+luac -p /path/to/my-theme/wallpaper.lua
+```
+
+Run checks only for the files your theme supplies.

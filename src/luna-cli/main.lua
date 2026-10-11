@@ -13,20 +13,27 @@ local fonts = dofile(source_dir .. "/font/init.lua")(common, source_dir .. "/fon
 local font_parser = fonts.register(parser)
 local wallpapers = dofile(source_dir .. "/wallpaper/init.lua")(common, source_dir .. "/wallpaper")
 local wallpaper_parser = wallpapers.register(parser)
+local themes = dofile(source_dir .. "/theme/init.lua")(common, source_dir .. "/theme")
+local theme_parser = themes.register(parser)
 local options = parser:parse()
 
 -- Bare entry points show help rather than performing any system operation.
-if not options.font and not options.wallpaper then
+if not options.font and not options.wallpaper and not options.theme then
     common.info(parser:get_help())
 elseif options.font and not (options.search or options.install or options.remove or options.list or options.refresh) then
     common.info(font_parser:get_help())
 elseif options.wallpaper and not (options.add or options.set or options.remove or options.list
     or options.random or options.current or options.dir or options.open or options.start) then
     common.info(wallpaper_parser:get_help())
+elseif options.theme and not (options.install or options.list or options.current or options.path
+    or options.set or options.remove) then
+    common.info(theme_parser:get_help())
 else
-    local ok, message = pcall(options.font and fonts.run or wallpapers.run, options)
+    local handler = options.font and fonts or options.wallpaper and wallpapers or themes
+    local label = options.font and "Font" or options.wallpaper and "Wallpaper" or "Theme"
+    local ok, message = pcall(handler.run, options)
     if not ok then
-        common.error((options.font and "Font" or "Wallpaper") .. " command failed: " .. tostring(message))
+        common.error(label .. " command failed: " .. tostring(message))
         os.exit(1)
     end
 end
