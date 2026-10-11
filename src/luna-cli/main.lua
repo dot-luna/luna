@@ -26,7 +26,7 @@ elseif options.wallpaper and not (options.add or options.set or options.remove o
     or options.random or options.current or options.dir or options.open or options.start) then
     common.info(wallpaper_parser:get_help())
 elseif options.theme and not (options.install or options.list or options.current or options.path
-    or options.set or options.remove) then
+    or options.set or options.remove or options.mode or options.toggle) then
     common.info(theme_parser:get_help())
 else
     local handler = options.font and fonts or options.wallpaper and wallpapers or themes

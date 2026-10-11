@@ -1,6 +1,7 @@
 """Exercise theme storage and validation in isolated XDG directories."""
 
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import json
 import os
 from pathlib import Path
 import shutil
@@ -19,8 +20,32 @@ class ThemeTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory(prefix="luna themes '")
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
+        mock = self.root / 'bin'
+        mock.mkdir()
+        # Never change the host desktop: persist mock GSettings inside the test folder.
+        gsettings = mock / 'gsettings'
+        gsettings.write_text('''#!/usr/bin/python3
+import json, os, pathlib, sys
+root = pathlib.Path(os.environ['TEST_THEME_ROOT'])
+args = sys.argv[1:]
+with (root / 'gsettings-log').open('a') as out:
+    out.write(json.dumps(args) + '\\n')
+state = root / 'gsettings-value'
+if args[0] == 'get':
+    print(repr(state.read_text() if state.exists() else 'default'))
+elif args[0] == 'writable':
+    print('true')
+elif args[0] == 'set':
+    if (root / 'fail-dark').exists() and args[-1] == 'prefer-dark':
+        sys.exit(1)
+    state.write_text(args[-1])
+else:
+    sys.exit(1)
+''')
+        gsettings.chmod(0o755)
         self.env = dict(os.environ, XDG_DATA_HOME=str(self.root / 'data'),
-                        XDG_CONFIG_HOME=str(self.root / 'config'))
+                        XDG_CONFIG_HOME=str(self.root / 'config'), TEST_THEME_ROOT=str(self.root),
+                        PATH=str(mock) + ':' + os.environ['PATH'])
         self.library = self.root / 'data/luna/themes'
         self.source = self.root / 'tokyo-night'
         shutil.copytree(REPO / 'themes/bundled/tokyo-night', self.source)
@@ -130,6 +155,55 @@ class ThemeTests(unittest.TestCase):
             self.assertFalse((self.library / 'tokyo-night').exists())
             self.assertFalse(list(self.library.glob('.install-*')))
         self.assertTrue(outside.exists())
+
+    def test_mode_persistence_toggle_skip_and_force(self):
+        gtk = self.root / 'config/gtk-3.0/settings.ini'
+        gtk.parent.mkdir(parents=True)
+        gtk.write_text('# keep this\n[Settings]\ngtk-font-name=Custom 12\n'
+                       'gtk-application-prefer-dark-theme=0\n[Other]\nkeep=value\n')
+        self.cli('install', self.source)
+        self.cli('set', 'tokyo-night')
+        self.assertEqual(self.cli('mode').strip(), 'dark')
+        self.assertIn('gtk-font-name=Custom 12', gtk.read_text())
+        self.assertIn('[Other]\nkeep=value', gtk.read_text())
+        self.assertIn('gtk-application-prefer-dark-theme=1', gtk.read_text())
+        selection = self.root / 'config/luna/theme'
+        saved = self.root / 'config/luna/theme-mode'
+        stamp = (gtk.stat().st_mtime_ns, saved.stat().st_mtime_ns, selection.stat().st_mtime_ns)
+        def sets():
+            return [row for row in map(json.loads, (self.root / 'gsettings-log').read_text().splitlines()) if row[0] == 'set']
+        before = len(sets())
+        self.cli('mode', 'dark')
+        self.cli('set', 'tokyo-night')
+        self.assertEqual(len(sets()), before)
+        self.assertEqual(stamp, (gtk.stat().st_mtime_ns, saved.stat().st_mtime_ns, selection.stat().st_mtime_ns))
+        self.cli('mode', 'dark', '--force')
+        self.assertEqual(len(sets()), before + 1)
+        self.cli('toggle')
+        self.assertEqual(self.cli('mode').strip(), 'light')
+        self.assertEqual(saved.read_text(), 'light\n')
+        self.assertIn('gtk-application-prefer-dark-theme=0', gtk.read_text())
+        self.cli('mode', 'toggle')
+        self.assertEqual(self.cli('mode').strip(), 'dark')
+        self.cli('mode', 'light')
+        self.cli('set', 'tokyo-night')
+        self.assertEqual(self.cli('mode').strip(), 'dark')
+
+    def test_mode_failure_preserves_selection_and_settings(self):
+        self.cli('install', self.source)
+        colors = self.source / 'colors.lua'
+        colors.write_text(colors.read_text().replace('mode = "dark"', 'mode = "light"'))
+        self.cli('install', self.source, '--name', 'light-theme')
+        self.cli('set', 'light-theme')
+        gtk = self.root / 'config/gtk-3.0/settings.ini'
+        original = gtk.read_text()
+        (self.root / 'fail-dark').touch()
+        self.cli('set', 'tokyo-night', ok=False)
+        self.assertEqual(self.cli('current').strip(), 'light-theme')
+        self.assertEqual(self.cli('mode').strip(), 'light')
+        self.assertEqual(gtk.read_text(), original)
+        self.assertFalse(list((self.root / 'config').rglob('*.luna-tmp')))
+        self.assertFalse((self.root / 'config/luna/theme.tmp').exists())
 
 
 if __name__ == '__main__':

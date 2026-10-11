@@ -4,7 +4,9 @@ return function(common, module_dir)
     local wallpaper_dir = module_dir .. "/../wallpaper"
     local download = dofile(wallpaper_dir .. "/download.lua")(common)
     local wallpapers = dofile(wallpaper_dir .. "/files.lua")(common, download)
-    local store = dofile(module_dir .. "/store.lua")(common, validate, wallpapers, download)
+    local ini = dofile(module_dir .. "/../../../lib/ini.lua")
+    local mode = dofile(module_dir .. "/mode.lua")(common, ini)
+    local store = dofile(module_dir .. "/store.lua")(common, validate, wallpapers, download, mode)
     local M = {}
 
     function M.register(parser)
@@ -17,7 +19,14 @@ return function(common, module_dir)
         theme:command("list", "List installed themes and mark the selected theme.")
         theme:command("current", "Print the selected theme name.")
         theme:command("path", "Print the theme library or an installed theme's path."):argument("name"):args("?")
-        theme:command("set", "Save a selection without applying appearance settings."):argument("name")
+        local set = theme:command("set", "Select a theme and apply its system light/dark preference.")
+        set:argument("name")
+        set:flag("--force", "Reapply appearance settings even when already set")
+        local appearance = theme:command("mode", "Read or change the system light/dark preference.")
+        appearance:argument("appearance", "dark, light, or toggle"):args("?"):choices({ "dark", "light", "toggle" })
+        appearance:flag("--force", "Reapply matching appearance settings")
+        theme:command("toggle", "Toggle the system light/dark preference.")
+            :flag("--force", "Rewrite all appearance settings")
         theme:command("remove", "Preview and remove installed theme copies."):argument("names"):args("+")
         return theme
     end
@@ -35,7 +44,22 @@ return function(common, module_dir)
         elseif options.path then
             common.info(store.path(options.name))
         elseif options.set then
-            store.set(options.name)
+            store.set(options.name, options.force)
+        elseif options.mode or options.toggle then
+            local appearance = options.toggle and "toggle" or options.appearance
+            if appearance then
+                if appearance == "toggle" then
+                    local name = store.current()
+                    local fallback = name and validate.load(store.path(name)).colors.mode or nil
+                    appearance = mode.current(fallback) == "dark" and "light" or "dark"
+                end
+                mode.apply(appearance, options.force)
+                common.info("System appearance: " .. appearance)
+            else
+                local name = store.current()
+                local fallback = name and validate.load(store.path(name)).colors.mode or nil
+                common.info(mode.current(fallback))
+            end
         elseif options.remove then
             store.remove(options.names)
         end

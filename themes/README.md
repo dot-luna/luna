@@ -19,7 +19,7 @@ my-theme/
 | `fonts.lua` | Font families and default text sizes | Fonts must be installed manually |
 | `wallpaper.lua` | Local images, directories, and public image URLs | Images will be imported or downloaded automatically |
 
-`luna theme install /path/to/my-theme` validates and copies a theme, importing its wallpapers automatically. `luna theme set my-theme` saves a selection only; configuration generation and application integration come later. See the [theme CLI guide](../src/luna-cli/theme/README.md).
+`luna theme install /path/to/my-theme` validates and copies a theme, importing its wallpapers automatically. `luna theme set my-theme` saves the selection and applies its light/dark system preference. Palette configuration generation comes later. See the [theme CLI guide](../src/luna-cli/theme/README.md).
 
 ## Export rules
 
@@ -52,6 +52,8 @@ my-theme/
 | `bright_foreground` | Strong text emphasis; also text on muted fills |
 
 This is a complete minimum color export. Change the values to suit your theme.
+
+Selecting a theme applies its `mode` to desktop apps following the system appearance preference. `luna theme toggle` changes that preference without altering these exported colors.
 
 ```lua
 return {

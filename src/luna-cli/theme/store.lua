@@ -1,5 +1,5 @@
 -- Installed theme copies use XDG data storage; selection is a name, not generated config.
-return function(common, validate, wallpapers, download)
+return function(common, validate, wallpapers, download, mode)
     local M = {}
     local home = assert(os.getenv("HOME"), "HOME is required")
     M.directory = (os.getenv("XDG_DATA_HOME") or home .. "/.local/share") .. "/luna/themes"
@@ -129,14 +129,29 @@ return function(common, validate, wallpapers, download)
         assert(success, message)
     end
 
-    function M.set(name)
-        validate.load(M.path(name))
+    function M.set(name, force)
+        local exports = validate.load(M.path(name))
+        if M.current() == name and not force then
+            mode.apply(exports.colors.mode)
+            common.info("Theme already selected: " .. name)
+            return
+        end
         common.run({ "mkdir", "-p", "--", config })
         local file = assert(io.open(selection .. ".tmp", "w"))
         assert(file:write(name, "\n"))
         assert(file:close())
-        assert(os.rename(selection .. ".tmp", selection))
-        common.info("Selected theme: " .. name .. " (appearance integration is not implemented yet)")
+        local success, restore = pcall(mode.apply, exports.colors.mode, force)
+        if not success then
+            os.remove(selection .. ".tmp")
+            error(restore)
+        end
+        local selected, failure = os.rename(selection .. ".tmp", selection)
+        if not selected then
+            restore()
+            os.remove(selection .. ".tmp")
+            error(failure)
+        end
+        common.info("Selected theme: " .. name .. " (" .. exports.colors.mode .. " system appearance)")
     end
 
     function M.remove(names)
