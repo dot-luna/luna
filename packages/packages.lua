@@ -17,6 +17,7 @@ return {
         { name = "coreutils", source = "pacman", purpose = "Basic filesystem and shell utilities" },
         { name = "sudo", source = "pacman", purpose = "Install system packages from a normal user account" },
         { name = "git", source = "pacman", purpose = "Obtain and update the Luna repository" },
+        { name = "curl", source = "pacman", purpose = "Download wallpapers from HTTP and HTTPS URLs" },
         { name = "lua", source = "pacman", purpose = "Run Lua setup scripts and read this manifest" },
         { name = "lua-argparse", source = "pacman", purpose = "Parse Luna CLI commands and generate help" },
         { name = "base-devel", source = "pacman", purpose = "Build AUR packages when needed" },
@@ -27,12 +28,17 @@ return {
         -- Font discovery, validation, and cache updates for the Luna font CLI.
         { name = "fontconfig", source = "pacman", purpose = "Provide fc-list, fc-scan, and fc-cache" },
 
+        -- Validate wallpaper files and open their library with the desktop default.
+        { name = "file", source = "pacman", purpose = "Identify image file types" },
+        { name = "xdg-utils", source = "pacman", purpose = "Open folders in the default file explorer" },
+
         -- Desktop compositor, app portals, and custom Quickshell UI.
         { name = "hyprland", source = "pacman", purpose = "Wayland desktop compositor" },
         { name = "xdg-desktop-portal-hyprland", source = "pacman", purpose = "Hyprland screen sharing and portal integration" },
         { name = "xdg-desktop-portal-gtk", source = "pacman", purpose = "GTK file chooser and fallback portals" },
         { name = "quickshell", source = "pacman", purpose = "Runtime for a custom bar, launcher, and desktop UI" },
         { name = "qt6-svg", source = "pacman", purpose = "Render SVG icons in the custom desktop UI" },
+        { name = "qt6-imageformats", source = "pacman", purpose = "Decode additional wallpaper formats, including WebP" },
         { name = "polkit", source = "pacman", purpose = "Desktop authorization backend; also needs an authentication agent" },
 
         -- Audio service, compatibility layers, and device session management.

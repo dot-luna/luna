@@ -1,0 +1,139 @@
+-- Wallpaper library operations use ordinary files, without an ownership database.
+return function(common, download)
+    local M = {}
+    local home = assert(os.getenv("HOME"), "HOME is required")
+    M.directory = (os.getenv("XDG_DATA_HOME") or home .. "/.local/share") .. "/luna/wallpapers"
+    local extensions = { png = true, jpg = true, jpeg = true, webp = true, bmp = true, svg = true }
+
+    local function supported(path)
+        return extensions[path:lower():match("%.(%w+)$")] == true
+    end
+
+    function M.validate(path)
+        assert(common.succeeds({ "test", "-f", path }), "Image file not found: " .. path)
+        assert(not path:find("[\r\n]"), "Wallpaper paths cannot contain line breaks")
+        assert(supported(path), "Supported formats: PNG, JPEG, WebP, BMP, SVG")
+        local mime, ok = common.capture({ "file", "--brief", "--mime-type", "--", path })
+        assert(ok and mime:match("^image/"), "Not an image: " .. path)
+    end
+
+    function M.absolute(path)
+        local output, ok = common.capture({ "realpath", "-e", "--", path }, true)
+        assert(ok, "Path not found: " .. path)
+        return output:gsub("\n$", "")
+    end
+
+    local function scan(directory, recursive)
+        local arguments = { "find", directory }
+        if not recursive then
+            table.insert(arguments, "-maxdepth")
+            table.insert(arguments, "1")
+        end
+        for _, value in ipairs({ "-type", "f", "-print0" }) do
+            table.insert(arguments, value)
+        end
+        local output, ok = common.capture(arguments)
+        assert(ok, "Cannot scan folder: " .. directory)
+        local paths = {}
+        for path in output:gmatch("([^%z]+)%z") do
+            if supported(path) then
+                table.insert(paths, path)
+            end
+        end
+        table.sort(paths)
+        return paths
+    end
+
+    function M.list()
+        if not common.succeeds({ "test", "-d", M.directory }) then
+            return {}
+        end
+        return scan(M.directory, true)
+    end
+
+    function M.resolve(name, library_only)
+        local matches = {}
+        for _, path in ipairs(M.list()) do
+            if path == name or path:match("([^/]+)$") == name then
+                table.insert(matches, path)
+            end
+        end
+
+        if not library_only and #matches == 0 and common.succeeds({ "test", "-f", name }) then
+            return M.absolute(name)
+        end
+        assert(#matches > 0, "Wallpaper not found: " .. name)
+        assert(#matches == 1, "Ambiguous wallpaper; use its full library path: " .. name)
+        return matches[1]
+    end
+
+    local function add_local(options)
+        local plan, seen = {}, {}
+        for _, input in ipairs(options.targets) do
+            local source = M.absolute(input)
+            local paths = { source }
+            if common.succeeds({ "test", "-d", source }) then
+                paths = scan(source, options.recursive)
+                assert(#paths > 0, "No supported images in folder: " .. input)
+            end
+
+            -- Validate the batch and filename conflicts before copying anything.
+            for _, path in ipairs(paths) do
+                M.validate(path)
+                local name = path:match("([^/]+)$")
+                local destination = M.directory .. "/" .. name
+                if seen[name] then
+                    assert(common.succeeds({ "cmp", "-s", "--", seen[name], path }),
+                        "Different images share a filename: " .. name)
+                else
+                    seen[name] = path
+                    if common.succeeds({ "test", "-e", destination }) and not options.force then
+                        assert(common.succeeds({ "cmp", "-s", "--", path, destination }),
+                            "Different image already installed: " .. name .. "; rename it or use --force")
+                    end
+                    table.insert(plan, { source = path, destination = destination })
+                end
+            end
+        end
+
+        common.run({ "mkdir", "-p", "--", M.directory })
+        for _, entry in ipairs(plan) do
+            local same = common.succeeds({ "test", entry.source, "-ef", entry.destination })
+            if same or not options.force and common.succeeds({ "test", "-f", entry.destination }) then
+                common.info("Already installed: " .. entry.destination)
+            else
+                common.run({ "cp", "--", entry.source, entry.destination })
+                common.info("Added: " .. entry.destination)
+            end
+        end
+    end
+
+    function M.add(options)
+        local has_urls = false
+        for _, input in ipairs(options.targets) do
+            has_urls = has_urls or download.is_url(input)
+        end
+        if not has_urls then
+            return add_local(options)
+        end
+
+        download.prepare()
+        local temporary, ok = common.capture({ "mktemp", "-d" })
+        assert(ok, "Cannot create a temporary download directory")
+        temporary = temporary:gsub("\n$", "")
+
+        -- Always clean staged downloads, including network or batch-validation failures.
+        local success, message = pcall(function()
+            local staged = { targets = {}, force = options.force, recursive = options.recursive }
+            for index, input in ipairs(options.targets) do
+                table.insert(staged.targets, download.is_url(input)
+                    and download.fetch(input, temporary, index) or input)
+            end
+            add_local(staged)
+        end)
+        common.run({ "rm", "-rf", "--", temporary })
+        assert(success, message)
+    end
+
+    return M
+end
