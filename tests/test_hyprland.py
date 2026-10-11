@@ -11,6 +11,18 @@ import unittest
 REPO = Path(__file__).resolve().parents[1]
 
 
+BINDING_API = """
+local function binding_api()
+    hl.bind = function() end
+    hl.dsp = {
+        exec_cmd = function() end,
+        window = { close = function() end },
+        focus = function() end,
+    }
+end
+"""
+
+
 class HyprlandThemeTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix="luna hypr '")
@@ -28,7 +40,7 @@ class HyprlandThemeTests(unittest.TestCase):
 
     def lua(self, script, ok=True):
         result = subprocess.run(['/usr/bin/lua', '-E', '-', str(REPO / 'config/hypr/.config/hypr/hyprland.lua'),
-                                 str(self.config / 'theme')], env=self.env, input=script,
+                                 str(self.config / 'theme')], env=self.env, input=BINDING_API + script.replace("dofile(arg[1])", "binding_api(); dofile(arg[1])"),
                                 text=True, capture_output=True, timeout=10)
         self.assertEqual(result.returncode == 0, ok, result.stdout + result.stderr)
         return result
@@ -87,7 +99,7 @@ assert(#monitors == 1)
         entry.symlink_to(REPO / 'config/hypr/.config/hypr/hyprland.lua')
         script = 'hl = { config = function(settings) assert(settings.general.border_size == 1) end, monitor = function(settings) assert(settings.scale == 1) end }; dofile(arg[1])'
         result = subprocess.run(['/usr/bin/lua', '-E', '-', str(entry)], env=self.env,
-                                input=script, text=True, capture_output=True, timeout=10)
+                                input=BINDING_API + script.replace("dofile(arg[1])", "binding_api(); dofile(arg[1])"), text=True, capture_output=True, timeout=10)
         self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_hyprland_parser(self):

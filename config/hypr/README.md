@@ -5,6 +5,7 @@
 - `config/hypr/.config/hypr/hyprland.lua`: Stow-managed entry point and place for personal overrides.
 - `default/hypr/bootstrap.lua`: loads reusable Luna defaults.
 - `default/hypr/theme.lua`: applies the selected theme through native `hl.config()`.
+- `default/hypr/bindings.lua`: registers Luna's basic keyboard shortcuts.
 
 ## Load
 
@@ -27,7 +28,17 @@ local root = "/path/to/luna"
 dofile(root .. "/default/hypr/bootstrap.lua")(root)
 ```
 
-The entry point currently supplies theme appearance only; retain your existing monitors, keybindings, input, and startup settings. Put personal appearance overrides after the bootstrap call.
+The entry point supplies theme appearance and the shortcuts below. Put personal overrides after the bootstrap call.
+
+## Keybindings
+
+| Shortcut | Action |
+| --- | --- |
+| Super + Return | Open Kitty |
+| Super + Shift + Return | Open Zen |
+| Super + W | Close the active window |
+| Super + 1–9 | Switch to workspace 1–9 |
+| Super + 0 | Switch to workspace 10 |
 
 ## Theme behavior
 
