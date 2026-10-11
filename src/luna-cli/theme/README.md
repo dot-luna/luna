@@ -39,7 +39,7 @@ luna theme current
 - Selection: `$XDG_CONFIG_HOME/luna/theme`, defaulting to `~/.config/luna/theme`.
 - `set` validates the installed export, applies its `colors.mode` as the system appearance preference, and saves its name.
 - Matching settings and an unchanged selection are skipped unless `--force` is supplied.
-- Hyprland and application palette generation remain unimplemented; the wallpaper is not changed.
+- Luna's [Hyprland config](../../../config/hypr/README.md) reads the selected theme on its next startup or manual reload. Theme selection does not trigger a live reload or change the wallpaper.
 
 ## Light and dark mode
 

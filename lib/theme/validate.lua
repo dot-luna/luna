@@ -1,5 +1,5 @@
 -- Theme exports are declarative tables, evaluated without filesystem or process APIs.
-return function(common)
+return function()
     local M = {}
     local required = {
         "accent", "accent_foreground", "selection", "selection_foreground", "muted",
@@ -9,18 +9,27 @@ return function(common)
 
     local function read(directory, name, mandatory)
         local path = directory .. "/" .. name .. ".lua"
-        if not common.succeeds({ "test", "-f", path }) then
-            assert(not mandatory, "Missing colors.lua")
+        local file, failure, code = io.open(path, "r")
+        if not file then
+            assert(not mandatory and code == 2, "Cannot read " .. name .. ".lua: " .. tostring(failure))
             return nil
         end
-        local chunk = assert(loadfile(path, "t", {}))
+        local content, read_error = file:read("*a")
+        file:close()
+        assert(content, "Cannot read " .. name .. ".lua: " .. tostring(read_error))
+        local chunk = assert(load(content, "@" .. path, "t", {}))
 
-        -- Bound accidental loops in a user-supplied export and always clear the hook.
-        debug.sethook(function()
-            error("Theme export exceeded its instruction limit")
-        end, "", 100000)
+        -- The CLI bounds export loops; Hyprland hides sethook and supplies its own watchdog.
+        local hook = debug and debug.sethook
+        if hook then
+            hook(function()
+                error("Theme export exceeded its instruction limit")
+            end, "", 100000)
+        end
         local ok, value = pcall(chunk)
-        debug.sethook()
+        if hook then
+            hook()
+        end
         assert(ok, name .. ".lua: " .. tostring(value))
         assert(type(value) == "table", name .. ".lua must return a table")
         return value
@@ -32,6 +41,9 @@ return function(common)
     end
 
     local rules = {
+        monitor = {
+            scale = { 0.01, math.huge },
+        },
         general = {
             gaps_in = { 0, math.huge, true }, gaps_out = { 0, math.huge, true },
             border_size = { 0, math.huge, true },

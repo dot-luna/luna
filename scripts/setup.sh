@@ -12,7 +12,7 @@ for option in "$@"; do
         --force)
             ;;
         -h|--help)
-            printf 'Usage: %s [--force]\n\nSet up Lua, core packages, an AUR helper, and main packages.\n--force reinstalls Lua and selected packages. Extra packages are excluded.\n' "${0##*/}"
+            printf 'Usage: %s [--force]\n\nSet up Lua, core packages, an AUR helper, main packages, and Stow configs.\n--force reinstalls packages and replaces conflicting Hyprland entry points. Extra packages are excluded.\n' "${0##*/}"
             exit 0
             ;;
         *)
@@ -37,3 +37,6 @@ bash "$setup_dir/setup-aur.sh"
 
 # Step 4: install everyday apps and AUR packages. Extra remains opt-in.
 /usr/bin/lua -E "$setup_dir/install-deps.lua" main "$@"
+
+# Step 5: deploy the config package after GNU Stow is installed.
+bash "$setup_dir/setup-config.sh" "$@"

@@ -19,7 +19,7 @@ my-theme/
 | `fonts.lua` | Font families and default text sizes | Fonts must be installed manually |
 | `wallpaper.lua` | Local images, directories, and public image URLs | Images will be imported or downloaded automatically |
 
-`luna theme install /path/to/my-theme` validates and copies a theme, importing its wallpapers automatically. `luna theme set my-theme` saves the selection and applies its light/dark system preference. Palette configuration generation comes later. See the [theme CLI guide](../src/luna-cli/theme/README.md).
+`luna theme install /path/to/my-theme` validates and copies a theme, importing its wallpapers automatically. `luna theme set my-theme` saves the selection and applies its light/dark system preference. Luna's [Hyprland config](../config/hypr/README.md) reads the selected theme at startup or on a manual reload, using Lua directly. See the [theme CLI guide](../src/luna-cli/theme/README.md).
 
 ## Export rules
 
@@ -116,10 +116,11 @@ See [Tokyo Night's complete color export](bundled/tokyo-night/colors.lua).
 
 Return a nested table using Hyprland's setting sections. Every section and field is optional.
 
-`general` and `decoration` are tables; `decoration.blur` and `decoration.shadow` are nested tables.
+`monitor`, `general`, and `decoration` are tables; `decoration.blur` and `decoration.shadow` are nested tables.
 
 | Field path | Type / units | Role |
 | --- | --- | --- |
+| `monitor.scale` | Positive number, multiplier | Scale for all monitors; `1` means native size |
 | `general.gaps_in` | Nonnegative integer, layout pixels | Space between windows |
 | `general.gaps_out` | Nonnegative integer, layout pixels | Space between windows and screen edges |
 | `general.border_size` | Nonnegative integer, layout pixels | Window border thickness |
@@ -138,24 +139,28 @@ Return a nested table using Hyprland's setting sections. Every section and field
 
 ```lua
 return {
+    monitor = {
+        scale = 1,
+    },
+
     general = {
-        gaps_in = 8,
-        gaps_out = 12,
-        border_size = 2,
+        gaps_in = 5,
+        gaps_out = 5,
+        border_size = 1,
     },
 
     decoration = {
-        rounding = 8,
-        active_opacity = 1,
-        inactive_opacity = 0.95,
+        rounding = 0,
+        active_opacity = 0.90,
+        inactive_opacity = 0.85,
         fullscreen_opacity = 1,
         dim_inactive = true,
         dim_strength = 0.1,
 
         blur = {
             enabled = true,
-            size = 4,
-            passes = 2,
+            size = 10,
+            passes = 3,
         },
 
         shadow = {
@@ -168,6 +173,8 @@ return {
 ```
 
 Keep keybindings, input behavior, and window rules in the user's Hyprland configuration. This table declares appearance values; it is not a standalone Hyprland configuration.
+
+The adapter derives active and inactive border colors from `accent` and `muted`. When shadow settings are supplied, it derives shadow colors from `dark_background` and `darker_background`. `monitor.scale` uses a native `hl.monitor()` rule; other settings use `hl.config()`. Omit monitor scaling to keep it in personal configuration. Other application integrations will be added separately.
 
 See [Tokyo Night's Hyprland export](bundled/tokyo-night/hyprland.lua).
 

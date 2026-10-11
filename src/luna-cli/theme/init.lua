@@ -1,6 +1,6 @@
 -- Theme commands manage copies and selection; application config generation comes later.
 return function(common, module_dir)
-    local validate = dofile(module_dir .. "/validate.lua")(common)
+    local validate = dofile(module_dir .. "/../../../lib/theme/validate.lua")()
     local wallpaper_dir = module_dir .. "/../wallpaper"
     local download = dofile(wallpaper_dir .. "/download.lua")(common)
     local wallpapers = dofile(wallpaper_dir .. "/files.lua")(common, download)
