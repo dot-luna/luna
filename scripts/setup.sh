@@ -2,9 +2,9 @@
 # Run Luna setup from this checkout, regardless of the working directory.
 set -euo pipefail
 
-# Load common helpers beside this script, including when reached via a symlink.
+# Load repository-wide helpers, including when reached via a symlink.
 script_path=$(readlink -f -- "${BASH_SOURCE[0]}")
-source "$(dirname -- "$script_path")/helpers/common.sh"
+source "$(dirname -- "$script_path")/../lib/common.sh"
 
 # Validate entry options before starting any system changes.
 for option in "$@"; do

@@ -2,7 +2,7 @@
 -- Install one manifest group after setup-lua.sh prepares Lua and argparse.
 -- Resolve shared helpers before parsing commands; never rely on the caller's cwd.
 local script_dir = assert(arg[0]:match("^(.*)/"), "Run this script using its path")
-local common = dofile(script_dir .. "/helpers/common.lua")
+local common = dofile(script_dir .. "/../lib/common.lua")
 local argparse = require("argparse")
 local parser = argparse("install-deps.lua", "Install a Luna package group.")
 parser:argument("group", "Package group"):choices({ "core", "main", "extra" })

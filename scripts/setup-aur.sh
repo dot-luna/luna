@@ -2,9 +2,9 @@
 # Reuse an existing AUR helper, or build yay as the regular setup user.
 set -euo pipefail
 
-# Load common helpers beside this script, including when reached via a symlink.
+# Load repository-wide helpers, including when reached via a symlink.
 script_path=$(readlink -f -- "${BASH_SOURCE[0]}")
-source "$(dirname -- "$script_path")/helpers/common.sh"
+source "$(dirname -- "$script_path")/../lib/common.sh"
 
 for option in "$@"; do
     case "$option" in

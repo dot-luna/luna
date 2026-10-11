@@ -24,6 +24,9 @@ return {
         -- Deploy configuration from this checkout into the user's home.
         { name = "stow", source = "pacman", purpose = "Link repository configs into the home directory" },
 
+        -- Font discovery, validation, and cache updates for the Luna font CLI.
+        { name = "fontconfig", source = "pacman", purpose = "Provide fc-list, fc-scan, and fc-cache" },
+
         -- Desktop compositor, app portals, and custom Quickshell UI.
         { name = "hyprland", source = "pacman", purpose = "Wayland desktop compositor" },
         { name = "xdg-desktop-portal-hyprland", source = "pacman", purpose = "Hyprland screen sharing and portal integration" },

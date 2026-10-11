@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Launch the checkout CLI through the system runtime, including through symlinks.
+set -euo pipefail
+
+launcher_path=$(readlink -f -- "${BASH_SOURCE[0]}")
+repo_dir=$(cd -- "$(dirname -- "$launcher_path")/.." && pwd)
+
+exec /usr/bin/lua -E "$repo_dir/src/luna-cli/main.lua" "$@"

@@ -34,6 +34,15 @@ function M.run(arguments)
     assert(os.execute(M.command(arguments)) == true, "Command failed: " .. M.command(arguments))
 end
 
+-- Capture stdout while retaining the exit code; quiet probes suppress stderr.
+function M.capture(arguments, quiet)
+    local pipe = assert(io.popen(M.command(arguments) .. (quiet and " 2>/dev/null" or ""), "r"))
+    local output = pipe:read("*a")
+    local ok, _, code = pipe:close()
+
+    return output, ok == true, code
+end
+
 function M.available(name)
     return M.succeeds({ "sh", "-c", 'command -v "$1"', "sh", name })
 end

@@ -3,9 +3,9 @@
 # Invoke directly; package installation keeps pacman's confirmation prompts.
 set -euo pipefail
 
-# Load common helpers beside this script, including when reached via a symlink.
+# Load repository-wide helpers, including when reached via a symlink.
 script_path=$(readlink -f -- "${BASH_SOURCE[0]}")
-source "$(dirname -- "$script_path")/helpers/common.sh"
+source "$(dirname -- "$script_path")/../lib/common.sh"
 
 # Read options before checking dependencies so help works on a fresh system.
 force=false
