@@ -40,6 +40,17 @@ class HyprlandThemeTests(unittest.TestCase):
         self.env = dict(os.environ, XDG_CONFIG_HOME=str(self.root / 'config'),
                         XDG_DATA_HOME=str(self.root / 'data'), XDG_STATE_HOME=str(self.root / 'state'))
         self.env.pop('LUNA_PATH', None)
+        self.publish()
+
+    def publish(self):
+        subprocess.run(['lua', '-E', '-', str(REPO), str(self.theme), str(self.config / 'theme.json')],
+                       input="""
+local resolved = dofile(arg[1] .. '/lib/theme/resolved.lua')(arg[1])
+local validate = dofile(arg[1] .. '/lib/theme/validate.lua')()
+local file = assert(io.open(arg[3], 'w'))
+file:write(resolved.encode(resolved.resolve(validate.load(arg[2]), 'tokyo-night')))
+file:close()
+""", env=self.env, text=True, capture_output=True, check=True)
 
     def lua(self, script, ok=True):
         result = subprocess.run(['/usr/bin/lua', '-E', '-', str(REPO / 'config/hypr/.config/hypr/hyprland.lua'),
@@ -70,23 +81,28 @@ assert(calls[1].decoration.rounding == 0)
 assert(calls[1].decoration.active_opacity == 0.90)
 assert(calls[1].decoration.inactive_opacity == 0.85)
 assert(calls[1].monitor == nil)
-assert(#monitors == 3)
+assert(#monitors == 2)
 assert(monitors[1].mode == "preferred" and monitors[1].position == "auto")
-assert(monitors[2].scale == 1)
-assert(monitors[3].mode == "1920x1080@60")
-assert(monitors[3].output == "desc:LG Electronics 2D HD LG TV 0x01010101")
+assert(monitors[1].scale == 1)
+assert(monitors[2].mode == "1920x1080@60")
+assert(monitors[2].output == "desc:LG Electronics 2D HD LG TV 0x01010101")
 assert(calls[1].general.col.active_border == "#7aa2f7")
 assert(calls[1].general.col.inactive_border == "#414868")
 assert(calls[1].decoration.blur.size == 10)
 assert(calls[1].decoration.blur.passes == 3)
 assert(calls[1].decoration.shadow.color == "#13141caa")
+local root = arg[1]:match("^(.*)/config/hypr/")
+local resolved = dofile(root .. '/lib/theme/resolved.lua')(root)
+local output = assert(io.open(resolved.path, 'w'))
+output:write(resolved.encode(resolved.resolve({ colors = { accent = '#82aaff' } }, 'other')))
+output:close()
 local file = assert(io.open(arg[2], "w")); file:write("other\\n"); file:close()
 dofile(arg[1])
 assert(#calls == 2)
 assert(calls[2].general.col.active_border == "#82aaff")
-assert(calls[2].general.gaps_in == nil)
-assert(calls[2].decoration == nil)
-assert(#monitors == 5 and monitors[4].position == "auto")
+assert(calls[2].general.gaps_in == 5)
+assert(calls[2].decoration.rounding == 0)
+assert(#monitors == 4 and monitors[3].position == "auto")
 ''')
         self.assertFalse((self.root / 'config/luna/generated').exists())
 
@@ -96,7 +112,8 @@ assert(#monitors == 5 and monitors[4].position == "auto")
             (self.config / 'theme').write_text(name + '\n')
             self.lua('hl = { config = function() error("Invalid theme must not be applied") end }; dofile(arg[1])', ok=False)
         (self.config / 'theme').write_text('tokyo-night\n')
-        (self.theme / 'hyprland.lua').write_text('return { decoration = { rounding = -1 } }')
+        output = self.config / 'theme.json'
+        output.write_text(output.read_text().replace('"rounding":0', '"rounding":-1'))
         self.lua('hl = { config = function() error("Invalid settings must not be applied") end }; dofile(arg[1])', ok=False)
 
     def test_symlink_entry_point(self):

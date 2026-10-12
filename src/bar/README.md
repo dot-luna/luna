@@ -36,9 +36,9 @@ The bar does not take keyboard focus during ordinary use. Clicking outside the c
 
 ## Theme
 
-Colors come from the current theme. Optional `bar.lua` exports height, rounding and background opacity; see [theme exports](../../themes/README.md).
+Colors come from the current theme. Rounding and background opacity follow `decoration.rounding` and `decoration.active_opacity` in the theme's `hyprland.lua`, inheriting shared Tokyo Night defaults when omitted. Text and icons stay opaque. Height stays at 32 pixels. Personal Hyprland overrides do not affect the bar; see [theme exports](../../themes/README.md).
 
-Theme values load once per launch. `luna bar reload` rereads them; no theme file watcher or generated config is needed. Device status updates independently through Quickshell's native services. Brightness is read at startup and when the panel opens or a change completes.
+Theme values load from the shared generated `theme.json` once per launch. After editing a theme, run `luna theme set <name>` to regenerate it, then `luna bar reload`. No theme file watcher is used. Device status updates independently through Quickshell's native services. Brightness is read at startup and when the panel opens or a change completes.
 
 ## Source
 

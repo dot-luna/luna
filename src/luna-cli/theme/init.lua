@@ -1,12 +1,13 @@
--- Theme commands manage copies and selection; application config generation comes later.
+-- Theme commands install sources and publish a complete resolved theme on selection.
 return function(common, module_dir)
+    local resolved = dofile(module_dir .. "/../../../lib/theme/resolved.lua")(module_dir .. "/../../..")
     local validate = dofile(module_dir .. "/../../../lib/theme/validate.lua")()
     local wallpaper_dir = module_dir .. "/../wallpaper"
     local download = dofile(wallpaper_dir .. "/download.lua")(common)
     local wallpapers = dofile(wallpaper_dir .. "/files.lua")(common, download)
     local ini = dofile(module_dir .. "/../../../lib/ini.lua")
     local mode = dofile(module_dir .. "/mode.lua")(common, ini)
-    local store = dofile(module_dir .. "/store.lua")(common, validate, wallpapers, download, mode)
+    local store = dofile(module_dir .. "/store.lua")(common, validate, wallpapers, download, mode, resolved)
     local M = {}
 
     function M.register(parser)
@@ -50,14 +51,14 @@ return function(common, module_dir)
             if appearance then
                 if appearance == "toggle" then
                     local name = store.current()
-                    local fallback = name and validate.load(store.path(name)).colors.mode or nil
+                    local fallback = name and resolved.resolve(validate.load(store.path(name))).colors.mode or nil
                     appearance = mode.current(fallback) == "dark" and "light" or "dark"
                 end
                 mode.apply(appearance, options.force)
                 common.info("System appearance: " .. appearance)
             else
                 local name = store.current()
-                local fallback = name and validate.load(store.path(name)).colors.mode or nil
+                local fallback = name and resolved.resolve(validate.load(store.path(name))).colors.mode or nil
                 common.info(mode.current(fallback))
             end
         elseif options.remove then

@@ -1,10 +1,5 @@
 -- Appearance values consumed by Luna's adapter when Hyprland loads its Lua config.
 return {
-    -- Monitor scale is a multiplier; 1 keeps logical pixels at native size.
-    monitor = {
-        scale = 1,
-    },
-
     -- Gaps and border thickness are in Hyprland layout pixels.
     general = {
         gaps_in = 5,
@@ -19,8 +14,6 @@ return {
         active_opacity = 0.90,
         inactive_opacity = 0.85,
         fullscreen_opacity = 1,
-        dim_inactive = true,
-        dim_strength = 0.1,
 
         -- Strong blur behind transparent content; more passes increase GPU work.
         blur = {

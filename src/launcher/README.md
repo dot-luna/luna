@@ -33,7 +33,7 @@ Application icons come from installed icon themes or the entry's absolute image 
 
 ## Theme
 
-Uses the same startup color snapshot as Luna Bar. Run `luna launcher reload` after changing themes; no theme watcher or generated config is used.
+Reads the shared resolved `theme.json` at startup. After editing a theme, run `luna theme set <name>` to regenerate it, then `luna launcher reload`. No theme watcher is used.
 
 ## Source
 

@@ -1,5 +1,5 @@
 -- Installed theme copies use XDG data storage; selection is a name, not generated config.
-return function(common, validate, wallpapers, download, mode)
+return function(common, validate, wallpapers, download, mode, resolved)
     local M = {}
     local home = assert(os.getenv("HOME"), "HOME is required")
     M.directory = (os.getenv("XDG_DATA_HOME") or home .. "/.local/share") .. "/luna/themes"
@@ -52,7 +52,7 @@ return function(common, validate, wallpapers, download, mode)
         if not exports.fonts then
             return
         end
-        for _, role in ipairs({ "ui", "mono", "icons" }) do
+        for _, role in ipairs({ "ui", "mono" }) do
             local family = exports.fonts[role]
             if family then
                 common.info("Font " .. role .. ": " .. family .. " (must be installed manually)")
@@ -73,10 +73,10 @@ return function(common, validate, wallpapers, download, mode)
         assert(not common.succeeds({ "test", "-L", destination }), "Installed theme cannot be a symlink")
 
         -- Validate before copying, then again on the staged copy that will be installed.
-        validate.load(source)
+        resolved.resolve(validate.load(source))
         common.run({ "mkdir", "-p", "--", M.directory })
-        local library, resolved = common.capture({ "realpath", "-e", "--", M.directory })
-        assert(resolved, "Cannot resolve theme library")
+        local library, library_resolved = common.capture({ "realpath", "-e", "--", M.directory })
+        assert(library_resolved, "Cannot resolve theme library")
         library = library:gsub("\n$", "")
         assert(source ~= "/" and library ~= source and library:sub(1, #source + 1) ~= source .. "/",
             "Theme source cannot contain the installation directory")
@@ -96,6 +96,7 @@ return function(common, validate, wallpapers, download, mode)
             common.run({ "mkdir", "--", staged })
             common.run({ "cp", "-aL", "--", source .. "/.", staged })
             local exports = validate.load(staged)
+            resolved.resolve(exports)
             local targets = {}
             for _, value in ipairs((exports.wallpaper or {}).sources or {}) do
                 if download.is_url(value) then
@@ -130,27 +131,62 @@ return function(common, validate, wallpapers, download, mode)
     end
 
     function M.set(name, force)
-        local exports = validate.load(M.path(name))
-        if M.current() == name and not force then
+        local exports = resolved.resolve(validate.load(M.path(name)), name)
+        local content = resolved.encode(exports)
+        local function read(path)
+            local file, failure, code = io.open(path, "r")
+            if not file then
+                assert(code == 2, failure)
+                return nil
+            end
+            local value = assert(file:read("*a"))
+            assert(file:close())
+            return value
+        end
+        local function write(path, value)
+            local file = assert(io.open(path, "w"))
+            assert(file:write(value))
+            assert(file:close())
+        end
+        local previous = read(resolved.path)
+        local selected = read(selection)
+        if selected == name .. "\n" and previous == content and not force then
             mode.apply(exports.colors.mode)
             common.info("Theme already selected: " .. name)
             return
         end
         common.run({ "mkdir", "-p", "--", config })
-        local file = assert(io.open(selection .. ".tmp", "w"))
-        assert(file:write(name, "\n"))
-        assert(file:close())
-        local success, restore = pcall(mode.apply, exports.colors.mode, force)
+        local restore, published
+        local success, failure = pcall(function()
+            -- Stage both files before changing desktop preferences or publishing output.
+            write(resolved.path .. ".tmp", content)
+            write(selection .. ".tmp", name .. "\n")
+            restore = mode.apply(exports.colors.mode, force)
+            assert(os.rename(resolved.path .. ".tmp", resolved.path))
+            published = true
+            assert(os.rename(selection .. ".tmp", selection))
+        end)
         if not success then
-            os.remove(selection .. ".tmp")
-            error(restore)
+            local restored, message = pcall(function()
+                if published then
+                    if previous then
+                        write(resolved.path .. ".tmp", previous)
+                        assert(os.rename(resolved.path .. ".tmp", resolved.path))
+                    else
+                        assert(os.remove(resolved.path))
+                    end
+                end
+                if restore then
+                    restore()
+                end
+            end)
+            if not restored then
+                common.error("Could not fully restore theme settings: " .. tostring(message))
+            end
         end
-        local selected, failure = os.rename(selection .. ".tmp", selection)
-        if not selected then
-            restore()
-            os.remove(selection .. ".tmp")
-            error(failure)
-        end
+        os.remove(selection .. ".tmp")
+        os.remove(resolved.path .. ".tmp")
+        assert(success, failure)
         common.info("Selected theme: " .. name .. " (" .. exports.colors.mode .. " system appearance)")
     end
 

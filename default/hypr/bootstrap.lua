@@ -2,8 +2,8 @@
 return function(root)
     dofile(root .. "/default/hypr/monitors.lua")
 
-    local validate = dofile(root .. "/lib/theme/validate.lua")()
-    local theme = dofile(root .. "/default/hypr/theme.lua")(validate)
+    local resolved = dofile(root .. "/lib/theme/resolved.lua")(root)
+    local theme = dofile(root .. "/default/hypr/theme.lua")(resolved)
     theme.apply()
 
     dofile(root .. "/default/hypr/bindings.lua")

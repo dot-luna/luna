@@ -2,41 +2,57 @@
 
 ## Files
 
-Your theme folder can live anywhere. Each export is a Lua file returning a table.
+Your theme folder can live anywhere. Each export is a Lua file returning a table. Theme values are shared across components wherever supported; each component uses the settings it understands.
 
 ```text
 my-theme/
 ├── colors.lua      Required
 ├── hyprland.lua    Optional
 ├── fonts.lua       Optional
-├── bar.lua         Optional
 └── wallpaper.lua   Optional
 ```
 
 | Export | Provides | Installation |
 | --- | --- | --- |
 | `colors.lua` | Shared colors and light/dark mode | Values consumed by applications |
-| `hyprland.lua` | Compositor appearance | Values applied to Hyprland |
-| `fonts.lua` | Font families and default text sizes | Fonts must be installed manually |
-| `bar.lua` | Bar height, rounding, and background opacity | Read when Luna Bar starts or reloads |
+| `hyprland.lua` | Compositor appearance and shared visual settings | Applied to Hyprland and reused by supporting components |
+| `fonts.lua` | Font families | Fonts must be installed manually |
 | `wallpaper.lua` | Local images, directories, and public image URLs | Images will be imported or downloaded automatically |
 
-`luna theme install /path/to/my-theme` validates and copies a theme, importing its wallpapers automatically. `luna theme set my-theme` saves the selection and applies its light/dark system preference. Luna's [Hyprland config](../config/hypr/README.md) reads the selected theme at startup or on a manual reload, using Lua directly. See the [theme CLI guide](../src/luna-cli/theme/README.md).
+`luna theme install /path/to/my-theme` validates and copies a theme, importing its wallpapers automatically. `luna theme set my-theme` merges the theme with shared defaults, writes the resolved JSON, saves the selection, and applies its light/dark system preference. Luna's [Hyprland config](../config/hypr/README.md) reads the resolved JSON at startup or on a manual reload. See the [theme CLI guide](../src/luna-cli/theme/README.md).
 
-## Export rules
+## Theme file rules
 
 - Return tables containing values; do not run commands or modify files.
-- Only the 14 base fields in `colors.lua` are required. All other documented fields are optional.
+- `colors.lua` is required, but it may return an empty table. Every documented field is optional.
 - Keep names consistent across themes. Different roles can share the same value.
-- Omit optional files or fields your theme does not supply. Luna Bar supplies the defaults documented below.
+- Omitted fields inherit shared defaults. Nested tables merge field by field; wallpaper source lists replace the default list.
 - Exports are evaluated without process or filesystem APIs and must return declarative tables.
 - Font names select preferences, not packages. Install the fonts yourself, for example with `luna font install`.
 
-## colors.lua: required fields
+## Shared defaults and generated output
 
-`mode` is `"dark"` or `"light"`. Every other color field is an opaque `"#RRGGBB"` string.
+[Shared defaults](../lib/theme/defaults.lua) use Tokyo Night colors, fonts, and Hyprland appearance. Partial themes declaring `mode = "light"` use the [light palette](../lib/theme/light.lua) instead of inheriting dark surfaces.
 
-| Required field | Role |
+For example, this is a valid `colors.lua`:
+
+```lua
+return {
+    accent = "#82aaff",
+}
+```
+
+`luna theme set <name>` writes `$XDG_CONFIG_HOME/luna/theme.json` (normally `~/.config/luna/theme.json`). It contains `version`, `name`, and complete `colors`, `fonts`, `hyprland`, and `wallpaper` sections. Font sizes, display settings, and component layout remain outside the theme. Font family values are resolved but are not yet applied to applications.
+
+Edit the installed Lua source files, then run `luna theme set <name>` again to rebuild the JSON. Reinstall first if editing the original source folder. Components read this same output when started or reloaded; they do not independently merge defaults or reread source files. Existing selections without JSON must be set again once. The output is generated data, not a user configuration file.
+
+Theme selection does not reload components automatically. The UI uses resolved Tokyo Night defaults in memory when no theme is selected; Hyprland leaves its settings untouched until a theme is selected. Toggling system light/dark preference does not rewrite the resolved palette.
+
+## colors.lua: base fields
+
+`mode` is `"dark"` or `"light"`, defaulting to `"dark"`. Every other color field is an opaque `"#RRGGBB"` string.
+
+| Field | Role |
 | --- | --- |
 | `mode` | Theme appearance mode |
 | `accent` | Main accent color, including filled highlights |
@@ -53,7 +69,7 @@ my-theme/
 | `light_foreground` | Lighter readable text and icons |
 | `bright_foreground` | Strong text emphasis; also text on muted fills |
 
-This is a complete minimum color export. Change the values to suit your theme.
+This example explicitly supplies the base colors. Supply only the fields you want to override.
 
 Selecting a theme applies its `mode` to desktop apps following the system appearance preference. `luna theme toggle` changes that preference without altering these exported colors.
 
@@ -79,7 +95,7 @@ return {
 }
 ```
 
-## colors.lua: optional fields
+## colors.lua: additional fields
 
 Add optional fields to the same flat table. All use the same `"#RRGGBB"` format.
 
@@ -107,9 +123,9 @@ Add optional fields to the same flat table. All use the same `"#RRGGBB"` format.
 | `secondary_accent_emphasis` | Stronger supporting accent color |
 
 - Status colors can color text or icons on a normal background.
-- Supply the matching `_foreground` when using a status or secondary accent as a fill.
+- When a fill is overridden without its matching `_foreground`, Luna chooses black or white for readable text. Explicit foregrounds are preserved.
 - Emphasis means visual intensity, not necessarily greater brightness.
-- Filled emphasis variants reuse their base role's foreground. Include the base role when exporting a variant.
+- Filled emphasis variants reuse their base role's foreground. Overriding a base role without its emphasis variant makes the variant follow that base color. Check explicit emphasis colors against the foreground.
 - Links remain text or icon colors; they do not need a paired foreground.
 
 See [Tokyo Night's complete color export](bundled/tokyo-night/colors.lua).
@@ -118,11 +134,10 @@ See [Tokyo Night's complete color export](bundled/tokyo-night/colors.lua).
 
 Return a nested table using Hyprland's setting sections. Every section and field is optional.
 
-`monitor`, `general`, and `decoration` are tables; `decoration.blur` and `decoration.shadow` are nested tables.
+`general` and `decoration` are tables; `decoration.blur` and `decoration.shadow` are nested tables.
 
 | Field path | Type / units | Role |
 | --- | --- | --- |
-| `monitor.scale` | Positive number, multiplier | Scale for all monitors; `1` means native size |
 | `general.gaps_in` | Nonnegative integer, layout pixels | Space between windows |
 | `general.gaps_out` | Nonnegative integer, layout pixels | Space between windows and screen edges |
 | `general.border_size` | Nonnegative integer, layout pixels | Window border thickness |
@@ -130,8 +145,6 @@ Return a nested table using Hyprland's setting sections. Every section and field
 | `decoration.active_opacity` | Number, 0–1 | Focused window opacity |
 | `decoration.inactive_opacity` | Number, 0–1 | Unfocused window opacity |
 | `decoration.fullscreen_opacity` | Number, 0–1 | Fullscreen window opacity |
-| `decoration.dim_inactive` | Boolean | Dim unfocused windows |
-| `decoration.dim_strength` | Number, 0–1 | Amount of inactive-window dimming |
 | `decoration.blur.enabled` | Boolean | Enable background blur |
 | `decoration.blur.size` | Positive integer | Blur size |
 | `decoration.blur.passes` | Integer, 1–10 | Blur passes; more increases GPU work |
@@ -141,10 +154,6 @@ Return a nested table using Hyprland's setting sections. Every section and field
 
 ```lua
 return {
-    monitor = {
-        scale = 1,
-    },
-
     general = {
         gaps_in = 5,
         gaps_out = 5,
@@ -156,8 +165,6 @@ return {
         active_opacity = 0.90,
         inactive_opacity = 0.85,
         fullscreen_opacity = 1,
-        dim_inactive = true,
-        dim_strength = 0.1,
 
         blur = {
             enabled = true,
@@ -174,9 +181,9 @@ return {
 }
 ```
 
-Keep keybindings, input behavior, and window rules in the user's Hyprland configuration. This table declares appearance values; it is not a standalone Hyprland configuration.
+Keep monitor scaling, inactive-window dimming, keybindings, input behavior, and window rules in the user's Hyprland configuration. This table declares appearance values; it is not a standalone Hyprland configuration.
 
-The adapter derives active and inactive border colors from `accent` and `muted`. When shadow settings are supplied, it derives shadow colors from `dark_background` and `darker_background`. `monitor.scale` uses a native `hl.monitor()` rule; other settings use `hl.config()`. Omit monitor scaling to keep it in personal configuration. Other application integrations will be added separately.
+The adapter derives active and inactive border colors from `accent` and `muted`. When shadow settings are supplied, it derives shadow colors from `dark_background` and `darker_background`. The Hyprland adapter applies theme settings with `hl.config()`. Supporting components can reuse appearance values such as rounding and opacity from this table. Personal Hyprland overrides remain separate from the shared theme values.
 
 See [Tokyo Night's Hyprland export](bundled/tokyo-night/hyprland.lua).
 
@@ -188,22 +195,15 @@ Every field is optional. Use font family names recognized by Fontconfig.
 | --- | --- | --- |
 | `ui` | String | Interface font family |
 | `mono` | String | Terminal and code font family |
-| `icons` | String | Icon font family |
-| `size` | Positive number, points | Default interface text size |
-| `mono_size` | Positive number, points | Default terminal and code text size |
 
 ```lua
 return {
-    ui = "Inter",
-    mono = "JetBrainsMono Nerd Font",
-    icons = "Symbols Nerd Font",
-
-    size = 11,
-    mono_size = 12,
+    ui = "Outfit",
+    mono = "Iosevka Nerd Font",
 }
 ```
 
-Fonts must be installed manually. Applying a theme will not install font packages or files. Application padding and layout stay in application configuration.
+Fonts must be installed manually. Applying a theme will not install font packages or files. Luna's interface uses SVG icons and does not require an icon font. Font sizes, application padding, and layout belong in user/application configuration, outside the theme.
 
 See [Tokyo Night's font export](bundled/tokyo-night/fonts.lua).
 
@@ -251,23 +251,3 @@ luac -p /path/to/my-theme/wallpaper.lua
 ```
 
 Run checks only for the files your theme supplies.
-
-## bar.lua
-
-These values affect Luna Bar independently of Hyprland window appearance. All fields are optional.
-
-```lua
-return {
-    height = 32,
-    rounding = 0,
-    opacity = 1,
-}
-```
-
-| Field | Values | Default |
-| --- | --- | --- |
-| `height` | Integer pixels, 24–64 | `32` |
-| `rounding` | Integer pixels, 0–32 | `0` |
-| `opacity` | Background opacity, 0.1–1; text stays opaque | `1` |
-
-Luna Bar consumes the base colors from `colors.lua`. The launcher loads and validates the selected theme, then passes an in-memory snapshot to Quickshell. No generated file or theme watcher is used. Run `luna bar reload` after selecting or updating a theme. With no selected theme, the bar uses bundled Tokyo Night colors.

@@ -1,11 +1,6 @@
 -- Theme exports are declarative tables, evaluated without filesystem or process APIs.
 return function()
     local M = {}
-    local required = {
-        "accent", "accent_foreground", "selection", "selection_foreground", "muted",
-        "background", "dark_background", "darker_background", "lighter_background",
-        "foreground", "dark_foreground", "light_foreground", "bright_foreground",
-    }
 
     local function read(directory, name, mandatory)
         local path = directory .. "/" .. name .. ".lua"
@@ -41,9 +36,6 @@ return function()
     end
 
     local rules = {
-        monitor = {
-            scale = { 0.01, math.huge },
-        },
         general = {
             gaps_in = { 0, math.huge, true }, gaps_out = { 0, math.huge, true },
             border_size = { 0, math.huge, true },
@@ -51,7 +43,6 @@ return function()
         decoration = {
             rounding = { 0, 100, true }, active_opacity = { 0, 1 },
             inactive_opacity = { 0, 1 }, fullscreen_opacity = { 0, 1 },
-            dim_inactive = "boolean", dim_strength = { 0, 1 },
             blur = { enabled = "boolean", size = { 1, math.huge, true }, passes = { 1, 10, true } },
             shadow = { enabled = "boolean", range = { 0, 100, true }, render_power = { 1, 4, true } },
         },
@@ -72,13 +63,10 @@ return function()
         end
     end
 
-    function M.load(directory)
-        local exports = { colors = read(directory, "colors", true) }
-        local colors = exports.colors
-        assert(colors.mode == "dark" or colors.mode == "light", "mode must be dark or light")
-        for _, key in ipairs(required) do
-            assert(colors[key], "Missing required color: " .. key)
-        end
+    function M.values(exports)
+        local colors = exports.colors or {}
+        assert(type(colors) == "table", "colors must be a table")
+        assert(colors.mode == nil or colors.mode == "dark" or colors.mode == "light", "mode must be dark or light")
         for key, value in pairs(colors) do
             assert(type(key) == "string", "Color names must be strings")
             if key ~= "mode" then
@@ -86,30 +74,18 @@ return function()
             end
         end
 
-        exports.hyprland = read(directory, "hyprland")
         if exports.hyprland then
+            assert(type(exports.hyprland) == "table", "hyprland must be a table")
             settings(exports.hyprland, rules, "")
         end
-        exports.fonts = read(directory, "fonts")
-        exports.bar = read(directory, "bar")
-        if exports.bar then
-            settings(exports.bar, {
-                height = { 24, 64, true },
-                rounding = { 0, 32, true },
-                opacity = { 0.1, 1 },
-            }, "bar.")
-        end
+        assert(exports.fonts == nil or type(exports.fonts) == "table", "fonts must be a table")
         for key, value in pairs(exports.fonts or {}) do
-            if key == "size" or key == "mono_size" then
-                number(value, 0.01, math.huge, false, key)
-            else
-                assert(key == "ui" or key == "mono" or key == "icons", "Unknown font field: " .. tostring(key))
-                assert(type(value) == "string" and value ~= "" and not value:find("[%c]"), "Invalid font family")
-            end
+            assert(key == "ui" or key == "mono", "Unknown font field: " .. tostring(key))
+            assert(type(value) == "string" and value ~= "" and not value:find("[%c]"), "Invalid font family")
         end
 
-        exports.wallpaper = read(directory, "wallpaper")
         local wallpaper = exports.wallpaper or {}
+        assert(type(wallpaper) == "table", "wallpaper must be a table")
         for key in pairs(wallpaper) do
             assert(key == "sources", "Unknown wallpaper field: " .. tostring(key))
         end
@@ -123,6 +99,15 @@ return function()
         end
         assert(count == #sources, "Wallpaper sources must be a contiguous list")
         return exports
+    end
+
+    function M.load(directory)
+        return M.values({
+            colors = read(directory, "colors", true),
+            hyprland = read(directory, "hyprland"),
+            fonts = read(directory, "fonts"),
+            wallpaper = read(directory, "wallpaper"),
+        })
     end
 
     return M

@@ -66,7 +66,7 @@ else:
         self.assertEqual(self.cli('current').strip(), 'tokyo-night')
         self.assertIn('* tokyo-night', self.cli('list'))
         self.assertEqual(self.cli('path', 'tokyo-night').strip(), str(self.library / 'tokyo-night'))
-        self.assertFalse((self.root / 'config/luna/generated').exists())
+        self.assertEqual(json.loads((self.root / 'config/luna/theme.json').read_text())['name'], 'tokyo-night')
         self.cli('remove', 'tokyo-night', ok=False, answer='y\n')
         self.cli('install', '--name', 'other', self.source)
         self.cli('set', 'other')
@@ -78,10 +78,10 @@ else:
         self.assertFalse((self.library / 'tokyo-night').exists())
         self.assertTrue(self.source.exists())
 
-    def test_required_colors_optional_exports_and_force(self):
+    def test_base_colors_optional_exports_and_force(self):
         for name in ('hyprland.lua', 'fonts.lua', 'wallpaper.lua'):
             (self.source / name).unlink()
-        # Only the documented base fields are required.
+        # A theme may still explicitly supply all base colors.
         script = '''local c = dofile(arg[1]); local required = {
             "mode", "accent", "accent_foreground", "selection", "selection_foreground", "muted",
             "background", "dark_background", "darker_background", "lighter_background",
@@ -96,7 +96,7 @@ else:
         self.cli('install', self.source)
         self.cli('install', self.source, ok=False)
         original = (self.library / 'tokyo-night/colors.lua').read_text()
-        (self.source / 'colors.lua').write_text('return { mode = "dark" }')
+        (self.source / 'colors.lua').write_text('return { mode = "invalid" }')
         self.cli('install', '--force', self.source, ok=False)
         self.assertEqual((self.library / 'tokyo-night/colors.lua').read_text(), original)
         (self.source / 'colors.lua').write_text(original.replace('#7aa2f7', '#82aaff'))
@@ -104,10 +104,71 @@ else:
         self.assertIn('#82aaff', (self.library / 'tokyo-night/colors.lua').read_text())
         self.assertFalse(list(self.library.glob('.install-*')))
 
+    def test_partial_theme_defaults_and_regeneration(self):
+        for name in ('hyprland.lua', 'fonts.lua', 'wallpaper.lua'):
+            (self.source / name).unlink()
+        (self.source / 'colors.lua').write_text('return { accent = "#ffffff" }')
+        (self.source / 'hyprland.lua').write_text(
+            'return { decoration = { rounding = 8, blur = { enabled = false } } }')
+        self.cli('install', self.source)
+        self.cli('set', 'tokyo-night')
+        output = self.root / 'config/luna/theme.json'
+        theme = json.loads(output.read_text())
+        self.assertEqual(theme['colors']['background'], '#1a1b26')
+        self.assertEqual(theme['colors']['accent_foreground'], '#000000')
+        self.assertEqual(theme['fonts'], {'ui': 'Outfit', 'mono': 'Iosevka Nerd Font'})
+        self.assertEqual(theme['wallpaper']['sources'], [])
+        self.assertEqual(theme['hyprland']['decoration']['rounding'], 8)
+        self.assertEqual(theme['hyprland']['decoration']['blur'], {'enabled': False, 'size': 10, 'passes': 3})
+        installed = self.library / 'tokyo-night/colors.lua'
+        installed.write_text('return { mode = "light", accent = "#000000" }')
+        self.cli('set', 'tokyo-night')
+        theme = json.loads(output.read_text())
+        self.assertEqual(theme['colors']['background'], '#e1e2e7')
+        self.assertEqual(theme['colors']['accent_foreground'], '#ffffff')
+        self.assertEqual(theme['colors']['mode'], 'light')
+        self.assertEqual(self.cli('mode').strip(), 'light')
+        output.unlink()
+        self.cli('set', 'tokyo-night')
+        self.assertTrue(output.exists())
+        installed.write_text('return { accent = "invalid" }')
+        previous = output.read_bytes()
+        self.cli('set', 'tokyo-night', ok=False)
+        self.assertEqual(output.read_bytes(), previous)
+
+    def test_output_staging_failure_preserves_selection(self):
+        self.cli('install', self.source)
+        self.cli('set', 'tokyo-night')
+        output = self.root / 'config/luna/theme.json'
+        original = output.read_bytes()
+        staged = output.with_name('theme.json.tmp')
+        staged.mkdir()
+        (staged / 'keep').touch()
+        (self.library / 'tokyo-night/colors.lua').write_text('return { mode = "light" }')
+        self.cli('set', 'tokyo-night', ok=False)
+        self.assertEqual(output.read_bytes(), original)
+        self.assertEqual(self.cli('current').strip(), 'tokyo-night')
+        self.assertEqual(self.cli('mode').strip(), 'dark')
+
+    def test_resolved_json_round_trip(self):
+        family = 'Font "Quoted" \u2013 Unicode'
+        (self.source / 'fonts.lua').write_text('return { ui = [[%s]] }' % family)
+        self.cli('install', self.source)
+        self.cli('set', 'tokyo-night')
+        script = """
+local resolved = dofile(arg[1] .. '/lib/theme/resolved.lua')(arg[1])
+io.write(resolved.encode(resolved.active()))
+"""
+        result = subprocess.run(['lua', '-E', '-', str(REPO)], input=script,
+                                env=self.env, text=True, capture_output=True, check=True)
+        self.assertEqual(json.loads(result.stdout)['fonts']['ui'], family)
+        self.assertEqual(json.loads(result.stdout),
+                         json.loads((self.root / 'config/luna/theme.json').read_text()))
+
     def test_invalid_exports_and_sandbox(self):
         self.cli('install', '--name', '../escape', self.source, ok=False)
         self.cli('install', '--name', '-bad', self.source, ok=False)
-        (self.source / 'fonts.lua').write_text('return { size = -1 }')
+        (self.source / 'fonts.lua').write_text('return { ui = "" }')
         self.cli('install', self.source, ok=False)
         (self.source / 'fonts.lua').unlink()
         (self.source / 'hyprland.lua').write_text('return { decoration = { blur = { passes = 20 } } }')
@@ -197,11 +258,14 @@ else:
         self.cli('set', 'light-theme')
         gtk = self.root / 'config/gtk-3.0/settings.ini'
         original = gtk.read_text()
+        output = self.root / 'config/luna/theme.json'
+        original_output = output.read_bytes()
         (self.root / 'fail-dark').touch()
         self.cli('set', 'tokyo-night', ok=False)
         self.assertEqual(self.cli('current').strip(), 'light-theme')
         self.assertEqual(self.cli('mode').strip(), 'light')
         self.assertEqual(gtk.read_text(), original)
+        self.assertEqual(output.read_bytes(), original_output)
         self.assertFalse(list((self.root / 'config').rglob('*.luna-tmp')))
         self.assertFalse((self.root / 'config/luna/theme.tmp').exists())
 

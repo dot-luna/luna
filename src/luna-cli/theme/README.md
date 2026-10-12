@@ -9,7 +9,7 @@ luna theme install /path/to/theme --force
 luna theme install themes/bundled/tokyo-night
 ```
 
-- Validates required colors and optional exports before installing a complete folder copy.
+- Validates partial exports and their resolved defaults before installing a complete folder copy. `colors.lua` must exist but may return an empty table.
 - Names default to the source folder name. Use lowercase letters, digits, hyphens, or underscores; start with a letter or digit.
 - Existing themes require `--force`. Failed validation leaves the installed copy intact.
 - Exports return literal tables; process and filesystem APIs are unavailable during evaluation.
@@ -37,9 +37,11 @@ luna theme current
 ```
 
 - Selection: `$XDG_CONFIG_HOME/luna/theme`, defaulting to `~/.config/luna/theme`.
-- `set` validates the installed export, applies its `colors.mode` as the system appearance preference, and saves its name.
-- Matching settings and an unchanged selection are skipped unless `--force` is supplied.
-- Luna's [Hyprland config](../../../config/hypr/README.md) reads the selected theme on its next startup or manual reload. Theme selection does not trigger a live reload or change the wallpaper.
+- `set` merges the installed exports with shared defaults, validates the result, writes `~/.config/luna/theme.json` (respecting `$XDG_CONFIG_HOME`), applies the resolved `colors.mode`, and saves the selection.
+- An unchanged selection and identical resolved output are skipped unless `--force` is supplied. Setting the same theme again rebuilds missing or changed output.
+- Luna's [Hyprland config](../../../config/hypr/README.md) reads the generated JSON on its next startup or manual reload. Theme selection does not trigger a live reload or change the wallpaper.
+
+After editing installed theme files, run `luna theme set <name>` again, then reload the consuming components. Existing selections from before JSON generation must be set again once. Fonts are recorded in the output but are not yet applied.
 
 ## Light and dark mode
 
@@ -60,7 +62,7 @@ luna theme mode dark --force
 - Run in your user desktop session. Requires `glib2`, `gsettings-desktop-schemas`, and `dconf`, included in core dependencies.
 - Apps following system appearance receive the preference through the desktop settings portal. On Hyprland, the installed GTK portal supplies these settings.
 - App-specific appearance overrides may take precedence; some legacy apps need restarting to read GTK settings. This does not configure fixed Qt themes or rewrite application palettes.
-- A failed change restores previous settings and leaves the selected theme intact.
+- A failed change restores previous settings and leaves the selected theme and resolved output intact.
 
 ## Remove
 
@@ -74,4 +76,4 @@ luna theme remove tokyo-night other-theme
 
 ## Create a theme
 
-See the [theme author guide](../../../themes/README.md) for required fields and optional exports.
+See the [theme author guide](../../../themes/README.md) for shared defaults and partial exports.
