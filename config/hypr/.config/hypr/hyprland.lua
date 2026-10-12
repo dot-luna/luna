@@ -18,3 +18,12 @@ assert(root, "Set LUNA_PATH to the Luna checkout directory")
 dofile(root .. "/default/hypr/bootstrap.lua")(root)
 
 -- Add personal Hyprland settings below; later hl.config calls override theme values.
+
+-- This LG TV displays correctly with standard HDMI timing rather than its preferred
+-- 1366x768 mode. Match its identity so other external displays keep automatic modes.
+hl.monitor({
+    output = "desc:LG Electronics 2D HD LG TV 0x01010101",
+    mode = "1920x1080@60",
+    position = "auto",
+    scale = 1,
+})

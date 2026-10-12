@@ -14,6 +14,7 @@ REPO = Path(__file__).resolve().parents[1]
 BINDING_API = """
 local function binding_api()
     hl.bind = function() end
+    hl.monitor = hl.monitor or function() end
     hl.curve = function() end
     hl.animation = function() end
     hl.dsp = {
@@ -69,7 +70,11 @@ assert(calls[1].decoration.rounding == 0)
 assert(calls[1].decoration.active_opacity == 0.90)
 assert(calls[1].decoration.inactive_opacity == 0.85)
 assert(calls[1].monitor == nil)
-assert(#monitors == 1 and monitors[1].scale == 1)
+assert(#monitors == 3)
+assert(monitors[1].mode == "preferred" and monitors[1].position == "auto")
+assert(monitors[2].scale == 1)
+assert(monitors[3].mode == "1920x1080@60")
+assert(monitors[3].output == "desc:LG Electronics 2D HD LG TV 0x01010101")
 assert(calls[1].general.col.active_border == "#7aa2f7")
 assert(calls[1].general.col.inactive_border == "#414868")
 assert(calls[1].decoration.blur.size == 10)
@@ -81,7 +86,7 @@ assert(#calls == 2)
 assert(calls[2].general.col.active_border == "#82aaff")
 assert(calls[2].general.gaps_in == nil)
 assert(calls[2].decoration == nil)
-assert(#monitors == 1)
+assert(#monitors == 5 and monitors[4].position == "auto")
 ''')
         self.assertFalse((self.root / 'config/luna/generated').exists())
 

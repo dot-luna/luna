@@ -4,6 +4,7 @@
 
 - `config/hypr/.config/hypr/hyprland.lua`: Stow-managed entry point and place for personal overrides.
 - `default/hypr/bootstrap.lua`: loads reusable Luna defaults.
+- `default/hypr/monitors.lua`: enables displays at their preferred mode with automatic placement.
 - `default/hypr/theme.lua`: applies the selected theme through native `hl.config()`.
 - `default/hypr/bindings.lua`: registers Luna's basic keyboard shortcuts.
 - `default/hypr/animations.lua`: sets animation timings and horizontal workspace slides.
@@ -34,6 +35,22 @@ The entry point supplies theme appearance, animation defaults, and the shortcuts
 ## Animations
 
 Windows animate in 200 ms, fades in 150 ms, layers in 180 ms, and workspaces in 220 ms. Other animations inherit a 250 ms default. Workspaces slide horizontally in the direction determined by workspace order.
+
+## Multiple monitors
+
+New outputs use their preferred resolution and refresh rate, automatic placement, and scale 1. Theme scale can override that default. Add output-specific `hl.monitor()` rules after bootstrap for a fixed arrangement.
+
+```sh
+hyprctl monitors all
+```
+
+For supported NVIDIA GPUs on Arch's standard `linux` kernel, the optional driver setup is:
+
+```sh
+bash scripts/setup-nvidia.sh
+```
+
+This installs `nvidia-open` and `nvidia-utils`, enables DRM modesetting, blacklists Nouveau, and rebuilds initramfs. Run it only on Turing or newer NVIDIA hardware. It requests administrator authentication through polkit. Reboot to activate the driver before testing an external display; a Hyprland reload cannot replace the running GPU driver.
 
 ## Keybindings
 
