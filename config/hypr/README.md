@@ -41,6 +41,7 @@ The entry point supplies theme appearance and the shortcuts below. Put personal 
 | Super + 0 | Switch to workspace 10 |
 | Super + Ctrl + B | Focus Luna Bar |
 | Super + Ctrl + Space | Toggle the control center |
+| Super + Space | Toggle the application launcher |
 
 ## Theme behavior
 

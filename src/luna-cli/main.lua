@@ -19,14 +19,17 @@ local settings = dofile(source_dir .. "/settings/init.lua")(common, source_dir .
 settings.register(parser)
 local bar = dofile(source_dir .. "/bar/init.lua")(common, source_dir .. "/bar")
 bar.register(parser)
+local launcher = dofile(source_dir .. "/launcher/init.lua")(common, source_dir .. "/launcher")
+launcher.register(parser)
 local options = parser:parse()
 
 -- Bare entry points show help rather than performing any system operation.
-if options.settings or options.bar then
-    local handler = options.settings and settings or bar
+if options.settings or options.bar or options.launcher then
+    local handler = options.settings and settings or options.bar and bar or launcher
     local ok, message = pcall(handler.run, options)
     if not ok then
-        common.error((options.settings and "Settings" or "Bar") .. " command failed: " .. tostring(message))
+        local label = options.settings and "Settings" or options.bar and "Bar" or "Launcher"
+        common.error(label .. " command failed: " .. tostring(message))
         os.exit(1)
     end
 elseif not options.font and not options.wallpaper and not options.theme then
