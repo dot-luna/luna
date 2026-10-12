@@ -6,6 +6,7 @@
 - `default/hypr/bootstrap.lua`: loads reusable Luna defaults.
 - `default/hypr/theme.lua`: applies the selected theme through native `hl.config()`.
 - `default/hypr/bindings.lua`: registers Luna's basic keyboard shortcuts.
+- `default/hypr/animations.lua`: sets animation timings and horizontal workspace slides.
 
 ## Load
 
@@ -28,7 +29,11 @@ local root = "/path/to/luna"
 dofile(root .. "/default/hypr/bootstrap.lua")(root)
 ```
 
-The entry point supplies theme appearance and the shortcuts below. Put personal overrides after the bootstrap call.
+The entry point supplies theme appearance, animation defaults, and the shortcuts below. Put personal overrides after the bootstrap call.
+
+## Animations
+
+Windows animate in 200 ms, fades in 150 ms, layers in 180 ms, and workspaces in 220 ms. Other animations inherit a 250 ms default. Workspaces slide horizontally in the direction determined by workspace order.
 
 ## Keybindings
 

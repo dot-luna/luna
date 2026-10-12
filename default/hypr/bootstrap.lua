@@ -5,6 +5,7 @@ return function(root)
     theme.apply()
 
     dofile(root .. "/default/hypr/bindings.lua")
+    dofile(root .. "/default/hypr/animations.lua")
 
     -- Use the checkout launcher so shell shortcuts also work before bin is on PATH.
     local launcher = "'" .. (root .. "/bin/luna"):gsub("'", "'\\''") .. "'"

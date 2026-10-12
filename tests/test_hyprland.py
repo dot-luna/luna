@@ -14,6 +14,8 @@ REPO = Path(__file__).resolve().parents[1]
 BINDING_API = """
 local function binding_api()
     hl.bind = function() end
+    hl.curve = function() end
+    hl.animation = function() end
     hl.dsp = {
         exec_cmd = function() end,
         window = { close = function() end },
