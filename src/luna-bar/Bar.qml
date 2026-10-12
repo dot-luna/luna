@@ -13,11 +13,14 @@ PanelWindow {
 
     readonly property int activeWorkspace: monitor && monitor.activeWorkspace ? monitor.activeWorkspace.id : 1
     property alias controlCenter: center
+    property alias calendar: calendarPanel
     required property var controller
+    required property var clockConfig
     required property var workspaceConfig
     property bool keyboardActive: false
     readonly property var monitor: Hyprland.monitors.values.find(item => item.name === screen.name)
     readonly property bool fullscreenActive: !!(monitor && monitor.activeWorkspace && monitor.activeWorkspace.hasFullscreen)
+    onActiveWorkspaceChanged: if (calendarPanel) calendarPanel.dismiss()
     readonly property var workspaceIds: {
         const ids = [1, 2, 3, 4];
         // Keep the baseline compact and add higher workspaces only while they exist.
@@ -40,12 +43,14 @@ PanelWindow {
         const result = [];
         for (let i = 0; i < workspaces.count; i++)
             result.push(workspaces.itemAt(i));
+        result.push(clockButton);
         result.push(statusButton);
         return result;
     }
     function release() {
         keyboardActive = false;
         center.visible = false;
+        calendarPanel.visible = false;
     }
     function stepFocus(direction) {
         const items = controls();
@@ -67,6 +72,8 @@ PanelWindow {
             focusDelay.stop();
             if (center)
                 center.visible = false;
+            if (calendarPanel)
+                calendarPanel.visible = false;
         }
     }
 
@@ -123,7 +130,6 @@ PanelWindow {
         border.color: Luna.Theme.muted
         border.width: Luna.Theme.borderWidth
         color: Luna.Theme.background
-        opacity: Luna.Theme.barOpacity
         radius: Math.min(Luna.Theme.barRounding, width / 2, height / 2)
     }
     RowLayout {
@@ -178,19 +184,34 @@ PanelWindow {
         }
     }
 
-    // This label deliberately has no mouse handler or keyboard action.
     SystemClock {
         id: clock
 
         precision: SystemClock.Minutes
     }
-    Label {
-        font.family: Luna.Theme.uiFont
+    Button {
+        id: clockButton
         anchors.centerIn: parent
-        color: Luna.Theme.brightForeground
-        font.pixelSize: 13
-        font.weight: Font.Medium
-        text: Qt.formatDateTime(clock.date, "ddd, MMM d  ·  HH:mm")
+        Accessible.name: "Open calendar"
+        focusPolicy: Qt.StrongFocus
+        implicitHeight: Luna.Theme.barHeight - 4
+        implicitWidth: contentItem.implicitWidth + 16
+        background: Rectangle {
+            color: "transparent"
+            border.width: clockButton.visualFocus ? 1 : 0
+            border.color: Luna.Theme.accent
+            radius: Luna.Theme.barRounding
+        }
+        contentItem: Label {
+            color: Luna.Theme.brightForeground
+            font.family: Luna.Theme.uiFont
+            font.pixelSize: 13
+            font.weight: Font.Medium
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
+            text: Qt.formatDateTime(clock.date, bar.clockConfig.format)
+        }
+        onClicked: bar.controller.toggleCalendar(bar)
     }
     Button {
         id: statusButton
@@ -245,6 +266,13 @@ PanelWindow {
     ControlCenter {
         id: center
 
+        screen: bar.screen
+        topOffset: bar.implicitHeight + bar.margins.top
+    }
+    CalendarPopover {
+        id: calendarPanel
+        config: bar.clockConfig
+        currentDate: clock.date
         screen: bar.screen
         topOffset: bar.implicitHeight + bar.margins.top
     }

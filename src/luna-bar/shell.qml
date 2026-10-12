@@ -31,6 +31,14 @@ ShellRoot {
         if (!wasOpen)
             bar.controlCenter.open();
     }
+    function toggleCalendar(bar) {
+        if (!bar.visible)
+            return;
+        const wasOpen = bar.calendar.visible;
+        release();
+        if (!wasOpen)
+            bar.calendar.open();
+    }
 
     // Keyboard shortcuts use scoped IPC rather than trying to focus a layer by title.
     IpcHandler {
@@ -61,6 +69,7 @@ ShellRoot {
 
             controller: shell
             workspaceConfig: shell.config.workspaces
+            clockConfig: shell.config.clock
             screen: modelData
         }
     }

@@ -15,7 +15,7 @@ Requires a Hyprland Wayland session and Quickshell 0.3.2 or newer. Each monitor 
 ## Layout
 
 - Left: four workspace slots by default, with higher workspaces added while they exist or are active. Inactive workspaces are uniformly muted dots; the current workspace shows its configured icon or an accent-colored number (1–9, 0) without a filled background.
-- Center: date and clock. Clicking it does nothing.
+- Center: system-local date and clock. Click to open the Gregorian calendar and configured world clocks.
 - Right: network, audio, battery, and a control center button.
 
 The control center changes Wi-Fi and Bluetooth radio state, mute, volume, and backlight brightness. It shows the active network name and battery percentage. Missing hardware disables or hides its controls. Wi-Fi connection selection and Bluetooth pairing are not part of this first version.
@@ -67,6 +67,31 @@ Individual workspaces can override their active indicator with an icon. The ship
 
 SVG paths are relative to the folder containing `bar.json`; absolute paths and `~/` paths also work. Use local SVG files. Icons are tinted with the theme's accent for the active workspace and muted foreground for inactive workspaces. If an SVG cannot render, its workspace number is shown instead. Invalid JSON, unsupported fields, and missing SVG files fail before stopping the running bar. The stop command still works with invalid preferences.
 
+## Calendar and clocks
+
+The center clock uses the system's local timezone. Its popover contains a Gregorian month grid and world clocks, with no settings controls or shortcut hints. Previous/next arrows change months; clicking the month title returns to today. Press Escape or press any mouse button outside to close. It also closes when switching workspaces, entering fullscreen, or opening another panel.
+
+Configure it in `bar.json`:
+
+```json
+{
+    "clock": {
+        "use_24_hour": "system",
+        "week_start": 1,
+        "world_clocks": [
+            { "label": "US Eastern", "timezone": "America/New_York" },
+            { "label": "US Central", "timezone": "America/Chicago" }
+        ]
+    }
+}
+```
+
+`week_start` is `1` for Monday (default) or `0` for Sunday. World clocks appear in configured order; use an empty list to hide them. Each timezone must exist in the system's IANA timezone database. Times and local dates update every minute while the popover is open; DST and fractional offsets are handled by the system. The default world clocks are US Eastern (New York) and US Central (Chicago). US zones automatically follow standard/daylight time.
+
+`use_24_hour` defaults to `"system"`, reading the desktop GSettings `org.gnome.desktop.interface clock-format` preference on bar startup/reload. Set it to `true` or `false` to override with 24-hour or 12-hour time. This applies to both the primary and world clocks.
+
+The bar shows time first, for example `19:40 · Mon, 12 Oct` or `7:40 PM · Mon, 12 Oct`. An optional `clock.format` uses Qt date/time formatting for the bar text, overriding the default format derived from `use_24_hour`. For example, `"ddd · HH:mm"`. The popover uses `use_24_hour` for its clocks. Reload the bar after changing configuration.
+
 ## Keyboard
 
 | Keys | Action |
@@ -85,7 +110,7 @@ The bar hides on monitors whose active workspace has a fullscreen window, releas
 
 ## Theme
 
-Colors and the UI font come from the resolved theme JSON. The bar and control center use `general.border_size`; keyboard focus indicators remain visible independently. Rounding and background opacity follow `decoration.rounding` and `decoration.active_opacity` in the theme's `hyprland.lua`, inheriting shared Tokyo Night defaults when omitted. Rounding also applies to buttons and sliders, capped to fit each control. Popup translucency affects its background only; text and icons stay opaque. Height stays at 32 pixels. Top and side margins follow `general.gaps_out`; the control center aligns to the same outer gap. Personal Hyprland overrides do not affect the bar; see [theme exports](../../themes/README.md).
+Colors and the UI font come from the resolved theme JSON. The bar and control center use `general.border_size`; keyboard focus indicators remain visible independently. Rounding follows `decoration.rounding` from the resolved theme, inheriting shared Tokyo Night defaults when omitted. Rounding also applies to buttons and sliders, capped to fit each control. The bar and control center draw opaque backgrounds. Background blur and translucency are left to Hyprland; the UI does not apply these effects. Height stays at 32 pixels. Top and side margins follow `general.gaps_out`; the control center aligns to the same outer gap. Theme values are read from JSON, while compositor effects are controlled by Hyprland; see [theme exports](../../themes/README.md).
 
 Theme values load from the shared generated `theme.json` once per launch. After editing a theme, run `luna theme set <name>` to regenerate it, then `luna bar reload`. No theme file watcher is used. Device status updates independently through Quickshell's native services. Brightness is read at startup and when the panel opens or a change completes.
 

@@ -30,5 +30,19 @@
                 "size": 14
             }
         }
+    },
+    "clock": {
+        "use_24_hour": "system",
+        "week_start": 1,
+        "world_clocks": [
+            {
+                "label": "US Eastern",
+                "timezone": "America/New_York"
+            },
+            {
+                "label": "US Central",
+                "timezone": "America/Chicago"
+            }
+        ]
     }
 }

@@ -13,7 +13,6 @@ QtObject {
     readonly property string uiFont: snapshot.fonts.ui
     readonly property color selectionForeground: colors.selection_foreground
     readonly property int barHeight: 32
-    readonly property real barOpacity: decoration.active_opacity
     readonly property int barRounding: decoration.rounding
     readonly property color brightForeground: colors.bright_foreground
     readonly property var colors: snapshot.colors

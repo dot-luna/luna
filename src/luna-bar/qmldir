@@ -1,3 +1,4 @@
 singleton Desktop 1.0 Desktop.qml
 Bar 1.0 Bar.qml
 ControlCenter 1.0 ControlCenter.qml
+CalendarPopover 1.0 CalendarPopover.qml

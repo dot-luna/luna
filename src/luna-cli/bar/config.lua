@@ -30,7 +30,7 @@ return function(common, root)
         end
         local config = read(path)
         local defaults = read(root .. "/src/luna-bar/config.json")
-        fields(config, { workspaces = true }, "bar")
+        fields(config, { workspaces = true, clock = true }, "bar")
         local workspaces = config.workspaces or {}
         fields(workspaces, { active = true, inactive = true, overrides = true }, "workspaces")
         local result = { workspaces = {} }
@@ -87,6 +87,42 @@ return function(common, root)
             assert(type(key) == "string" and key:match("^[0-9]$"), "Workspace override keys use 1–9 and 0")
             result.workspaces.overrides[key] = indicator_config(value, defaults.workspaces.active, "workspace " .. key)
         end
+        local clock = config.clock == nil and {} or config.clock
+        fields(clock, { format = true, use_24_hour = true, week_start = true, world_clocks = true }, "clock")
+        local use_24_hour = clock.use_24_hour
+        if use_24_hour == nil then
+            use_24_hour = defaults.clock.use_24_hour
+        end
+        assert(type(use_24_hour) == "boolean" or use_24_hour == "system",
+            "clock.use_24_hour must be true, false, or system")
+        if use_24_hour == "system" then
+            local preference, ok = common.capture({ "gsettings", "get", "org.gnome.desktop.interface", "clock-format" }, true)
+            local format = preference:match("'(.-)'")
+            assert(ok and (format == "12h" or format == "24h"), "Cannot read the system clock-format preference")
+            use_24_hour = format == "24h"
+        end
+        local week_start = clock.week_start == nil and defaults.clock.week_start or clock.week_start
+        assert(week_start == 0 or week_start == 1, "clock.week_start must be 0 (Sunday) or 1 (Monday)")
+        local format = clock.format or (use_24_hour and "HH:mm · ddd, d MMM" or "h:mm AP · ddd, d MMM")
+        assert(type(format) == "string" and format ~= "" and not format:find("[%c]"), "Invalid clock format")
+        local cities = clock.world_clocks == nil and defaults.clock.world_clocks or clock.world_clocks
+        assert(type(cities) == "table", "clock.world_clocks must be a list")
+        local count = 0
+        for index, city in pairs(cities) do
+            assert(type(index) == "number" and index > 0 and index % 1 == 0, "World clocks must be a list")
+            fields(city, { label = true, timezone = true }, "world clock")
+            assert(type(city.label) == "string" and city.label ~= "" and not city.label:find("[%c]"), "Invalid world clock label")
+            local zone = city.timezone
+            assert(type(zone) == "string" and zone:match("^[%w_+/-]+$") and zone:sub(1, 1) ~= "/",
+                "World clocks require an IANA timezone")
+            local zonefile = assert(io.open("/usr/share/zoneinfo/" .. zone, "rb"), "Unknown timezone: " .. zone)
+            local magic = zonefile:read(4)
+            zonefile:close()
+            assert(magic == "TZif", "Invalid timezone: " .. zone)
+            count = count + 1
+        end
+        assert(count == #cities, "World clocks must be a contiguous list")
+        result.clock = { format = format, use_24_hour = use_24_hour, week_start = week_start, world_clocks = cities }
         return json.encode(result)
     end
 

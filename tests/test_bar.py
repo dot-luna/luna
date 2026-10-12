@@ -41,6 +41,9 @@ else:
     running.touch()
 ''')
         mock.chmod(0o755)
+        gsettings = tools / 'gsettings'
+        gsettings.write_text("#!/bin/sh\nprintf \"'24h'\\n\"\n")
+        gsettings.chmod(0o755)
 
     def cli(self, *args, ok=True):
         result = subprocess.run([str(REPO / 'bin/luna'), 'bar', *args], env=self.env,
@@ -152,6 +155,40 @@ file:close()
             self.assertTrue((self.root / 'running').exists())
         self.cli('stop')
         self.assertFalse((self.root / 'running').exists())
+
+    def test_clock_configuration(self):
+        self.cli()
+        config = self.root / 'config/luna/bar.json'
+        preferences = {'clock': {'use_24_hour': False, 'week_start': 0,
+                                 'world_clocks': [{'label': 'Kathmandu', 'timezone': 'Asia/Kathmandu'}]}}
+        config.write_text(json.dumps(preferences))
+        self.cli('reload')
+        launch = next(call for call in reversed(self.commands()) if call['args'][0] == '-p')
+        clock = json.loads(launch['bar'])['clock']
+        self.assertFalse(clock['use_24_hour'])
+        self.assertEqual(clock['week_start'], 0)
+        self.assertIn('AP', clock['format'])
+        self.assertEqual(clock['world_clocks'], preferences['clock']['world_clocks'])
+        count = len(self.commands())
+        preferences['clock']['world_clocks'][0]['timezone'] = 'Invalid/Zone'
+        config.write_text(json.dumps(preferences))
+        self.cli('reload', ok=False)
+        self.assertEqual(len(self.commands()), count)
+        config.write_text('{"clock":{"world_clocks":[]}}')
+        self.cli('reload')
+        launch = next(call for call in reversed(self.commands()) if call['args'][0] == '-p')
+        self.assertEqual(json.loads(launch['bar'])['clock']['world_clocks'], [])
+
+    def test_system_clock_format(self):
+        gsettings = self.root / 'bin/gsettings'
+        for preference, expected in [('12h', False), ('24h', True)]:
+            gsettings.write_text("#!/bin/sh\nprintf \"'%s'\\n\"\n" % preference)
+            self.cli('reload')
+            launch = next(call for call in reversed(self.commands()) if call['args'][0] == '-p')
+            clock = json.loads(launch['bar'])['clock']
+            self.assertEqual(clock['use_24_hour'], expected)
+            self.assertEqual('AP' in clock['format'], not expected)
+            self.assertNotIn('Europe/London', [city['timezone'] for city in clock['world_clocks']])
 
     def test_invalid_theme_preserves_running_bar(self):
         theme = self.selected_theme()

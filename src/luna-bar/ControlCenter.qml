@@ -80,8 +80,7 @@ PanelWindow {
         anchors.topMargin: panel.topOffset + Luna.Theme.outerGap
         border.color: Luna.Theme.muted
         border.width: Luna.Theme.borderWidth
-        // Keep content opaque while the card background follows theme translucency.
-        color: Qt.rgba(Luna.Theme.background.r, Luna.Theme.background.g, Luna.Theme.background.b, Luna.Theme.barOpacity)
+        color: Luna.Theme.background
         height: body.implicitHeight + 36
         radius: Math.min(Luna.Theme.barRounding, width / 2, height / 2)
         width: Math.min(380, panel.width - 2 * Luna.Theme.outerGap)
