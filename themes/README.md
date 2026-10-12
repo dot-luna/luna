@@ -9,6 +9,7 @@ my-theme/
 ├── colors.lua      Required
 ├── hyprland.lua    Optional
 ├── fonts.lua       Optional
+├── bar.lua         Optional
 └── wallpaper.lua   Optional
 ```
 
@@ -17,6 +18,7 @@ my-theme/
 | `colors.lua` | Shared colors and light/dark mode | Values consumed by applications |
 | `hyprland.lua` | Compositor appearance | Values applied to Hyprland |
 | `fonts.lua` | Font families and default text sizes | Fonts must be installed manually |
+| `bar.lua` | Bar height, rounding, and background opacity | Read when Luna Bar starts or reloads |
 | `wallpaper.lua` | Local images, directories, and public image URLs | Images will be imported or downloaded automatically |
 
 `luna theme install /path/to/my-theme` validates and copies a theme, importing its wallpapers automatically. `luna theme set my-theme` saves the selection and applies its light/dark system preference. Luna's [Hyprland config](../config/hypr/README.md) reads the selected theme at startup or on a manual reload, using Lua directly. See the [theme CLI guide](../src/luna-cli/theme/README.md).
@@ -26,7 +28,7 @@ my-theme/
 - Return tables containing values; do not run commands or modify files.
 - Only the 14 base fields in `colors.lua` are required. All other documented fields are optional.
 - Keep names consistent across themes. Different roles can share the same value.
-- Omit optional files or fields your theme does not supply; no automatic fallback values are implemented yet.
+- Omit optional files or fields your theme does not supply. Luna Bar supplies the defaults documented below.
 - Exports are evaluated without process or filesystem APIs and must return declarative tables.
 - Font names select preferences, not packages. Install the fonts yourself, for example with `luna font install`.
 
@@ -249,3 +251,23 @@ luac -p /path/to/my-theme/wallpaper.lua
 ```
 
 Run checks only for the files your theme supplies.
+
+## bar.lua
+
+These values affect Luna Bar independently of Hyprland window appearance. All fields are optional.
+
+```lua
+return {
+    height = 32,
+    rounding = 0,
+    opacity = 1,
+}
+```
+
+| Field | Values | Default |
+| --- | --- | --- |
+| `height` | Integer pixels, 24–64 | `32` |
+| `rounding` | Integer pixels, 0–32 | `0` |
+| `opacity` | Background opacity, 0.1–1; text stays opaque | `1` |
+
+Luna Bar consumes the base colors from `colors.lua`. The launcher loads and validates the selected theme, then passes an in-memory snapshot to Quickshell. No generated file or theme watcher is used. Run `luna bar reload` after selecting or updating a theme. With no selected theme, the bar uses bundled Tokyo Night colors.

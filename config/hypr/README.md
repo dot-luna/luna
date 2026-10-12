@@ -39,6 +39,8 @@ The entry point supplies theme appearance and the shortcuts below. Put personal 
 | Super + W | Close the active window |
 | Super + 1–9 | Switch to workspace 1–9 |
 | Super + 0 | Switch to workspace 10 |
+| Super + Ctrl + B | Focus Luna Bar |
+| Super + Ctrl + Space | Toggle the control center |
 
 ## Theme behavior
 

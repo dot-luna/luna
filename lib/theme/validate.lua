@@ -91,6 +91,14 @@ return function()
             settings(exports.hyprland, rules, "")
         end
         exports.fonts = read(directory, "fonts")
+        exports.bar = read(directory, "bar")
+        if exports.bar then
+            settings(exports.bar, {
+                height = { 24, 64, true },
+                rounding = { 0, 32, true },
+                opacity = { 0.1, 1 },
+            }, "bar.")
+        end
         for key, value in pairs(exports.fonts or {}) do
             if key == "size" or key == "mono_size" then
                 number(value, 0.01, math.huge, false, key)

@@ -5,4 +5,9 @@ return function(root)
     theme.apply()
 
     dofile(root .. "/default/hypr/bindings.lua")
+
+    -- Use the checkout launcher so bar shortcuts also work before bin is on PATH.
+    local launcher = "'" .. (root .. "/bin/luna"):gsub("'", "'\\''") .. "'"
+    hl.bind("SUPER + CTRL + B", hl.dsp.exec_cmd(launcher .. " bar focus"))
+    hl.bind("SUPER + CTRL + Space", hl.dsp.exec_cmd(launcher .. " bar controls"))
 end

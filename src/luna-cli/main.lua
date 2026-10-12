@@ -17,13 +17,16 @@ local themes = dofile(source_dir .. "/theme/init.lua")(common, source_dir .. "/t
 local theme_parser = themes.register(parser)
 local settings = dofile(source_dir .. "/settings/init.lua")(common, source_dir .. "/settings")
 settings.register(parser)
+local bar = dofile(source_dir .. "/bar/init.lua")(common, source_dir .. "/bar")
+bar.register(parser)
 local options = parser:parse()
 
 -- Bare entry points show help rather than performing any system operation.
-if options.settings then
-    local ok, message = pcall(settings.run)
+if options.settings or options.bar then
+    local handler = options.settings and settings or bar
+    local ok, message = pcall(handler.run, options)
     if not ok then
-        common.error("Settings command failed: " .. tostring(message))
+        common.error((options.settings and "Settings" or "Bar") .. " command failed: " .. tostring(message))
         os.exit(1)
     end
 elseif not options.font and not options.wallpaper and not options.theme then
