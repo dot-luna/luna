@@ -179,6 +179,21 @@ file:close()
         launch = next(call for call in reversed(self.commands()) if call['args'][0] == '-p')
         self.assertEqual(json.loads(launch['bar'])['clock']['world_clocks'], [])
 
+    def test_secondary_calendar_configuration(self):
+        self.cli()
+        config = self.root / 'config/luna/bar.json'
+        launch = next(call for call in reversed(self.commands()) if call['args'][0] == '-p')
+        self.assertEqual(json.loads(launch['bar'])['clock']['secondary_calendar'], 'bs')
+        config.write_text('{"clock":{"secondary_calendar":"none"}}')
+        self.cli('reload')
+        launch = next(call for call in reversed(self.commands()) if call['args'][0] == '-p')
+        self.assertEqual(json.loads(launch['bar'])['clock']['secondary_calendar'], 'none')
+        for invalid in ('unknown', False, []):
+            config.write_text(json.dumps({'clock': {'secondary_calendar': invalid}}))
+            count = len(self.commands())
+            self.cli('reload', ok=False)
+            self.assertEqual(len(self.commands()), count)
+
     def test_system_clock_format(self):
         gsettings = self.root / 'bin/gsettings'
         for preference, expected in [('12h', False), ('24h', True)]:

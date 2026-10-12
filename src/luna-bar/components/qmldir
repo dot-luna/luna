@@ -2,3 +2,6 @@ ActionButton 1.0 ActionButton.qml
 LevelSlider 1.0 LevelSlider.qml
 WorkspaceIndicator 1.0 WorkspaceIndicator.qml
 WorldClock 1.0 WorldClock.qml
+
+ControlTile 1.0 ControlTile.qml
+ControlLabel 1.0 ControlLabel.qml

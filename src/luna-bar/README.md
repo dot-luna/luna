@@ -16,9 +16,16 @@ Requires a Hyprland Wayland session and Quickshell 0.3.2 or newer. Each monitor 
 
 - Left: four workspace slots by default, with higher workspaces added while they exist or are active. Inactive workspaces are uniformly muted dots; the current workspace shows its configured icon or an accent-colored number (1–9, 0) without a filled background.
 - Center: system-local date and clock. Click to open the Gregorian calendar and configured world clocks.
-- Right: network, audio, battery, and a control center button.
+- Right: a grouped control-center trigger. Sound and power are always present (AC power uses a plug); Wi-Fi and Bluetooth appear when enabled. Icons reflect Wi-Fi signal strength, volume/mute, Bluetooth connections, and battery level/charging.
 
-The control center changes Wi-Fi and Bluetooth radio state, mute, volume, and backlight brightness. It shows the active network name and battery percentage. Missing hardware disables or hides its controls. Wi-Fi connection selection and Bluetooth pairing are not part of this first version.
+The 320px-wide control center uses a compact two-column tile grid with 44px-high tiles, 14px control icons (12px Bluetooth), 12px chevrons, and slim sliders. Its split Wi-Fi/Bluetooth tiles work as follows: the main button toggles the radio, and the chevron opens its detail screen. Sound has a mute tile and device-picker chevron; volume and supported brightness sliders sit beneath the grid. Power stays visible and opens battery details. Icons and highlights convey enabled/connected states, while text is reserved for names and useful values. The bar trigger has no dropdown arrow. There are no shortcut hints, settings redirects, or redundant headings on the main screen.
+
+- Wi-Fi details list nearby networks with signal icons and connected state. Select a connected network to disconnect, a saved/open network to connect, or enter a password for WPA/WPA2 personal and WPA3 SAE. Enterprise and legacy networks need a previously configured NetworkManager profile. Password fields are cleared when leaving the page.
+- Bluetooth details support radio control, connecting/disconnecting paired devices, battery levels when reported, discovery, and pairing/canceling nearby devices. PIN/passkey confirmation still relies on a system BlueZ pairing agent; Luna does not implement that agent. Scans started by the panel stop when leaving it.
+- Sound details select PipeWire output/input devices and control volume and microphone mute/level.
+- Power details show battery charge, charging state, remaining time when reported, and available power profiles. Profile controls require a working `powerprofilesctl` and power-profiles service.
+
+Detail screens share the same panel, support Back, and scroll to fit the monitor. Tab/Shift+Tab and Up/Down navigate available controls; Enter/Space activates buttons, and Left/Right adjusts sliders. Escape or Alt+Left returns from details (restoring focus to the original chevron); Escape on the main screen or any outside mouse press closes the panel. Hardware controls hide or disable as devices appear/disappear.
 
 ## Workspace indicators
 
@@ -78,6 +85,7 @@ Configure it in `bar.json`:
     "clock": {
         "use_24_hour": "system",
         "week_start": 1,
+        "secondary_calendar": "bs",
         "world_clocks": [
             { "label": "US Eastern", "timezone": "America/New_York" },
             { "label": "US Central", "timezone": "America/Chicago" }
@@ -85,6 +93,8 @@ Configure it in `bar.json`:
     }
 }
 ```
+
+`secondary_calendar` defaults to `"bs"`: the main calendar and bar date remain Gregorian (AD), with a smaller Bikram Sambat day below each grid date and a full BS date below the popup's current date. Hover a day for its full BS date. Set `"none"` to hide these labels. Only BS is currently supported as a secondary calendar. Conversion uses the system-local civil date, matching the AD date, and works offline. The bundled [medic/bikram-sambat](https://github.com/medic/bikram-sambat/tree/aeaa7b88332384bddeea98c2445308d437966641) month table covers BS 1970–2090; outside that range, secondary labels are hidden while AD navigation continues normally. The adapted converter and Apache-2.0 license are in `calendars/`.
 
 `week_start` is `1` for Monday (default) or `0` for Sunday. World clocks appear in configured order; use an empty list to hide them. Each timezone must exist in the system's IANA timezone database. Times and local dates update every minute while the popover is open; DST and fractional offsets are handled by the system. The default world clocks are US Eastern (New York) and US Central (Chicago). US zones automatically follow standard/daylight time.
 
@@ -102,7 +112,7 @@ The bar shows time first, for example `19:40 · Mon, 12 Oct` or `7:40 PM · Mon,
 | Left / Right on bar | Focus previous / next workspace or control-center button |
 | Enter / Space on a button | Activate |
 | Arrow keys on a slider | Adjust volume or brightness |
-| Escape | Dismiss the panel or return focus to the desktop |
+| Escape / Alt + Left | Go back within the control center; Escape on its main screen closes it |
 
 The bar does not take keyboard focus during ordinary use. Clicking outside the control center dismisses it. The keyboard shortcuts use the monitor currently focused by Hyprland.
 

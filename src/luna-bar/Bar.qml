@@ -20,7 +20,10 @@ PanelWindow {
     property bool keyboardActive: false
     readonly property var monitor: Hyprland.monitors.values.find(item => item.name === screen.name)
     readonly property bool fullscreenActive: !!(monitor && monitor.activeWorkspace && monitor.activeWorkspace.hasFullscreen)
-    onActiveWorkspaceChanged: if (calendarPanel) calendarPanel.dismiss()
+    onActiveWorkspaceChanged: {
+        if (calendarPanel) calendarPanel.dismiss();
+        if (center) center.dismiss();
+    }
     readonly property var workspaceIds: {
         const ids = [1, 2, 3, 4];
         // Keep the baseline compact and add higher workspaces only while they exist.
@@ -213,6 +216,27 @@ PanelWindow {
         }
         onClicked: bar.controller.toggleCalendar(bar)
     }
+    // Fixed slots prevent layout stretching; glyph sizes balance Lucide's differing shapes.
+    component TriggerIcon: Item {
+        required property string symbol
+        property int glyphSize: 16
+        property int opticalOffset: 0
+        Layout.minimumWidth: 18
+        Layout.maximumWidth: 18
+        Layout.preferredWidth: 18
+        Layout.minimumHeight: 20
+        Layout.maximumHeight: 20
+        Layout.preferredHeight: 20
+        Layout.alignment: Qt.AlignVCenter
+
+        Luna.Icon {
+            anchors.centerIn: parent
+            anchors.verticalCenterOffset: parent.opticalOffset
+            width: parent.glyphSize
+            height: parent.glyphSize
+            name: parent.symbol
+        }
+    }
     Button {
         id: statusButton
 
@@ -222,7 +246,11 @@ PanelWindow {
         anchors.verticalCenter: parent.verticalCenter
         focusPolicy: Qt.StrongFocus
         implicitHeight: Luna.Theme.barHeight - 4
-        implicitWidth: statuses.implicitWidth + 18
+        implicitWidth: statuses.implicitWidth + 16
+        leftPadding: 8
+        rightPadding: 8
+        topPadding: 0
+        bottomPadding: 0
 
         background: Rectangle {
             border.color: Luna.Theme.brightForeground
@@ -233,29 +261,36 @@ PanelWindow {
         contentItem: RowLayout {
             id: statuses
 
-            spacing: 12
+            spacing: 7
 
-            Luna.Icon {
-                name: Desktop.wifiEnabled ? "wifi" : "wifi-off"
+            TriggerIcon {
+                symbol: Desktop.wifiIcon
+                opticalOffset: -1
+                visible: Desktop.wifiAvailable && Desktop.wifiEnabled
             }
-            Luna.Icon {
-                name: Desktop.muted ? "volume-x" : "volume-2"
+            TriggerIcon {
+                symbol: Desktop.bluetoothIcon
+                glyphSize: 13
+                visible: Desktop.bluetoothEnabled
             }
-            Luna.Icon {
-                name: "battery"
-                visible: Desktop.hasBattery
+            TriggerIcon {
+                symbol: Desktop.volumeIcon
             }
-            Label {
-                font.family: Luna.Theme.uiFont
-                color: Luna.Theme.foreground
-                font.pixelSize: 12
-                text: Desktop.batteryText
-                visible: Desktop.hasBattery
-            }
-            Luna.Icon {
-                implicitHeight: 14
-                implicitWidth: 14
-                name: "chevron-down"
+            RowLayout {
+                Layout.alignment: Qt.AlignVCenter
+                spacing: 4
+                TriggerIcon {
+                    symbol: Desktop.batteryIcon
+                    glyphSize: 18
+                }
+                Label {
+                    Layout.alignment: Qt.AlignVCenter
+                    font.family: Luna.Theme.uiFont
+                    color: Luna.Theme.foreground
+                    font.pixelSize: 11
+                    text: Desktop.batteryText
+                    visible: Desktop.hasBattery
+                }
             }
         }
 

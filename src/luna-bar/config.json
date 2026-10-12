@@ -34,6 +34,7 @@
     "clock": {
         "use_24_hour": "system",
         "week_start": 1,
+        "secondary_calendar": "bs",
         "world_clocks": [
             {
                 "label": "US Eastern",

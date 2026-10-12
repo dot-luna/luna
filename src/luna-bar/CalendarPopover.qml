@@ -7,6 +7,7 @@ import Quickshell.Wayland
 import Luna as Luna
 import "components"
 import "Calendar.js" as Calendar
+import "calendars/BikramSambat.js" as BikramSambat
 
 PanelWindow {
     id: panel
@@ -18,6 +19,10 @@ PanelWindow {
     property int displayedMonth: currentDate.getMonth()
     property date selectedDate: currentDate
     readonly property var cells: Calendar.monthDays(displayedYear, displayedMonth, config.week_start)
+
+    function secondaryDate(date) {
+        return config.secondary_calendar === "bs" ? BikramSambat.format(date) : "";
+    }
 
     function today() {
         displayedYear = currentDate.getFullYear();
@@ -133,6 +138,16 @@ PanelWindow {
                         font.family: Luna.Theme.uiFont
                         font.pixelSize: 12
                     }
+                    Label {
+                        Layout.fillWidth: true
+                        text: panel.secondaryDate(panel.currentDate)
+                        visible: text.length > 0
+                        elide: Text.ElideRight
+                        color: Luna.Theme.foreground
+                        opacity: 0.65
+                        font.family: Luna.Theme.uiFont
+                        font.pixelSize: 11
+                    }
                 }
                 RowLayout {
                     Layout.fillWidth: true
@@ -181,24 +196,41 @@ PanelWindow {
                             readonly property bool selected: Calendar.sameDay(modelData, panel.selectedDate)
                             Layout.fillWidth: true
                             Layout.preferredWidth: 1
-                            implicitHeight: 32
+                            readonly property var secondary: panel.config.secondary_calendar === "bs"
+                                ? BikramSambat.fromDate(modelData) : null
+                            implicitHeight: panel.config.secondary_calendar === "bs" ? 42 : 32
                             focusPolicy: Qt.StrongFocus
-                            Accessible.name: Qt.formatDateTime(modelData, "dddd, MMMM d, yyyy")
+                            Accessible.name: Qt.formatDateTime(modelData, "dddd, MMMM d, yyyy") + " " + panel.secondaryDate(modelData)
                             background: Rectangle {
                                 color: day.isToday ? Luna.Theme.accent : day.hovered ? Luna.Theme.selection : "transparent"
                                 border.color: Luna.Theme.accent
                                 border.width: (day.selected && !day.isToday) || day.visualFocus ? 1 : 0
                                 radius: Math.min(Luna.Theme.barRounding, width / 2, height / 2)
                             }
-                            contentItem: Label {
-                                text: day.modelData.getDate()
-                                color: day.isToday ? Luna.Theme.accentForeground : day.hovered ? Luna.Theme.selectionForeground : Luna.Theme.foreground
+                            contentItem: ColumnLayout {
+                                spacing: 0
                                 opacity: day.modelData.getMonth() === panel.displayedMonth ? 1 : 0.4
-                                font.family: Luna.Theme.uiFont
-                                font.pixelSize: 12
-                                horizontalAlignment: Text.AlignHCenter
-                                verticalAlignment: Text.AlignVCenter
+                                Label {
+                                    Layout.fillWidth: true
+                                    text: day.modelData.getDate()
+                                    color: day.isToday ? Luna.Theme.accentForeground : day.hovered ? Luna.Theme.selectionForeground : Luna.Theme.foreground
+                                    font.family: Luna.Theme.uiFont
+                                    font.pixelSize: 12
+                                    horizontalAlignment: Text.AlignHCenter
+                                }
+                                Label {
+                                    Layout.fillWidth: true
+                                    visible: day.secondary !== null
+                                    text: day.secondary ? day.secondary.day : ""
+                                    color: day.isToday ? Luna.Theme.accentForeground : day.hovered ? Luna.Theme.selectionForeground : Luna.Theme.foreground
+                                    opacity: 0.65
+                                    font.family: Luna.Theme.uiFont
+                                    font.pixelSize: 9
+                                    horizontalAlignment: Text.AlignHCenter
+                                }
                             }
+                            ToolTip.visible: hovered && secondary !== null
+                            ToolTip.text: panel.secondaryDate(modelData)
                             onClicked: panel.selectedDate = modelData
                         }
                     }

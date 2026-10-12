@@ -88,7 +88,7 @@ return function(common, root)
             result.workspaces.overrides[key] = indicator_config(value, defaults.workspaces.active, "workspace " .. key)
         end
         local clock = config.clock == nil and {} or config.clock
-        fields(clock, { format = true, use_24_hour = true, week_start = true, world_clocks = true }, "clock")
+        fields(clock, { format = true, use_24_hour = true, week_start = true, secondary_calendar = true, world_clocks = true }, "clock")
         local use_24_hour = clock.use_24_hour
         if use_24_hour == nil then
             use_24_hour = defaults.clock.use_24_hour
@@ -103,6 +103,12 @@ return function(common, root)
         end
         local week_start = clock.week_start == nil and defaults.clock.week_start or clock.week_start
         assert(week_start == 0 or week_start == 1, "clock.week_start must be 0 (Sunday) or 1 (Monday)")
+        local secondary_calendar = clock.secondary_calendar
+        if secondary_calendar == nil then
+            secondary_calendar = defaults.clock.secondary_calendar
+        end
+        assert(secondary_calendar == "none" or secondary_calendar == "bs",
+            "clock.secondary_calendar must be none or bs")
         local format = clock.format or (use_24_hour and "HH:mm · ddd, d MMM" or "h:mm AP · ddd, d MMM")
         assert(type(format) == "string" and format ~= "" and not format:find("[%c]"), "Invalid clock format")
         local cities = clock.world_clocks == nil and defaults.clock.world_clocks or clock.world_clocks
@@ -122,7 +128,8 @@ return function(common, root)
             count = count + 1
         end
         assert(count == #cities, "World clocks must be a contiguous list")
-        result.clock = { format = format, use_24_hour = use_24_hour, week_start = week_start, world_clocks = cities }
+        result.clock = { format = format, use_24_hour = use_24_hour, week_start = week_start,
+            secondary_calendar = secondary_calendar, world_clocks = cities }
         return json.encode(result)
     end
 

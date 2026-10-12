@@ -6,12 +6,12 @@ Slider {
     id: slider
 
     focusPolicy: Qt.StrongFocus
-    implicitHeight: 34
+    implicitHeight: 30
     stepSize: 0.05
 
     background: Rectangle {
         color: Luna.Theme.muted
-        height: 6
+        height: 4
         radius: Math.min(Luna.Theme.barRounding, width / 2, height / 2)
         width: slider.availableWidth
         x: slider.leftPadding
@@ -28,9 +28,9 @@ Slider {
         border.color: Luna.Theme.brightForeground
         border.width: slider.visualFocus ? 3 : 0
         color: Luna.Theme.accent
-        height: 18
+        height: 12
         radius: Math.min(Luna.Theme.barRounding, width / 2, height / 2)
-        width: 18
+        width: 12
         x: slider.leftPadding + slider.visualPosition * (slider.availableWidth - width)
         y: (slider.height - height) / 2
     }

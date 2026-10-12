@@ -1,9 +1,27 @@
 import QtQuick
 import QtTest
 import "../../src/luna-bar/Calendar.js" as Calendar
+import "../../src/luna-bar/calendars/BikramSambat.js" as BS
 
 TestCase {
     name: "Calendar"
+
+    // Known AD/BS pairs from the pinned upstream conversion fixtures.
+    function test_bs_boundaries_and_leap_day() {
+        compare(BS.format(new Date(1913, 3, 13)), "1 Baisakh 1970 BS");
+        compare(BS.format(new Date(2024, 1, 29)), "17 Falgun 2080 BS");
+        compare(BS.format(new Date(2025, 3, 13)), "31 Chaitra 2081 BS");
+        compare(BS.format(new Date(2025, 3, 14)), "1 Baisakh 2082 BS");
+        compare(BS.format(new Date(2026, 3, 13)), "30 Chaitra 2082 BS");
+        compare(BS.format(new Date(2026, 3, 14)), "1 Baisakh 2083 BS");
+        compare(BS.format(new Date(2026, 9, 12)), "26 Ashwin 2083 BS");
+    }
+    function test_bs_local_day_and_unsupported_dates() {
+        compare(BS.format(new Date(2026, 3, 14, 0, 1)), BS.format(new Date(2026, 3, 14, 23, 59)));
+        compare(BS.fromDate(new Date(1913, 3, 12)), null);
+        compare(BS.fromDate(new Date(2040, 0, 1)), null);
+        compare(BS.format(new Date(NaN)), "");
+    }
 
     function test_leap_year_and_week_alignment() {
         const leap = Calendar.monthDays(2024, 1, 1);
