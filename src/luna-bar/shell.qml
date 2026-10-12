@@ -7,6 +7,8 @@ import Quickshell.Hyprland
 ShellRoot {
     id: shell
 
+    readonly property var config: JSON.parse(Quickshell.env("LUNA_BAR_CONFIG"))
+
     function focusBar() {
         const bar = focusedBar();
         release();
@@ -22,6 +24,8 @@ ShellRoot {
             bar.release();
     }
     function toggleControls(bar) {
+        if (!bar.visible)
+            return;
         const wasOpen = bar.controlCenter.visible;
         release();
         if (!wasOpen)
@@ -56,6 +60,7 @@ ShellRoot {
             required property var modelData
 
             controller: shell
+            workspaceConfig: shell.config.workspaces
             screen: modelData
         }
     }

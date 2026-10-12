@@ -29,7 +29,7 @@ import json, os, pathlib, sys
 root = pathlib.Path(os.environ['TEST_ROOT'])
 args = sys.argv[1:]
 with (root / 'commands').open('a') as out:
-    out.write(json.dumps({'args': args, 'theme': os.getenv('LUNA_UI_THEME')}) + '\\n')
+    out.write(json.dumps({'args': args, 'theme': os.getenv('LUNA_UI_THEME'), 'bar': os.getenv('LUNA_BAR_CONFIG')}) + '\\n')
 running = root / 'running'
 if args[0] == 'ipc':
     if not running.exists():
@@ -55,7 +55,7 @@ else:
         theme = self.root / 'data/luna/themes/custom'
         shutil.copytree(REPO / 'themes/bundled/tokyo-night', theme)
         selection = self.root / 'config/luna/theme'
-        selection.parent.mkdir(parents=True)
+        selection.parent.mkdir(parents=True, exist_ok=True)
         selection.write_text('custom\n')
         self.publish(theme)
         return theme
@@ -78,6 +78,8 @@ file:close()
         calls = self.commands()
         launch = next(call for call in calls if call['args'][0] == '-p')
         self.assertEqual(json.loads(launch['theme'])['colors']['accent'], '#7aa2f7')
+        self.assertEqual(Path(launch['args'][1]).resolve(), REPO / 'src/luna-bar')
+        self.assertTrue((Path(launch['args'][1]) / 'shell.qml').is_file())
         self.assertEqual(calls[-1]['args'][-1], 'focus')
         self.cli('controls')
         self.assertEqual(self.commands()[-1]['args'][-1], 'controls')
@@ -103,7 +105,53 @@ file:close()
         self.cli('stop')
         self.cli('stop')
         self.assertFalse((self.root / 'running').exists())
-        self.assertEqual({p.name for p in (self.root / 'config/luna').iterdir()}, {'theme', 'theme.json'})
+        self.assertEqual({p.name for p in (self.root / 'config/luna').iterdir()}, {'theme', 'theme.json', 'bar.json'})
+
+    def test_workspace_preferences_and_svg_paths(self):
+        self.cli()
+        config = self.root / 'config/luna/bar.json'
+        self.assertEqual(json.loads(config.read_text())['workspaces']['inactive'], {'type': 'dot', 'size': 5})
+        icon = config.parent / 'active #1.svg'
+        icon.write_text('<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12"><circle cx="6" cy="6" r="5"/></svg>')
+        preferences = {'workspaces': {'active': {'type': 'icon', 'path': icon.name},
+                                      'inactive': {'type': 'label', 'label': '◆ {number} 🌙'}}}
+        config.write_text(json.dumps(preferences))
+        self.cli('reload')
+        launch = next(call for call in reversed(self.commands()) if call['args'][0] == '-p')
+        result = json.loads(launch['bar'])['workspaces']
+        self.assertEqual(result['active']['source'], icon.as_uri())
+        self.assertEqual(result['active']['size'], 14)
+        self.assertEqual(result['inactive']['label'], '◆ {number} 🌙')
+        self.assertEqual(json.loads(config.read_text()), preferences)
+
+    def test_per_workspace_bundled_icons(self):
+        self.cli()
+        launch = next(call for call in self.commands() if call['args'][0] == '-p')
+        overrides = json.loads(launch['bar'])['workspaces']['overrides']
+        self.assertEqual(set(overrides), {'1', '2', '3', '0'})
+        for workspace, icon in {'1': 'code-xml', '2': 'terminal', '3': 'globe', '0': 'bot'}.items():
+            self.assertEqual(overrides[workspace]['source'], (REPO / 'src/qml/Luna/icons' / (icon + '.svg')).as_uri())
+        config = self.root / 'config/luna/bar.json'
+        config.write_text('{"workspaces":{"overrides":{"0":{"type":"icon","icon":"missing"}}}}')
+        count = len(self.commands())
+        self.cli('reload', ok=False)
+        self.assertEqual(len(self.commands()), count)
+        self.assertTrue((self.root / 'running').exists())
+
+    def test_invalid_preferences_preserve_bar(self):
+        self.cli()
+        count = len(self.commands())
+        config = self.root / 'config/luna/bar.json'
+        for invalid in ('not json', '{"workspaces":{"active":{"type":"unknown"}}}',
+                        '{"workspaces":{"inactive":{"type":"icon","path":"missing.svg"}}}',
+                        '{"workspaces":{"active":{"size":0}}}',
+                        '{"workspaces":{"active":{"type":"label"}}}'):
+            config.write_text(invalid)
+            self.cli('reload', ok=False)
+            self.assertEqual(len(self.commands()), count)
+            self.assertTrue((self.root / 'running').exists())
+        self.cli('stop')
+        self.assertFalse((self.root / 'running').exists())
 
     def test_invalid_theme_preserves_running_bar(self):
         theme = self.selected_theme()

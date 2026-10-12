@@ -19,19 +19,20 @@ Button {
         border.width: button.visualFocus ? 2 : 0
         color: button.selected ? Luna.Theme.accent : button.hovered ? Luna.Theme.selection : Luna.Theme.lighterBackground
         opacity: button.enabled ? 1 : 0.5
-        radius: 8
+        radius: Math.min(Luna.Theme.barRounding, width / 2, height / 2)
     }
     contentItem: RowLayout {
         spacing: 8
 
         Luna.Icon {
-            ink: button.selected ? Luna.Theme.accentForeground : Luna.Theme.foreground
+            ink: button.selected ? Luna.Theme.accentForeground : button.hovered ? Luna.Theme.selectionForeground : Luna.Theme.foreground
             name: button.symbol || "sliders-horizontal"
             visible: button.symbol !== ""
         }
         Label {
+            font.family: Luna.Theme.uiFont
             Layout.fillWidth: true
-            color: button.selected ? Luna.Theme.accentForeground : Luna.Theme.foreground
+            color: button.selected ? Luna.Theme.accentForeground : button.hovered ? Luna.Theme.selectionForeground : Luna.Theme.foreground
             elide: Text.ElideRight
             text: button.text
         }

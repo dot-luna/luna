@@ -12,7 +12,7 @@ Slider {
     background: Rectangle {
         color: Luna.Theme.muted
         height: 6
-        radius: 3
+        radius: Math.min(Luna.Theme.barRounding, width / 2, height / 2)
         width: slider.availableWidth
         x: slider.leftPadding
         y: (slider.height - height) / 2
@@ -20,7 +20,7 @@ Slider {
         Rectangle {
             color: Luna.Theme.accent
             height: parent.height
-            radius: 3
+            radius: Math.min(Luna.Theme.barRounding, width / 2, height / 2)
             width: slider.visualPosition * parent.width
         }
     }
@@ -29,7 +29,7 @@ Slider {
         border.width: slider.visualFocus ? 3 : 0
         color: Luna.Theme.accent
         height: 18
-        radius: 9
+        radius: Math.min(Luna.Theme.barRounding, width / 2, height / 2)
         width: 18
         x: slider.leftPadding + slider.visualPosition * (slider.availableWidth - width)
         y: (slider.height - height) / 2

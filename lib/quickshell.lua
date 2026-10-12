@@ -7,7 +7,7 @@ return function(common, root, renderer, target, label)
         return common.capture({ "qs", "ipc", "-p", renderer, "call", target, method }, true)
     end
 
-    function M.run(action)
+    function M.run(action, environment)
         assert(type(action) == "string", "A shell action is required")
         assert(common.available("qs"), "Quickshell is missing; install core dependencies")
         assert(os.getenv("WAYLAND_DISPLAY"), label .. " requires a Wayland session")
@@ -39,8 +39,14 @@ return function(common, root, renderer, target, label)
         if os.getenv("QML_IMPORT_PATH") then
             imports = imports .. ":" .. os.getenv("QML_IMPORT_PATH")
         end
-        common.run({ "env", "LUNA_UI_THEME=" .. snapshot, "QML_IMPORT_PATH=" .. imports,
-            "qs", "-p", renderer, "--daemonize", "--no-duplicate" })
+        local command = { "env", "LUNA_UI_THEME=" .. snapshot, "QML_IMPORT_PATH=" .. imports }
+        for key, value in pairs(environment or {}) do
+            table.insert(command, key .. "=" .. value)
+        end
+        for _, argument in ipairs({ "qs", "-p", renderer, "--daemonize", "--no-duplicate" }) do
+            table.insert(command, argument)
+        end
+        common.run(command)
         local method = (action == "start" or action == "reload") and "ping" or action
         for _ = 1, 30 do
             local _, ok = M.ipc(method)

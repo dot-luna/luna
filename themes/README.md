@@ -42,7 +42,7 @@ return {
 }
 ```
 
-`luna theme set <name>` writes `$XDG_CONFIG_HOME/luna/theme.json` (normally `~/.config/luna/theme.json`). It contains `version`, `name`, and complete `colors`, `fonts`, `hyprland`, and `wallpaper` sections. Font sizes, display settings, and component layout remain outside the theme. Font family values are resolved but are not yet applied to applications.
+`luna theme set <name>` writes `$XDG_CONFIG_HOME/luna/theme.json` (normally `~/.config/luna/theme.json`). It contains `version`, `name`, and complete `colors`, `fonts`, `hyprland`, and `wallpaper` sections. Font sizes, display settings, and component layout remain outside the theme. Luna Bar applies the resolved UI font family. Other applications and terminal font integration remain separate.
 
 Edit the installed Lua source files, then run `luna theme set <name>` again to rebuild the JSON. Reinstall first if editing the original source folder. Components read this same output when started or reloaded; they do not independently merge defaults or reread source files. Existing selections without JSON must be set again once. The output is generated data, not a user configuration file.
 

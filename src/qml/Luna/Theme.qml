@@ -8,6 +8,10 @@ QtObject {
     readonly property color accentForeground: colors.accent_foreground
     readonly property color background: colors.background
     readonly property var decoration: snapshot.hyprland.decoration
+    readonly property int borderWidth: snapshot.hyprland.general.border_size
+    readonly property int outerGap: snapshot.hyprland.general.gaps_out
+    readonly property string uiFont: snapshot.fonts.ui
+    readonly property color selectionForeground: colors.selection_foreground
     readonly property int barHeight: 32
     readonly property real barOpacity: decoration.active_opacity
     readonly property int barRounding: decoration.rounding

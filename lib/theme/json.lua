@@ -63,9 +63,18 @@ function M.decode(source)
                     assert(hex:match("^%x%x%x%x$"), "Invalid JSON escape")
                     local code = tonumber(hex, 16)
                     position = position + 4
-                    -- Generated strings use Unicode directly; escaped control bytes are ASCII.
-                    assert(code < 128, "Theme JSON expects non-ASCII characters as UTF-8")
-                    table.insert(parts, string.char(code))
+                    if code >= 0xd800 and code <= 0xdbff then
+                        assert(source:sub(position, position + 1) == "\\u", "Missing JSON surrogate pair")
+                        local low_hex = source:sub(position + 2, position + 5)
+                        assert(low_hex:match("^%x%x%x%x$"), "Invalid JSON surrogate escape")
+                        local low = tonumber(low_hex, 16)
+                        assert(low >= 0xdc00 and low <= 0xdfff, "Invalid JSON surrogate pair")
+                        code = 0x10000 + (code - 0xd800) * 0x400 + low - 0xdc00
+                        position = position + 6
+                    else
+                        assert(code < 0xdc00 or code > 0xdfff, "Unexpected JSON low surrogate")
+                    end
+                    table.insert(parts, utf8.char(code))
                 else
                     local decoded = assert(escapes[escaped], "Invalid JSON escape")
                     table.insert(parts, decoded)

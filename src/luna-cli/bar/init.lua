@@ -1,7 +1,8 @@
 -- Own Luna Bar's instance through the shared themed shell lifecycle.
 return function(common, directory)
     local root = directory .. "/../../.."
-    local shell = dofile(root .. "/lib/quickshell.lua")(common, root, directory .. "/../../bar", "bar", "Luna Bar")
+    local config = dofile(directory .. "/config.lua")(common, root)
+    local shell = dofile(root .. "/lib/quickshell.lua")(common, root, directory .. "/../../luna-bar", "bar", "Luna Bar")
     local M = {}
 
     function M.register(parser)
@@ -12,7 +13,9 @@ return function(common, directory)
     end
 
     function M.run(options)
-        shell.run(options.bar_action or "start")
+        local action = options.bar_action or "start"
+        local environment = action ~= "stop" and { LUNA_BAR_CONFIG = config.snapshot() } or nil
+        shell.run(action, environment)
     end
 
     return M

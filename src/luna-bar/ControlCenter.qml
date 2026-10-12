@@ -75,15 +75,16 @@ PanelWindow {
         id: card
 
         anchors.right: parent.right
-        anchors.rightMargin: 10
+        anchors.rightMargin: Luna.Theme.outerGap
         anchors.top: parent.top
-        anchors.topMargin: panel.topOffset + 10
+        anchors.topMargin: panel.topOffset + Luna.Theme.outerGap
         border.color: Luna.Theme.muted
-        border.width: 1
-        color: Luna.Theme.background
+        border.width: Luna.Theme.borderWidth
+        // Keep content opaque while the card background follows theme translucency.
+        color: Qt.rgba(Luna.Theme.background.r, Luna.Theme.background.g, Luna.Theme.background.b, Luna.Theme.barOpacity)
         height: body.implicitHeight + 36
-        radius: 16
-        width: Math.min(380, panel.width - 20)
+        radius: Math.min(Luna.Theme.barRounding, width / 2, height / 2)
+        width: Math.min(380, panel.width - 2 * Luna.Theme.outerGap)
 
         MouseArea {
             anchors.fill: parent
@@ -101,6 +102,7 @@ PanelWindow {
                 Layout.fillWidth: true
 
                 Label {
+                    font.family: Luna.Theme.uiFont
                     Layout.fillWidth: true
                     color: Luna.Theme.brightForeground
                     font.bold: true
@@ -146,6 +148,7 @@ PanelWindow {
                 }
             }
             Label {
+                font.family: Luna.Theme.uiFont
                 Layout.fillWidth: true
                 color: Luna.Theme.foreground
                 elide: Text.ElideRight
@@ -175,6 +178,7 @@ PanelWindow {
                     onMoved: Desktop.setVolume(value)
                 }
                 Label {
+                    font.family: Luna.Theme.uiFont
                     Layout.preferredWidth: 38
                     color: Luna.Theme.foreground
                     text: Desktop.audioAvailable ? Math.round(Desktop.volume * 100) + "%" : "—"
@@ -202,6 +206,7 @@ PanelWindow {
                     onMoved: Desktop.setBrightness(value)
                 }
                 Label {
+                    font.family: Luna.Theme.uiFont
                     Layout.preferredWidth: 38
                     color: Luna.Theme.foreground
                     text: Desktop.brightness + "%"
@@ -219,17 +224,20 @@ PanelWindow {
                     name: Desktop.hasBattery ? "battery" : "monitor"
                 }
                 Label {
+                    font.family: Luna.Theme.uiFont
                     Layout.fillWidth: true
                     color: Luna.Theme.foreground
                     text: Desktop.batteryText
                 }
                 Label {
+                    font.family: Luna.Theme.uiFont
                     color: Luna.Theme.foreground
                     font.pixelSize: 11
                     text: "Esc to close"
                 }
             }
             Label {
+                font.family: Luna.Theme.uiFont
                 Layout.fillWidth: true
                 color: Luna.Theme.brightForeground
                 text: Desktop.error

@@ -1,0 +1,34 @@
+{
+    "workspaces": {
+        "active": {
+            "type": "number",
+            "size": 12
+        },
+        "inactive": {
+            "type": "dot",
+            "size": 5
+        },
+        "overrides": {
+            "1": {
+                "type": "icon",
+                "icon": "code-xml",
+                "size": 14
+            },
+            "2": {
+                "type": "icon",
+                "icon": "terminal",
+                "size": 14
+            },
+            "3": {
+                "type": "icon",
+                "icon": "globe",
+                "size": 14
+            },
+            "0": {
+                "type": "icon",
+                "icon": "bot",
+                "size": 14
+            }
+        }
+    }
+}

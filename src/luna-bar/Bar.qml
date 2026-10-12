@@ -6,6 +6,7 @@ import Quickshell
 import Quickshell.Wayland
 import Quickshell.Hyprland
 import Luna as Luna
+import "components"
 
 PanelWindow {
     id: bar
@@ -13,10 +14,25 @@ PanelWindow {
     readonly property int activeWorkspace: monitor && monitor.activeWorkspace ? monitor.activeWorkspace.id : 1
     property alias controlCenter: center
     required property var controller
+    required property var workspaceConfig
     property bool keyboardActive: false
     readonly property var monitor: Hyprland.monitors.values.find(item => item.name === screen.name)
+    readonly property bool fullscreenActive: !!(monitor && monitor.activeWorkspace && monitor.activeWorkspace.hasFullscreen)
+    readonly property var workspaceIds: {
+        const ids = [1, 2, 3, 4];
+        // Keep the baseline compact and add higher workspaces only while they exist.
+        for (const workspace of Hyprland.workspaces.values) {
+            if (workspace.id > 4 && !ids.includes(workspace.id))
+                ids.push(workspace.id);
+        }
+        if (activeWorkspace > 4 && !ids.includes(activeWorkspace))
+            ids.push(activeWorkspace);
+        return ids.sort((a, b) => a - b);
+    }
 
     function beginFocus() {
+        if (!visible)
+            return;
         keyboardActive = true;
         focusDelay.restart();
     }
@@ -41,8 +57,24 @@ PanelWindow {
     WlrLayershell.layer: WlrLayer.Top
     WlrLayershell.namespace: "luna-bar"
     color: "transparent"
-    exclusiveZone: implicitHeight
+    exclusiveZone: visible ? implicitHeight : 0
     implicitHeight: Luna.Theme.barHeight
+    visible: !fullscreenActive
+
+    onVisibleChanged: {
+        if (!visible) {
+            keyboardActive = false;
+            focusDelay.stop();
+            if (center)
+                center.visible = false;
+        }
+    }
+
+    margins {
+        left: Luna.Theme.outerGap
+        right: Luna.Theme.outerGap
+        top: Luna.Theme.outerGap
+    }
 
     anchors {
         left: true
@@ -54,7 +86,7 @@ PanelWindow {
 
         interval: 50
 
-        onTriggered: workspaces.itemAt(Math.max(0, Math.min(9, bar.activeWorkspace - 1))).forceActiveFocus(Qt.TabFocusReason)
+        onTriggered: workspaces.itemAt(Math.max(0, bar.workspaceIds.indexOf(bar.activeWorkspace))).forceActiveFocus(Qt.TabFocusReason)
     }
     Shortcut {
         enabled: bar.keyboardActive
@@ -88,9 +120,11 @@ PanelWindow {
     }
     Rectangle {
         anchors.fill: parent
+        border.color: Luna.Theme.muted
+        border.width: Luna.Theme.borderWidth
         color: Luna.Theme.background
         opacity: Luna.Theme.barOpacity
-        radius: Luna.Theme.barRounding
+        radius: Math.min(Luna.Theme.barRounding, width / 2, height / 2)
     }
     RowLayout {
         anchors.left: parent.left
@@ -101,35 +135,37 @@ PanelWindow {
         Repeater {
             id: workspaces
 
-            model: 10
+            model: bar.workspaceIds
 
             delegate: Button {
                 id: workspaceButton
 
-                required property int index
-                readonly property bool occupied: Hyprland.workspaces.values.some(item => item.id === workspace)
-                readonly property int workspace: index + 1
+                required property int modelData
+                readonly property bool active: bar.activeWorkspace === workspace
+                readonly property int workspace: modelData
+                readonly property string workspaceLabel: workspace === 10 ? "0" : String(workspace)
+                readonly property var indicatorConfig: active
+                    ? (bar.workspaceConfig.overrides[workspaceLabel] || bar.workspaceConfig.active)
+                    : bar.workspaceConfig.inactive
 
-                Accessible.name: "Workspace " + workspace
+                Accessible.name: "Workspace " + workspaceLabel
                 focusPolicy: Qt.StrongFocus
                 implicitHeight: Math.max(24, Luna.Theme.barHeight - 6)
-                implicitWidth: 26
-                text: String(workspace)
+                implicitWidth: Math.max(22, workspaceIndicator.implicitWidth + 10)
+                text: active ? workspaceLabel : ""
 
                 background: Rectangle {
                     border.color: Luna.Theme.brightForeground
                     border.width: workspaceButton.visualFocus ? 2 : 0
-                    color: bar.activeWorkspace === workspaceButton.workspace ? Luna.Theme.accent : workspaceButton.hovered ? Luna.Theme.selection : "transparent"
-                    radius: 5
+                    color: "transparent"
+                    radius: Math.min(Luna.Theme.barRounding, width / 2, height / 2)
                 }
-                contentItem: Label {
-                    color: bar.activeWorkspace === workspaceButton.workspace ? Luna.Theme.accentForeground : workspaceButton.occupied ? Luna.Theme.brightForeground : Luna.Theme.foreground
-                    font.bold: bar.activeWorkspace === workspaceButton.workspace
-                    font.pixelSize: 12
-                    horizontalAlignment: Text.AlignHCenter
-                    opacity: workspaceButton.occupied || bar.activeWorkspace === workspaceButton.workspace ? 1 : 0.65
-                    text: workspaceButton.text
-                    verticalAlignment: Text.AlignVCenter
+                contentItem: WorkspaceIndicator {
+                    id: workspaceIndicator
+
+                    active: workspaceButton.active
+                    indicator: workspaceButton.indicatorConfig
+                    workspaceLabel: workspaceButton.workspaceLabel
                 }
 
                 Keys.onEnterPressed: click()
@@ -149,6 +185,7 @@ PanelWindow {
         precision: SystemClock.Minutes
     }
     Label {
+        font.family: Luna.Theme.uiFont
         anchors.centerIn: parent
         color: Luna.Theme.brightForeground
         font.pixelSize: 13
@@ -170,7 +207,7 @@ PanelWindow {
             border.color: Luna.Theme.brightForeground
             border.width: statusButton.visualFocus ? 2 : 0
             color: statusButton.hovered ? Luna.Theme.selection : "transparent"
-            radius: 6
+            radius: Math.min(Luna.Theme.barRounding, width / 2, height / 2)
         }
         contentItem: RowLayout {
             id: statuses
@@ -188,6 +225,7 @@ PanelWindow {
                 visible: Desktop.hasBattery
             }
             Label {
+                font.family: Luna.Theme.uiFont
                 color: Luna.Theme.foreground
                 font.pixelSize: 12
                 text: Desktop.batteryText
@@ -208,6 +246,6 @@ PanelWindow {
         id: center
 
         screen: bar.screen
-        topOffset: bar.implicitHeight
+        topOffset: bar.implicitHeight + bar.margins.top
     }
 }
