@@ -64,6 +64,9 @@ return {
 
         -- Desktop controls for brightness, clipboard access, and locking.
         { name = "brightnessctl", source = "pacman", purpose = "Display brightness controls" },
+        { name = "noto-fonts-emoji", source = "pacman", purpose = "Color emoji rendering" },
+        { name = "cliphist", source = "pacman", purpose = "Text and image clipboard history" },
+        { name = "wtype", source = "pacman", purpose = "Paste clipboard selections into Wayland applications" },
         { name = "wl-clipboard", source = "pacman", purpose = "Wayland clipboard tools" },
         { name = "hyprlock", source = "pacman", purpose = "Screen locking" },
     },

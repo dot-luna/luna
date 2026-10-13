@@ -1,3 +1,4 @@
 module Luna
 singleton Theme 1.0 Theme.qml
 Icon 1.0 Icon.qml
+Emoji 1.0 Emoji.qml

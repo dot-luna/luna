@@ -9,10 +9,171 @@ import Quickshell.Hyprland
 import Luna as Luna
 import "Search.js" as Search
 import "FontSelection.js" as FontSelection
+import "EmojiSelection.js" as EmojiSelection
 import "System.js" as System
 
 ShellRoot {
     id: shell
+
+    readonly property bool clipboardView: currentMenu === "insert.clipboard"
+    readonly property bool emojiView: currentMenu === "insert.emoji"
+    readonly property string gifSource: currentMenu === "insert.gifs" ? "giphy" : ""
+    readonly property bool insertView: clipboardView || emojiView || gifSource !== ""
+    readonly property bool gridView: emojiView || gifSource !== ""
+    readonly property var selectionView: gridView ? insertGrid : results
+    property var emojiSelection: []
+    property var emojiEntries: []
+    readonly property var emojiArtwork: emojiEntries.reduce((map, entry) => {
+        map[entry.emoji] = entry.artwork || "";
+        return map;
+    }, ({}))
+    property var gifEntries: []
+    property string gifQuery: ""
+    property string requestedGifSource: ""
+    property int gifOffset: 0
+    property bool gifAppending: false
+    property bool gifHasMore: false
+    property bool gifNeedsKey: false
+    readonly property bool giphySetupView: !!gifSource && gifNeedsKey
+    onGiphySetupViewChanged: if (giphySetupView && panel.visible) giphySetupButton.forceActiveFocus()
+
+    function setupGiphy() {
+        Quickshell.execDetached(["kitty", "--class", "luna-install", "--start-as", "normal", "-o", "remember_window_size=no",
+            "--title", "GIPHY Setup", "--", lunaCli, "insert", "configure"]);
+        panel.visible = false;
+    }
+    readonly property var insertEntry: insertView ? (matches[shell.selectionView.currentIndex] || ({})) : ({})
+
+    onEmojiViewChanged: if (emojiView && !emojiEntries.length && !emojiListing.running) emojiListing.running = true
+    onGifSourceChanged: queueGifs()
+
+    function queueGifs() {
+        gifEntries = [];
+        gifHasMore = false;
+        gifNeedsKey = false;
+        if (gifSource) gifDelay.restart();
+    }
+    function fetchGifs(offset) {
+        if (!gifSource || gifSearch.running) return;
+        gifQuery = search.text;
+        requestedGifSource = gifSource;
+        gifOffset = offset;
+        systemMessage = "";
+        gifSearch.command = [lunaCli, "insert", "gifs", gifQuery, String(offset)];
+        gifSearch.running = true;
+    }
+    function loadMoreGifs() {
+        if (panel.visible && gifSource && gifHasMore && !gifAppending && !gifSearch.running
+                && gifQuery === search.text && gifEntries.length > 0)
+            fetchGifs(gifEntries.length);
+    }
+    Timer {
+        id: gifDelay
+        interval: 400
+        onTriggered: shell.fetchGifs(0)
+    }
+    Process {
+        id: emojiListing
+        command: [shell.lunaCli, "insert", "emoji"]
+        stdout: StdioCollector {}
+        stderr: StdioCollector {}
+        onExited: (code, status) => {
+            if (code === 0) shell.emojiEntries = JSON.parse(stdout.text).results;
+            else shell.systemMessage = "Could not load emoji data.";
+        }
+    }
+    Process {
+        id: gifSearch
+        stdout: StdioCollector {}
+        stderr: StdioCollector {}
+        onExited: (code, status) => {
+            if (!shell.gifSource) return;
+            if (shell.requestedGifSource !== shell.gifSource || shell.gifQuery !== search.text) {
+                gifDelay.restart();
+                return;
+            }
+            if (code !== 0) {
+                shell.systemMessage = "Could not load GIFs. Check your connection or GIPHY key.";
+                return;
+            }
+            try {
+                const response = JSON.parse(stdout.text);
+                const previousIndex = shell.selectionView.currentIndex;
+                const previousScroll = insertGrid.contentY;
+                shell.gifAppending = shell.gifOffset > 0;
+                shell.gifEntries = shell.gifAppending ? shell.gifEntries.concat(response.results) : response.results;
+                if (shell.gifAppending) {
+                    insertGrid.currentIndex = previousIndex;
+                    insertGrid.contentY = previousScroll;
+                }
+                shell.gifHasMore = response.hasMore && response.results.length > 0;
+                shell.gifAppending = false;
+                shell.gifNeedsKey = response.needsKey || false;
+                shell.systemMessage = response.message || "";
+            } catch (error) {
+                shell.systemMessage = "Could not read GIF results.";
+            }
+        }
+    }
+
+    property var clipboardEntries: []
+    property var clipboardPreview: ({})
+    property string clipboardTarget: ""
+    property string previewRequested: ""
+    readonly property string previewId: clipboardView && matches[shell.selectionView.currentIndex] ? matches[shell.selectionView.currentIndex].id : ""
+    onPreviewIdChanged: loadClipboardPreview()
+
+    function loadClipboardPreview() {
+        clipboardPreview = ({});
+        if (!previewId || clipboardPreviewProcess.running)
+            return;
+        previewRequested = previewId;
+        clipboardPreviewProcess.command = [lunaCli, "clipboard", "preview", previewId];
+        clipboardPreviewProcess.running = true;
+    }
+    onClipboardViewChanged: if (clipboardView && !clipboardListing.running) clipboardListing.running = true
+
+    Process {
+        id: clipboardListing
+        command: [shell.lunaCli, "clipboard", "list"]
+        stdout: StdioCollector {}
+        stderr: StdioCollector {}
+        onExited: (code, status) => {
+            if (code === 0) shell.clipboardEntries = JSON.parse(stdout.text);
+            else shell.systemMessage = "Could not load clipboard history. Check that cliphist is installed.";
+        }
+    }
+    Process {
+        id: clipboardPreviewProcess
+        stdout: StdioCollector {}
+        stderr: StdioCollector {}
+        onExited: (code, status) => {
+            if (shell.previewRequested !== shell.previewId) {
+                shell.loadClipboardPreview();
+                return;
+            }
+            if (code === 0) shell.clipboardPreview = JSON.parse(stdout.text);
+        }
+    }
+    Process {
+        id: clipboardTargetProcess
+        command: [shell.lunaCli, "clipboard", "target"]
+        stdout: StdioCollector {}
+        onExited: (code, status) => {
+            if (code === 0) shell.clipboardTarget = JSON.parse(stdout.text);
+            panel.visible = true;
+            focusDelay.restart();
+        }
+    }
+    Process {
+        id: clipboardPaste
+        stderr: StdioCollector {}
+        onExited: (code, status) => {
+            if (code !== 0) {
+                Quickshell.execDetached(["notify-send", "Luna Insert", stderr.text.trim() || "Could not paste clipboard entry."]);
+            }
+        }
+    }
 
     property string menuScreenName: ""
     property string systemMessage: ""
@@ -42,6 +203,10 @@ ShellRoot {
     // Routes define navigation; entries without a route remain placeholders.
     readonly property var menuEntries: [
         { name: "Apps", icon: "layout-grid", route: "apps" },
+        { name: "Insert", icon: "smile", route: "insert" },
+        { name: "Clipboard", icon: "clipboard", route: "insert.clipboard", parent: "insert", parentLabel: "Insert" },
+        { name: "Emoji", icon: "smile", route: "insert.emoji", parent: "insert", parentLabel: "Insert" },
+        { name: "GIFs", icon: "film", route: "insert.gifs", parent: "insert", parentLabel: "Insert" },
         { name: "Learn", icon: "book-open" },
         { name: "Trigger", icon: "zap" },
         { name: "Style", icon: "palette", route: "style" },
@@ -79,33 +244,33 @@ ShellRoot {
         }))), [])
     readonly property var availableMenuEntries: menuEntries.concat(idleEntries).filter(entry =>
         entry.action !== "hibernate" || hibernateAvailable)
-    readonly property var matches: fontRole ? Search.installedFonts(fontFamilies, search.text) : removeFontsView ? Search.installedFonts(installedFonts, search.text) : fontsView ? fontResults : appsView
+    readonly property var matches: emojiView ? Search.insertEntries(emojiEntries, search.text) : gifSource ? gifEntries : clipboardView ? clipboardEntries.filter(entry => entry.name.toLowerCase().includes(search.text.toLowerCase())) : fontRole ? Search.installedFonts(fontFamilies, search.text) : removeFontsView ? Search.installedFonts(installedFonts, search.text) : fontsView ? fontResults : appsView
         ? Search.find(DesktopEntries.applications.values, search.text)
         : Search.rootEntries(availableMenuEntries, DesktopEntries.applications.values, search.text, currentMenu)
 
     function moveSelection(direction) {
         if (!matches.length)
             return;
-        results.currentIndex = (results.currentIndex + direction + matches.length) % matches.length;
-        results.positionViewAtIndex(results.currentIndex, ListView.Contain);
+        shell.selectionView.currentIndex = (shell.selectionView.currentIndex + direction + matches.length) % matches.length;
+        shell.selectionView.positionViewAtIndex(shell.selectionView.currentIndex, ListView.Contain);
     }
     function jumpSelection(index) {
         if (!matches.length)
             return;
-        results.currentIndex = Math.max(0, Math.min(matches.length - 1, index));
-        results.positionViewAtIndex(results.currentIndex, ListView.Contain);
+        shell.selectionView.currentIndex = Math.max(0, Math.min(matches.length - 1, index));
+        shell.selectionView.positionViewAtIndex(shell.selectionView.currentIndex, ListView.Contain);
     }
 
     function pageSelection(direction) {
-        const pageSize = Math.max(1, Math.floor(results.height / (48 * textScale + results.spacing)));
-        jumpSelection(results.currentIndex + direction * pageSize);
+        const pageSize = gridView ? Math.max(1, Math.floor(insertGrid.height / insertGrid.cellHeight)) * insertGrid.columns : Math.max(1, Math.floor(results.height / (48 * textScale + results.spacing)));
+        jumpSelection(shell.selectionView.currentIndex + direction * pageSize);
     }
 
     function showMenu(route) {
         currentMenu = route;
         search.clear();
-        results.currentIndex = matches.length ? 0 : -1;
-        results.positionViewAtBeginning();
+        shell.selectionView.currentIndex = matches.length ? 0 : -1;
+        shell.selectionView.positionViewAtBeginning();
         search.forceActiveFocus();
     }
 
@@ -118,12 +283,34 @@ ShellRoot {
     }
 
     function tabSelection(direction) {
-        if (fontsView || removeFontsView)
-            toggleFont(matches[results.currentIndex]);
+        if (emojiView) {
+            const glyph = (matches[shell.selectionView.currentIndex] || {}).emoji;
+            emojiSelection = direction > 0 ? EmojiSelection.add(emojiSelection, glyph) : EmojiSelection.removeLast(emojiSelection, glyph);
+            return;
+        } else if (fontsView || removeFontsView)
+            toggleFont(matches[shell.selectionView.currentIndex]);
         moveSelection(direction);
     }
 
     function activate(entry) {
+        if (emojiView || gifSource) {
+            const selected = EmojiSelection.values(emojiSelection, entry);
+            if (clipboardPaste.running || (emojiView ? !selected.length : !entry)) return;
+            const action = emojiView ? "paste-emoji" : "paste-giphy";
+            const value = emojiView ? JSON.stringify(selected) : entry.download;
+            clipboardPaste.command = [lunaCli, "insert", action, value, clipboardTarget];
+            panel.visible = false;
+            clipboardPaste.running = true;
+            return;
+        }
+        if (clipboardView) {
+            if (!entry || clipboardPaste.running)
+                return;
+            clipboardPaste.command = [lunaCli, "clipboard", "paste", entry.id, clipboardTarget];
+            panel.visible = false;
+            clipboardPaste.running = true;
+            return;
+        }
         if (fontRole) {
             if (!entry || fontPreferenceSet.running)
                 return;
@@ -197,11 +384,13 @@ ShellRoot {
         menuScreenName = panel.screen.name;
         systemMessage = "";
         fontSelection = [];
+        emojiSelection = [];
         currentMenu = "";
         search.text = "";
-        results.currentIndex = matches.length ? 0 : -1;
-        panel.visible = true;
-        focusDelay.restart();
+        shell.selectionView.currentIndex = matches.length ? 0 : -1;
+        clipboardTarget = "";
+        if (!clipboardTargetProcess.running)
+            clipboardTargetProcess.running = true;
     }
 
     // Serialize remote lookups and discard stale responses as the query or route changes.
@@ -221,6 +410,7 @@ ShellRoot {
     }
 
     onCurrentMenuChanged: {
+        emojiSelection = [];
         systemMessage = "";
         fontSelection = [];
         queueFontSearch();
@@ -394,8 +584,9 @@ ShellRoot {
     }
 
     onMatchesChanged: {
-        results.currentIndex = matches.length ? 0 : -1;
-        results.positionViewAtBeginning();
+        if (gifAppending) return;
+        shell.selectionView.currentIndex = matches.length ? 0 : -1;
+        shell.selectionView.positionViewAtBeginning();
     }
 
     IpcHandler {
@@ -471,7 +662,8 @@ ShellRoot {
 
             onTriggered: {
                 if (panel.visible) {
-                    search.forceActiveFocus(Qt.TabFocusReason);
+                    if (shell.giphySetupView) giphySetupButton.forceActiveFocus();
+                    else search.forceActiveFocus(Qt.TabFocusReason);
                 }
             }
         }
@@ -496,10 +688,10 @@ ShellRoot {
             id: card
 
             readonly property real cornerRadius: Math.min(Luna.Theme.barRounding, width / 2, height / 2)
-            readonly property var selectedEntry: shell.matches[results.currentIndex] || null
+            readonly property var selectedEntry: shell.matches[shell.selectionView.currentIndex] || null
 
             anchors.centerIn: parent
-            width: Math.min(640 * shell.textScale, panel.width - 2 * Math.max(16, Luna.Theme.outerGap))
+            width: Math.min((shell.clipboardView ? 960 : 640) * shell.textScale, panel.width - 2 * Math.max(16, Luna.Theme.outerGap))
             height: Math.min(476 * shell.textScale, panel.height - 2 * Math.max(16, Luna.Theme.outerGap))
             // Supply theme alpha only; Hyprland renders blur behind this surface.
             color: Qt.rgba(Luna.Theme.background.r, Luna.Theme.background.g,
@@ -513,11 +705,32 @@ ShellRoot {
 
             ListPointer {
                 anchors.fill: parent
-                view: results
-                onHoveredIndex: index => results.currentIndex = index
+                view: shell.selectionView
+                onHoveredIndex: index => shell.selectionView.currentIndex = index
             }
 
+            Button {
+                id: giphySetupButton
+                anchors.centerIn: parent
+                visible: shell.giphySetupView
+                text: "Set GIPHY API key"
+                padding: 14
+                contentItem: Label {
+                    text: giphySetupButton.text
+                    color: Luna.Theme.accent
+                    font.family: shell.uiFont
+                    font.pointSize: shell.textSize + 1
+                }
+                background: Rectangle {
+                    color: giphySetupButton.hovered ? Luna.Theme.selection : Luna.Theme.lighterBackground
+                    radius: Math.min(Luna.Theme.barRounding, height / 2)
+                }
+                onClicked: shell.setupGiphy()
+                Keys.onReturnPressed: shell.setupGiphy()
+                Keys.onEnterPressed: shell.setupGiphy()
+            }
             ColumnLayout {
+                visible: !shell.giphySetupView
                 anchors.fill: parent
                 anchors.margins: Luna.Theme.borderWidth
                 spacing: 0
@@ -543,7 +756,7 @@ ShellRoot {
                             id: search
 
                             Accessible.description: card.selectedEntry ? card.selectedEntry.name : "No matching entries"
-                            Accessible.name: (shell.fontsView || shell.removeFontsView || shell.fontRole) ? "Search fonts" : shell.appsView ? "Search applications" : "Search menu"
+                            Accessible.name: shell.insertView ? "Search " + (shell.emojiView ? "emoji" : shell.gifSource ? "GIFs" : "clipboard") : (shell.fontsView || shell.removeFontsView || shell.fontRole) ? "Search fonts" : shell.appsView ? "Search applications" : "Search menu"
                             Layout.fillWidth: true
                             implicitHeight: 48 * shell.textScale
                             padding: 0
@@ -558,10 +771,16 @@ ShellRoot {
                             background: Item {}
 
                             onAccepted: shell.activate(card.selectedEntry)
-                            onTextChanged: shell.queueFontSearch()
+                            onTextChanged: { shell.queueFontSearch(); shell.queueGifs(); }
 
                             Keys.onPressed: event => {
-                                if (event.key === Qt.Key_PageUp)
+                                if (shell.emojiView && event.key === Qt.Key_Backspace && search.text.length === 0 && shell.emojiSelection.length)
+                                    shell.emojiSelection = EmojiSelection.removeAt(shell.emojiSelection, shell.emojiSelection.length - 1);
+                                else if (shell.gridView && event.key === Qt.Key_Left)
+                                    shell.moveSelection(-1);
+                                else if (shell.gridView && event.key === Qt.Key_Right)
+                                    shell.moveSelection(1);
+                                else if (event.key === Qt.Key_PageUp)
                                     shell.pageSelection(-1);
                                 else if (event.key === Qt.Key_PageDown)
                                     shell.pageSelection(1);
@@ -576,9 +795,9 @@ ShellRoot {
                                 event.accepted = true;
                             }
                             Keys.onBacktabPressed: shell.tabSelection(-1)
-                            Keys.onDownPressed: shell.moveSelection(1)
+                            Keys.onDownPressed: shell.moveSelection(shell.gridView ? insertGrid.columns : 1)
                             Keys.onTabPressed: shell.tabSelection(1)
-                            Keys.onUpPressed: shell.moveSelection(-1)
+                            Keys.onUpPressed: shell.moveSelection(shell.gridView ? -insertGrid.columns : -1)
                         }
                         Label {
                             visible: shell.fontSelection.length > 0
@@ -636,10 +855,169 @@ ShellRoot {
                         font.family: shell.uiFont
                         font.pointSize: shell.textSize
                     }
+                    Flickable {
+                        id: selectedEmojiPreview
+                        visible: shell.emojiView && shell.emojiSelection.length > 0
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: visible ? 48 * shell.textScale : 0
+                        contentWidth: selectedEmojiRow.width
+                        contentHeight: height
+                        clip: true
+                        boundsBehavior: Flickable.StopAtBounds
+                        onContentWidthChanged: contentX = Math.max(0, contentWidth - width)
+                        Row {
+                            id: selectedEmojiRow
+                            spacing: 4
+                            Repeater {
+                                model: shell.emojiSelection
+                                delegate: Button {
+                                    id: selectedEmoji
+                                    required property string modelData
+                                    required property int index
+                                    width: 44 * shell.textScale
+                                    height: 44 * shell.textScale
+                                    focusPolicy: Qt.NoFocus
+                                    Accessible.name: "Remove " + modelData
+                                    padding: 8 * shell.textScale
+                                    contentItem: Luna.Emoji {
+                                        glyph: selectedEmoji.modelData
+                                        artwork: shell.emojiArtwork[glyph] || ""
+                                    }
+                                    background: Rectangle {
+                                        color: Luna.Theme.selection
+                                        radius: Math.min(Luna.Theme.barRounding, width / 2, height / 2)
+                                    }
+                                    onClicked: {
+                                        shell.emojiSelection = EmojiSelection.removeAt(shell.emojiSelection, index);
+                                        search.forceActiveFocus();
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    RowLayout {
+                        visible: shell.gifSource === "giphy"
+                        Layout.fillWidth: true
+                        Label {
+                            Layout.fillWidth: true
+                            text: "Powered by GIPHY" + (shell.insertEntry.creator ? " · @" + shell.insertEntry.creator : "")
+                            color: Luna.Theme.foreground
+                            font.family: shell.uiFont
+                            font.pointSize: shell.textSize - 1
+                            elide: Text.ElideRight
+                        }
+
+                    }
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        spacing: 16
+                    GridView {
+                        id: insertGrid
+                        onContentYChanged: {
+                            if (atYEnd) shell.loadMoreGifs();
+                        }
+                        onCurrentIndexChanged: {
+                            if (currentIndex >= count - columns) shell.loadMoreGifs();
+                        }
+                        visible: shell.gridView
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        readonly property int columns: Math.max(1, Math.floor(width / ((shell.emojiView ? 64 : 180) * shell.textScale)))
+                        cellWidth: width / columns
+                        cellHeight: (shell.emojiView ? 64 : 128) * shell.textScale
+                        model: shell.gridView ? shell.matches : []
+                        clip: true
+                        boundsBehavior: Flickable.StopAtBounds
+                        currentIndex: -1
+                        ScrollBar.vertical: ScrollBar {
+                            id: gridScrollbar
+                            implicitWidth: 3
+                            contentItem: Rectangle {
+                                color: gridScrollbar.pressed ? Luna.Theme.accent : Luna.Theme.muted
+                                radius: Math.min(Luna.Theme.barRounding, width / 2)
+                                visible: gridScrollbar.size < 1
+                            }
+                            background: Item {}
+                        }
+                        delegate: Button {
+                            id: tile
+                            required property var modelData
+                            required property int index
+                            readonly property bool selected: insertGrid.currentIndex === index
+                            readonly property bool marked: shell.emojiSelection.includes(modelData.emoji)
+                            width: insertGrid.cellWidth - 6
+                            height: insertGrid.cellHeight - 6
+                            padding: shell.emojiView ? 8 : 4
+                            focusPolicy: Qt.NoFocus
+                            Accessible.name: modelData.name
+                            background: Rectangle {
+                                color: tile.selected || tile.marked ? Luna.Theme.selection : "transparent"
+                                border.color: Luna.Theme.accent
+                                border.width: tile.marked ? 2 : tile.selected ? 1 : 0
+                                radius: Math.min(Luna.Theme.barRounding, width / 2, height / 2)
+                            }
+                            contentItem: Item {
+                                Luna.Emoji {
+                                    anchors.centerIn: parent
+                                    visible: shell.emojiView
+                                    width: 36 * shell.textScale
+                                    height: width
+                                    glyph: tile.modelData.emoji || ""
+                                    artwork: tile.modelData.artwork || ""
+                                }
+                                Image {
+                                    anchors.fill: parent
+                                    visible: !shell.emojiView && (!tile.selected || gifAnimation.status !== Image.Ready)
+                                    source: shell.gifSource ? tile.modelData.image || "" : ""
+                                    fillMode: Image.PreserveAspectFit
+                                    asynchronous: true
+                                    cache: false
+                                }
+                                AnimatedImage {
+                                    id: gifAnimation
+                                    anchors.fill: parent
+                                    visible: !!shell.gifSource && tile.selected
+                                    source: visible ? tile.modelData.animation || "" : ""
+                                    playing: visible && panel.visible
+                                    fillMode: Image.PreserveAspectFit
+                                    cache: false
+                                }
+                            }
+                            MouseArea {
+                                anchors.fill: parent
+                                enabled: shell.emojiView
+                                onClicked: mouse => {
+                                    insertGrid.currentIndex = tile.index;
+                                    shell.emojiSelection = (mouse.modifiers & Qt.ShiftModifier)
+                                        ? EmojiSelection.removeLast(shell.emojiSelection, tile.modelData.emoji)
+                                        : EmojiSelection.add(shell.emojiSelection, tile.modelData.emoji);
+                                    search.forceActiveFocus();
+                                }
+                            }
+                            onClicked: {
+                                insertGrid.currentIndex = index;
+                                if (shell.emojiView) {
+                                    shell.emojiSelection = EmojiSelection.add(shell.emojiSelection, modelData.emoji);
+                                    search.forceActiveFocus();
+                                } else shell.activate(modelData);
+                            }
+                        }
+                        Label {
+                            anchors.centerIn: parent
+                            visible: insertGrid.count === 0
+                            text: shell.emojiView ? (emojiListing.running ? "Loading…" : "No matching emoji") : gifSearch.running ? "Loading…" : shell.systemMessage ? "" : "No GIFs found"
+                            color: Luna.Theme.foreground
+                            font.family: shell.uiFont
+                            font.pointSize: shell.textSize
+                        }
+                    }
                     ListView {
                         id: results
+                        visible: !shell.gridView
 
-                        Accessible.name: shell.appsView ? "Applications" : "Menu entries"
+                        Accessible.name: shell.clipboardView ? "Clipboard history" : shell.appsView ? "Applications" : "Menu entries"
+                        Layout.preferredWidth: shell.insertView ? 320 * shell.textScale : -1
                         Accessible.role: Accessible.List
                         Layout.fillWidth: true
                         Layout.fillHeight: true
@@ -666,7 +1044,7 @@ ShellRoot {
 
                             required property int index
                             required property var modelData
-                            readonly property bool selected: results.currentIndex === index
+                            readonly property bool selected: shell.selectionView.currentIndex === index
                             readonly property bool marked: (shell.fontsView || shell.removeFontsView) && FontSelection.contains(shell.fontSelection, modelData)
                             readonly property bool applicationEntry: typeof modelData.execute === "function"
 
@@ -694,9 +1072,18 @@ ShellRoot {
                                 spacing: 14
 
                                 Item {
-                                    Layout.preferredWidth: 20
-                                    Layout.preferredHeight: 20
+                                    visible: !shell.clipboardView || !!result.modelData.image
+                                    Layout.preferredWidth: result.modelData.image ? 48 : 20
+                                    Layout.preferredHeight: result.modelData.image ? 32 : 20
 
+                                    Image {
+                                        anchors.fill: parent
+                                        visible: !!result.modelData.image
+                                        source: result.modelData.image || ""
+                                        sourceSize: Qt.size(96, 64)
+                                        fillMode: Image.PreserveAspectFit
+                                        asynchronous: true
+                                    }
                                     Image {
                                         id: appIcon
                                         anchors.fill: parent
@@ -710,7 +1097,7 @@ ShellRoot {
                                     }
                                     Luna.Icon {
                                         anchors.fill: parent
-                                        visible: !result.applicationEntry || appIcon.status !== Image.Ready
+                                        visible: !result.modelData.emoji && !result.modelData.image && (!result.applicationEntry || appIcon.status !== Image.Ready)
                                         name: result.applicationEntry ? "layout-grid" : result.modelData.icon
                                         ink: result.selected ? Luna.Theme.selectionForeground : Luna.Theme.foreground
                                     }
@@ -747,11 +1134,11 @@ ShellRoot {
                                     Layout.preferredHeight: 14
                                     name: "chevron-right"
                                     ink: Luna.Theme.selectionForeground
-                                    visible: result.selected && !result.applicationEntry && !result.modelData.repository && !result.modelData.family && !result.modelData.action && !result.modelData.idleSetting
+                                    visible: !shell.insertView && result.selected && !result.applicationEntry && !result.modelData.repository && !result.modelData.family && !result.modelData.action && !result.modelData.idleSetting
                                 }
                             }
                             onClicked: {
-                                results.currentIndex = index;
+                                shell.selectionView.currentIndex = index;
                                 if (shell.fontsView || shell.removeFontsView)
                                     shell.toggleFont(modelData);
                                 else
@@ -773,7 +1160,7 @@ ShellRoot {
                             }
                             Label {
                                 Layout.alignment: Qt.AlignHCenter
-                                text: shell.fontRole
+                                text: shell.emojiView ? (emojiListing.running ? "Loading…" : "No matching emoji") : shell.gifSource ? (gifSearch.running ? "Loading…" : shell.systemMessage ? "" : "No GIFs found") : shell.clipboardView ? (clipboardListing.running ? "Loading…" : "No clipboard entries") : shell.fontRole
                                     ? (fontFamilyList.running ? "Loading…" : shell.fontPreferenceMessage ? "" : "No matching fonts")
                                     : shell.removeFontsView
                                     ? (fontListing.running ? "Loading…" : shell.removalMessage ? "" : "No matching installed fonts")
@@ -785,6 +1172,69 @@ ShellRoot {
                                 font.pointSize: shell.textSize
                             }
                         }
+                    }
+                    Rectangle {
+                        visible: shell.clipboardView
+                        Layout.fillHeight: true
+                        implicitWidth: 1
+                        color: Luna.Theme.muted
+                    }
+                    Rectangle {
+                        visible: shell.clipboardView
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        Layout.preferredWidth: 540 * shell.textScale
+                        color: Luna.Theme.lighterBackground
+                        radius: Math.min(Luna.Theme.barRounding, width / 2, height / 2)
+                        clip: true
+                        Image {
+                            anchors.fill: parent
+                            anchors.margins: 14
+                            source: shell.clipboardView ? shell.clipboardPreview.image || "" : ""
+                            visible: source.toString().length > 0
+                            fillMode: Image.PreserveAspectFit
+                            cache: false
+                            asynchronous: true
+                        }
+                        ScrollView {
+                            anchors.fill: parent
+                            anchors.margins: 14
+                            visible: shell.clipboardView && !shell.clipboardPreview.image
+                            contentWidth: availableWidth
+                            // Basic controls otherwise inherit the desktop palette, not Luna's theme.
+                            palette.text: Luna.Theme.foreground
+                            palette.base: Luna.Theme.lighterBackground
+                            palette.highlight: Luna.Theme.selection
+                            palette.highlightedText: Luna.Theme.selectionForeground
+                            ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+                            ScrollBar.vertical: ScrollBar {
+                                id: previewScrollbar
+                                policy: ScrollBar.AsNeeded
+                                implicitWidth: 3
+                                contentItem: Rectangle {
+                                    implicitWidth: 3
+                                    color: previewScrollbar.pressed ? Luna.Theme.accent : Luna.Theme.muted
+                                    radius: Math.min(Luna.Theme.barRounding, width / 2)
+                                    visible: previewScrollbar.size < 1
+                                }
+                                background: Item {}
+                            }
+                            TextArea {
+                                padding: 0
+                                text: shell.clipboardPreview.text || ""
+                                readOnly: true
+                                selectByMouse: true
+                                textFormat: TextEdit.PlainText
+                                wrapMode: TextEdit.Wrap
+                                font.family: shell.uiFont
+                                font.pointSize: shell.textSize
+                                color: Luna.Theme.foreground
+                                selectedTextColor: Luna.Theme.selectionForeground
+                                selectionColor: Luna.Theme.selection
+                                background: Item {}
+                            }
+                        }
+                    }
                     }
                 }
 

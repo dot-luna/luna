@@ -75,4 +75,15 @@ TestCase {
         compare(Search.installedFonts(fonts, "my local")[0].target, fonts[1].target);
         compare(Search.installedFonts(fonts, "missing").length, 0);
     }
+    function test_emoji_search_names_categories_and_glyphs() {
+        const emoji = [
+            { name: "thumbs up: medium skin tone", emoji: "👍🏽", keywords: "People & Body hand-fingers-closed" },
+            { name: "flag: Nepal", emoji: "🇳🇵", keywords: "Flags country-flag" }
+        ];
+        compare(Search.insertEntries(emoji, ":thumbs_up:").length, 1);
+        compare(Search.insertEntries(emoji, "nepal")[0].emoji, "🇳🇵");
+        compare(Search.insertEntries(emoji, "👍🏽").length, 1);
+        compare(Search.insertEntries(emoji, "flags").length, 1);
+        compare(Search.insertEntries(emoji, "no match").length, 0);
+    }
 }

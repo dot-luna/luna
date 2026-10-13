@@ -39,3 +39,12 @@ function installedFonts(entries, query) {
         return words.every(word => text.includes(word));
     });
 }
+
+// Match Unicode names and category words without requiring shortcode punctuation.
+function insertEntries(entries, query) {
+    const words = query.toLocaleLowerCase().replace(/[:_]/g, " ").trim().split(/\s+/).filter(Boolean);
+    return entries.filter(entry => {
+        const text = [entry.name, entry.keywords || "", entry.emoji || ""].join(" ").toLocaleLowerCase();
+        return words.every(word => text.includes(word));
+    });
+}

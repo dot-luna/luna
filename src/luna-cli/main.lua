@@ -29,10 +29,26 @@ local sleep = dofile(source_dir .. "/sleep/init.lua")(common, source_dir .. "/sl
 sleep.register(parser)
 local screensaver = dofile(source_dir .. "/screensaver/init.lua")(common, source_dir .. "/screensaver")
 screensaver.register(parser)
+local clipboard = dofile(source_dir .. "/clipboard/init.lua")(common, source_dir .. "/clipboard")
+clipboard.register(parser)
+local insert = dofile(source_dir .. "/insert/init.lua")(common, source_dir .. "/insert")
+insert.register(parser)
 local options = parser:parse()
 
 -- Bare entry points show help rather than performing any system operation.
-if options.screensaver or options.idle then
+if options.insert then
+    local ok, message = pcall(insert.run, options)
+    if not ok then
+        common.error("Insert command failed: " .. tostring(message))
+        os.exit(1)
+    end
+elseif options.clipboard then
+    local ok, message = pcall(clipboard.run, options)
+    if not ok then
+        common.error("Clipboard command failed: " .. tostring(message))
+        os.exit(1)
+    end
+elseif options.screensaver or options.idle then
     local ok, message = pcall(screensaver.run, options)
     if not ok then
         common.error("Screensaver command failed: " .. tostring(message))

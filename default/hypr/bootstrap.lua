@@ -26,6 +26,7 @@ return function(root)
     local launcher = "'" .. (root .. "/bin/luna"):gsub("'", "'\\''") .. "'"
     hl.on("hyprland.start", function()
         hl.dispatch(hl.dsp.exec_cmd(launcher .. " screensaver start"))
+        hl.dispatch(hl.dsp.exec_cmd(launcher .. " clipboard start"))
     end)
     bind("SUPER + L", hl.dsp.exec_cmd(launcher .. " lock"))
     bind("SUPER + CTRL + B", hl.dsp.exec_cmd(launcher .. " bar focus"))

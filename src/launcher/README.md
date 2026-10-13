@@ -63,3 +63,25 @@ The menu and bar update without restarting.
 
 System lists Screensaver, Lock, Suspend, Hibernate, Logout, Reboot, and Shutdown.
 Logout exits the current Hyprland session. Reboot and Shutdown request normal systemd reboot/poweroff, without forcing past inhibitors. Click or Enter executes the selected action; failures appear in the menu. Lock starts Hyprlock with theme colors, UI font, and rounding. Type your system password and press Enter to unlock; PAM handles authentication. Super + L and `luna lock` also lock the session. Suspend and Hibernate check logind support, wait for the compositor to confirm the screen is locked, then request normal systemd sleep. Hibernate is hidden from menus and root search when logind reports it unavailable; availability refreshes each time the menu opens. Hibernate requires disk-backed swap and resume setup; zram alone is insufficient. These also work as `luna suspend` and `luna hibernate`. Screensaver opens a themed clock/date across all monitors. Setup → Idle configures automatic screensaver and auto-lock independently, with Disabled and preset delays. Defaults are 5 and 10 minutes.
+
+## Clipboard
+
+The Insert → Clipboard entry opens a two-pane history view: short entries on the
+left, full text or the selected image on the right. Search filters the list;
+Enter restores the selected content, promotes it to the newest history entry,
+closes the menu, and pastes into the application that was focused when Luna opened.
+Graphical apps receive Ctrl+V; recognized terminals receive Ctrl+Shift+V. If focus
+has changed to another window, Luna keeps the restored clipboard but skips paste.
+The receiving application must support the clipboard format and paste shortcut.
+
+`luna clipboard start` runs one session-owned pair of `wl-paste` watchers backed
+by `cliphist`; Hyprland starts it at login. The dependencies are `cliphist`,
+`wl-clipboard`, and `wtype`. History supports text and images; it does not preserve
+all simultaneous rich-text or application-specific MIME representations.
+
+The CLI also offers `list`, `preview ID`, `delete ID`, and `clear`. History lives
+in cliphist's default database (`~/.cache/cliphist/db`, unless overridden by
+`CLIPHIST_DB_PATH`). Image previews stay in a private runtime folder.
+
+Insert also groups offline Emoji search and GIFs (GIPHY). See
+[Insert configuration](../luna-cli/insert/README.md) for backend and paste behavior.
