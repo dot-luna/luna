@@ -38,6 +38,10 @@ Windows animate in 200 ms, fades in 150 ms, layers in 180 ms, and workspaces in 
 
 ## Multiple monitors
 
+`default/hypr/workspaces.lua` divides workspaces 1–10 evenly into consecutive ranges across connected monitors, ordered left to right (then top to bottom for equal horizontal positions). Two monitors get 1–5 and 6–10; three get 1–4, 5–7, and 8–10. The 0 key still selects workspace 10. Extra workspaces from an uneven split go to the leftmost monitors. Mirrored outputs do not get a separate range.
+
+Assignments update after startup, reload, hotplug, or monitor rearrangement, moving existing numbered workspaces with their windows. With one display, all ten belong to it. Named/special workspaces and numbers above 10 are unchanged.
+
 New outputs use their preferred resolution and refresh rate, automatic placement, and scale 1. Monitor scaling belongs in your personal display configuration. Add output-specific `hl.monitor()` rules after bootstrap for a fixed arrangement.
 
 ```sh

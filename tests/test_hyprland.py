@@ -15,6 +15,8 @@ BINDING_API = """
 local function binding_api()
     hl.bind = hl.bind or function() end
     hl.monitor = hl.monitor or function() end
+    hl.on = hl.on or function() end
+    hl.timer = hl.timer or function() end
     hl.curve = function() end
     hl.animation = function() end
     hl.dsp = {
@@ -115,6 +117,62 @@ assert(#monitors == 4 and monitors[3].position == "auto")
         output = self.config / 'theme.json'
         output.write_text(output.read_text().replace('"rounding":0', '"rounding":-1'))
         self.lua('hl = { config = function() error("Invalid settings must not be applied") end }; dofile(arg[1])', ok=False)
+
+    def test_workspace_ranges_follow_monitor_order_and_hotplug(self):
+        self.lua('''
+local events, rules, pending, moves = {}, {}, nil, {}
+local left = { name = "left", x = 0, y = 0 }
+local right = { name = "right", x = 1920, y = 0 }
+local third = { name = "third", x = 3840, y = 0 }
+local monitors = { right, left }
+hl = {
+    get_monitors = function() return monitors end,
+    get_workspaces = function() return {
+        { id = 2, monitor = right }, { id = 9, monitor = left }, { id = -1, monitor = left },
+    } end,
+    on = function(event, callback) events[event] = callback end,
+    timer = function(callback) pending = callback end,
+    workspace_rule = function(spec)
+        spec.enabled = true
+        function spec:set_enabled(value) self.enabled = value end
+        table.insert(rules, spec)
+        return spec
+    end,
+    dsp = { workspace = { move = function(options) return options end } },
+    dispatch = function(options) table.insert(moves, options) end,
+}
+local root = arg[1]:match("^(.*)/config/hypr/")
+dofile(root .. '/default/hypr/workspaces.lua')
+local function update(event)
+    events[event]()
+    if pending then local callback = pending; pending = nil; callback() end
+end
+local function assignment(id)
+    local result
+    for _, rule in ipairs(rules) do
+        if rule.enabled and rule.workspace == tostring(id) then
+            assert(not result, "duplicate assignment")
+            result = rule.monitor
+        end
+    end
+    return result
+end
+update('config.reloaded')
+for id = 1, 10 do assert(assignment(id) == (id <= 5 and 'left' or 'right')) end
+assert(#moves == 2 and moves[1].workspace == 2 and moves[1].monitor == 'left')
+update('monitor.layout_changed')
+assert(#rules == 10 and #moves == 2)
+monitors = { third, right, left }
+update('monitor.added')
+for id = 1, 10 do assert(assignment(id) == (id <= 4 and 'left' or id <= 7 and 'right' or 'third')) end
+monitors = { left }
+update('monitor.removed')
+for id = 1, 10 do assert(assignment(id) == 'left') end
+monitors = { right, left }
+left.x = 3000
+update('monitor.layout_changed')
+for id = 1, 10 do assert(assignment(id) == (id <= 5 and 'right' or 'left')) end
+''')
 
     def test_global_shortcuts_consume_input_and_bypass_app_inhibitors(self):
         self.lua('''

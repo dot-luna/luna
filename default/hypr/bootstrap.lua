@@ -1,6 +1,7 @@
 -- Load reusable defaults relative to the checkout supplied by the entry point.
 return function(root)
     dofile(root .. "/default/hypr/monitors.lua")
+    dofile(root .. "/default/hypr/workspaces.lua")
 
     local resolved = dofile(root .. "/lib/theme/resolved.lua")(root)
     local theme = dofile(root .. "/default/hypr/theme.lua")(resolved)
