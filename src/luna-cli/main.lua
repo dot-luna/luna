@@ -21,10 +21,22 @@ local bar = dofile(source_dir .. "/bar/init.lua")(common, source_dir .. "/bar")
 bar.register(parser)
 local launcher = dofile(source_dir .. "/launcher/init.lua")(common, source_dir .. "/launcher")
 launcher.register(parser)
+local windows = dofile(source_dir .. "/windows/init.lua")(common, source_dir .. "/windows")
+local windows_parser = windows.register(parser)
 local options = parser:parse()
 
 -- Bare entry points show help rather than performing any system operation.
-if options.settings or options.bar or options.launcher then
+if options.windows then
+    if not (options.install or options.start or options.stop or options.status or options.logs or options.delete) then
+        common.info(windows_parser:get_help())
+    else
+        local ok, message = pcall(windows.run, options)
+        if not ok then
+            common.error("Windows command failed: " .. tostring(message))
+            os.exit(1)
+        end
+    end
+elseif options.settings or options.bar or options.launcher then
     local handler = options.settings and settings or options.bar and bar or launcher
     local ok, message = pcall(handler.run, options)
     if not ok then

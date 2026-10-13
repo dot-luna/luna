@@ -1,5 +1,6 @@
 -- JSON codec for resolved themes; never evaluates generated content as Lua code.
-local M = {}
+-- A sentinel preserves null object fields and array positions that Lua nil would erase.
+local M = { null = {} }
 
 local function quote(value)
     return '"' .. value:gsub('[%z\1-\31\\"]', function(character)
@@ -11,7 +12,9 @@ local function quote(value)
 end
 
 function M.encode(value, array)
-    if type(value) == "string" then
+    if value == M.null then
+        return "null"
+    elseif type(value) == "string" then
         return quote(value)
     elseif type(value) == "number" or type(value) == "boolean" then
         return tostring(value)
@@ -118,7 +121,7 @@ function M.decode(source)
                 assert(c == ",", "Expected JSON comma")
             end
         end
-        for literal, value in pairs({ ["true"] = true, ["false"] = false }) do
+        for literal, value in pairs({ ["true"] = true, ["false"] = false, ["null"] = M.null }) do
             if source:sub(position, position + #literal - 1) == literal then
                 position = position + #literal
                 return value

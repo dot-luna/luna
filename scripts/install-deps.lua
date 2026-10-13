@@ -75,6 +75,10 @@ local function install()
     end
 
     common.info("Dependencies ready: " .. options.group)
+    if options.group == "core" then
+        common.info("Enable Docker when ready: sudo systemctl enable --now docker")
+        common.info("Use sudo docker for daemon commands unless Docker access is configured for your user.")
+    end
 end
 
 local ok, error_message = pcall(install)

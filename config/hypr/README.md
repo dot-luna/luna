@@ -59,11 +59,22 @@ This installs `nvidia-open` and `nvidia-utils`, enables DRM modesetting, blackli
 | Super + Return | Open Kitty |
 | Super + Shift + Return | Open Zen |
 | Super + W | Close the active window |
+| Super + F | Toggle edge-to-edge monitor fullscreen for the focused window |
 | Super + 1–9 | Switch to workspace 1–9 |
 | Super + 0 | Switch to workspace 10 |
+| Super + Shift + 1–9 / 0 | Move the focused window to that workspace and follow it (0 = 10) |
 | Super + Ctrl + B | Focus Luna Bar |
 | Super + Ctrl + Space | Toggle the control center |
 | Super + Space | Toggle the application launcher |
+
+Luna's global bindings consume their matching key events and bypass application shortcut inhibitors, including in fullscreen apps. They retain normal lock-screen protection. Personal global bindings can use the same flags:
+
+```lua
+hl.bind("SUPER + F", hl.dsp.window.fullscreen({ action = "toggle", mode = "fullscreen", layout_aware = false }), {
+    non_consuming = false,
+    dont_inhibit = true,
+})
+```
 
 ## Theme behavior
 

@@ -13,13 +13,13 @@ REPO = Path(__file__).resolve().parents[1]
 
 BINDING_API = """
 local function binding_api()
-    hl.bind = function() end
+    hl.bind = hl.bind or function() end
     hl.monitor = hl.monitor or function() end
     hl.curve = function() end
     hl.animation = function() end
     hl.dsp = {
         exec_cmd = function() end,
-        window = { close = function() end },
+        window = { close = function() end, move = function(options) return options end, fullscreen = function(options) return options end },
         focus = function() end,
     }
 end
@@ -115,6 +115,36 @@ assert(#monitors == 4 and monitors[3].position == "auto")
         output = self.config / 'theme.json'
         output.write_text(output.read_text().replace('"rounding":0', '"rounding":-1'))
         self.lua('hl = { config = function() error("Invalid settings must not be applied") end }; dofile(arg[1])', ok=False)
+
+    def test_global_shortcuts_consume_input_and_bypass_app_inhibitors(self):
+        self.lua('''
+local bindings = {}
+hl = {
+    config = function() end,
+    bind = function(keys, action, flags)
+        assert(flags.non_consuming == false, keys .. " must consume its input")
+        assert(flags.dont_inhibit == true, keys .. " must bypass app shortcut inhibitors")
+        assert(not flags.locked, keys .. " must respect the lock screen")
+        assert(not bindings[keys], "Duplicate shortcut: " .. keys)
+        bindings[keys] = action or true
+    end,
+}
+dofile(arg[1])
+local count = 0
+for _ in pairs(bindings) do count = count + 1 end
+assert(count == 27)
+assert(bindings["SUPER + F"].action == "toggle")
+assert(bindings["SUPER + F"].mode == "fullscreen")
+assert(bindings["SUPER + F"].layout_aware == false)
+for workspace = 1, 10 do
+    local move = bindings["SUPER + SHIFT + " .. tostring(workspace % 10)]
+    assert(move.workspace == workspace)
+    assert(move.follow == true)
+end
+assert(bindings["SUPER + 0"])
+assert(bindings["SUPER + CTRL + Space"])
+assert(bindings["SUPER + Space"])
+''')
 
     def test_symlink_entry_point(self):
         (self.config / 'theme').write_text('tokyo-night\n')

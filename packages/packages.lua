@@ -57,6 +57,11 @@ return {
         { name = "bluez-utils", source = "pacman", purpose = "Bluetooth command-line tools" },
         { name = "upower", source = "pacman", purpose = "Battery and power information" },
 
+        -- Container runtime and Windows VM client; Docker is enabled separately.
+        { name = "docker", source = "pacman", purpose = "Run containers and the Dockur Windows VM" },
+        { name = "docker-compose", source = "pacman", purpose = "Manage container stacks with Docker Compose" },
+        { name = "freerdp", source = "pacman", purpose = "Connect to the Windows VM over RDP" },
+
         -- Desktop controls for brightness, clipboard access, and locking.
         { name = "brightnessctl", source = "pacman", purpose = "Display brightness controls" },
         { name = "wl-clipboard", source = "pacman", purpose = "Wayland clipboard tools" },
