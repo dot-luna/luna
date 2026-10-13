@@ -14,3 +14,28 @@ function find(entries, query) {
         return score(nameA) - score(nameB) || nameA.localeCompare(nameB) || a.id.localeCompare(b.id);
     });
 }
+
+// Empty queries show immediate children; searches include descendants of this menu.
+function rootEntries(menuEntries, applications, query, route) {
+    route = route || "";
+    const words = query.toLocaleLowerCase().trim().split(/\s+/).filter(Boolean);
+    const sections = menuEntries.filter(entry => {
+        const parent = entry.parent || "";
+        if (!words.length)
+            return parent === route;
+        if (route && parent !== route && !parent.startsWith(route + "."))
+            return false;
+        const text = [entry.name, entry.parentLabel || ""].join(" ").toLocaleLowerCase();
+        return words.every(word => text.includes(word));
+    });
+    return !route && words.length ? sections.concat(find(applications, query)) : sections;
+}
+
+// Installed entries are removal units: packages or exact user font files.
+function installedFonts(entries, query) {
+    const words = query.toLocaleLowerCase().trim().split(/\s+/).filter(Boolean);
+    return entries.filter(entry => {
+        const text = [entry.name, entry.description, entry.repository].join(" ").toLocaleLowerCase();
+        return words.every(word => text.includes(word));
+    });
+}

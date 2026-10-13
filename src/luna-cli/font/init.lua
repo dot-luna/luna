@@ -2,7 +2,9 @@
 return function(common, module_dir)
     local packages = dofile(module_dir .. "/packages.lua")(common)
     local local_fonts = dofile(module_dir .. "/local.lua")(common)
-    local search = dofile(module_dir .. "/search.lua")(common, packages)
+    local json = dofile(module_dir .. "/../../../lib/theme/json.lua")
+    local search = dofile(module_dir .. "/search.lua")(common, packages, json)
+    local preferences = dofile(module_dir .. "/preferences.lua")(common, module_dir)
     local M = {}
 
     function M.register(parser)
@@ -12,6 +14,7 @@ return function(common, module_dir)
         local find = font:command("search", "Search configured pacman catalogs; optionally include AUR.")
         find:argument("query", "Font name or search expression")
         find:flag("--aur", "Include AUR results after official repository results")
+        find:flag("--json", "Return structured results for menu clients")
 
         local install = font:command("install", "Install packages, font files, or folders in one batch.")
         install:argument("targets", "Package names or local paths"):args("+")
@@ -22,7 +25,13 @@ return function(common, module_dir)
         local remove = font:command("remove", "Resolve names to font packages or user font files.")
         remove:argument("names", "Package name, font family, filename, or installed path"):args("+")
 
-        font:command("list", "List installed font families, styles, files, and sources.")
+        local listing = font:command("list", "List installed font families, styles, files, and sources.")
+        listing:flag("--json", "Return removable package and local-file entries for menu clients")
+        local families = font:command("families", "List installed families for a font role as JSON.")
+        families:argument("role"):choices({ "ui", "mono" })
+        local set = font:command("set", "Save a personal UI or mono font preference.")
+        set:argument("role"):choices({ "ui", "mono" })
+        set:argument("family")
         font:command("refresh", "Refresh the font cache.")
 
         return font
@@ -62,10 +71,13 @@ return function(common, module_dir)
         return false
     end
 
-    local function list()
+    local function list(options)
         local sources = {}
         local owners = packages.owners()
-        common.info("SOURCE\tFAMILY\tSTYLE\tFILE")
+        local results, grouped = {}, {}
+        if not options.json then
+            common.info("SOURCE\tFAMILY\tSTYLE\tFILE")
+        end
         for _, entry in ipairs(installed()) do
             local owner = owners[entry.path]
             local source = "local"
@@ -73,7 +85,52 @@ return function(common, module_dir)
                 sources[owner] = sources[owner] or packages.source(owner) .. ":" .. owner
                 source = sources[owner]
             end
-            common.info(table.concat({ source, entry.family, entry.style, entry.path }, "\t"))
+            if not options.json then
+                common.info(table.concat({ source, entry.family, entry.style, entry.path }, "\t"))
+            elseif owner then
+                -- A package is the removal unit even when it supplies many families.
+                if not grouped[owner] then
+                    grouped[owner] = {
+                        name = owner, target = owner, repository = source:match("^([^:]+)"),
+                        description = entry.family,
+                    }
+                    table.insert(results, grouped[owner])
+                elseif not grouped[owner].description:find(entry.family, 1, true) then
+                    grouped[owner].description = grouped[owner].description .. ", " .. entry.family
+                end
+            elseif local_fonts.removable(entry.path) then
+                -- Fontconfig lists aliases after the primary family. Group only within
+                -- the same directory so separately installed copies remain independent.
+                local family = entry.family:match("^([^,]+)") or entry.family
+                family = family:match("^%s*(.-)%s*$")
+                local directory = entry.path:match("^(.*)/") or ""
+                local key = "local:" .. directory .. "/" .. family:lower()
+                local item = grouped[key]
+                if not item then
+                    item = {
+                        name = family, target = entry.path, targets = {},
+                        selectionKey = key, repository = "local", description = directory,
+                        fileCount = 0,
+                    }
+                    grouped[key] = item
+                    table.insert(results, item)
+                end
+                local seen = false
+                for _, path in ipairs(item.targets) do
+                    seen = seen or path == entry.path
+                end
+                if not seen then
+                    table.insert(item.targets, entry.path)
+                    item.fileCount = #item.targets
+                end
+                if entry.style ~= "" and not item.description:find(entry.style, 1, true) then
+                    item.description = item.description .. " · " .. entry.style
+                end
+            end
+        end
+        if options.json then
+            table.sort(results, function(a, b) return a.name .. a.target < b.name .. b.target end)
+            common.info('{"results":' .. json.encode(results, true) .. '}')
         end
     end
 
@@ -105,13 +162,24 @@ return function(common, module_dir)
         local entries = installed()
         local owners = packages.owners()
 
+        -- Only resolve filesystem safety for matching files, once per batch.
+        -- Checking every installed path for every target makes large families stall.
+        local removable = {}
+        local function can_remove(path)
+            if removable[path] == nil then
+                removable[path] = local_fonts.removable(path)
+            end
+            return removable[path]
+        end
+
         -- Resolve the whole batch first: ambiguous or unknown names cause no removal.
         for _, name in ipairs(options.names) do
             local choices = {}
             for _, entry in ipairs(entries) do
                 local filename = entry.path:match("([^/]+)$")
-                if not owners[entry.path] and local_fonts.removable(entry.path)
-                    and (entry.path == name or filename == name or family_matches(entry.family, name)) then
+                if not owners[entry.path]
+                    and (entry.path == name or filename == name or family_matches(entry.family, name))
+                    and can_remove(entry.path) then
                     -- Family matches group weights in one folder; exact paths disambiguate.
                     local key = "local:" .. (entry.path == name and entry.path or entry.path:match("^(.*)/"))
                     choices[key] = choices[key] or { paths = {} }
@@ -172,24 +240,34 @@ return function(common, module_dir)
             common.info("  [local] " .. path)
         end
 
-        io.stdout:write("Remove these fonts? [y/N] ")
-        io.stdout:flush()
-        local answer = io.read("*l")
-        if not answer or (answer:lower() ~= "y" and answer:lower() ~= "yes") then
-            common.info("Removal cancelled.")
-            return
+        if not options.menu_confirm then
+            io.stdout:write("Remove these fonts? [y/N] ")
+            io.stdout:flush()
+            local answer = io.read("*l")
+            if not answer or (answer:lower() ~= "y" and answer:lower() ~= "yes") then
+                common.info("Removal cancelled.")
+                return
+            end
         end
 
-        packages.remove(package_names)
+        packages.remove(package_names, options)
         for _, path in ipairs(paths) do
             assert(local_fonts.removable(path), "Font is no longer in a user font directory: " .. path)
             assert(os.remove(path))
+        end
+        if options.menu_confirm then
+            common.info("Refreshing font cache…")
+            io.stdout:flush()
         end
         local_fonts.refresh()
     end
 
     function M.run(options)
-        if options.search then
+        if options.families then
+            common.info('{"results":' .. json.encode(preferences.families(options.role), true) .. '}')
+        elseif options.set then
+            preferences.set(options.role, options.family)
+        elseif options.search then
             require_tools({ "pacman" })
             search(options)
         else
@@ -199,7 +277,7 @@ return function(common, module_dir)
             elseif options.remove then
                 remove(options)
             elseif options.list then
-                list()
+                list(options)
             elseif options.refresh then
                 local_fonts.refresh()
             end

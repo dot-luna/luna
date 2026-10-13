@@ -15,6 +15,8 @@ BINDING_API = """
 local function binding_api()
     hl.bind = hl.bind or function() end
     hl.monitor = hl.monitor or function() end
+    hl.layer_rule = hl.layer_rule or function() end
+    hl.window_rule = hl.window_rule or function() end
     hl.on = hl.on or function() end
     hl.timer = hl.timer or function() end
     hl.curve = function() end
@@ -190,7 +192,7 @@ hl = {
 dofile(arg[1])
 local count = 0
 for _ in pairs(bindings) do count = count + 1 end
-assert(count == 27)
+assert(count == 28)
 assert(bindings["SUPER + F"].action == "toggle")
 assert(bindings["SUPER + F"].mode == "fullscreen")
 assert(bindings["SUPER + F"].layout_aware == false)
@@ -202,6 +204,7 @@ end
 assert(bindings["SUPER + 0"])
 assert(bindings["SUPER + CTRL + Space"])
 assert(bindings["SUPER + Space"])
+assert(bindings["SUPER + L"])
 ''')
 
     def test_symlink_entry_point(self):

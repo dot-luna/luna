@@ -11,11 +11,13 @@
 ```bash
 luna font search jetbrains
 luna font search jetbrains --aur
+luna font search jetbrains --aur --json
 ```
 
 - Searches configured pacman catalogs for font/typeface matches.
 - `--aur` adds live AUR results after official results.
 - Results show package names, descriptions, and repositories.
+- `--json` returns a results array (name, repository, description, installed) and a warning string. AUR failures preserve repository results for menu clients.
 
 ## Install
 
@@ -38,9 +40,11 @@ luna font install -r ./downloaded-fonts/
 
 ```bash
 luna font list
+luna font list --json
 ```
 
 - Shows families, styles, file paths, and sources.
+- `--json` returns removable entries grouped by package, plus local families grouped within each directory. Local entries include an explicit `targets` array of files, a stable `selectionKey`, and `fileCount`. Unowned system files are excluded.
 - Sources: pacman, foreign package, or local file.
 - Foreign packages may come from AUR or a manually installed package archive.
 
@@ -73,3 +77,14 @@ luna font refresh
 
 - Direct URL downloads.
 - Archive extraction.
+
+## Personal font preferences
+
+`luna font families ui` and `luna font families mono` return installed families as JSON.
+Both roles list all installed families, including Nerd Fonts, without spacing filters.
+
+`luna font set ui "Outfit"` or `luna font set mono "Iosevka Nerd Font"` saves an installed
+family in `~/.config/luna/fonts.json`, updates resolved `theme.json`, and applies the
+fonts to running Luna menu/bar instances. Personal choices override theme fonts
+across theme switches. This configures Luna theme consumers, not unrelated
+applications with their own font settings.

@@ -3,6 +3,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import Quickshell.Hyprland
+import Luna as Luna
 
 ShellRoot {
     id: shell
@@ -49,6 +50,9 @@ ShellRoot {
         }
         function focus(): void {
             shell.focusBar();
+        }
+        function applyFonts(value: string): void {
+            Luna.Theme.applyFonts(JSON.parse(value));
         }
         function ping(): string {
             return "ready";

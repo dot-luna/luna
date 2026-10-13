@@ -4,6 +4,7 @@ return function(root)
     local validate = dofile(root .. "/lib/theme/validate.lua")()
     local json = dofile(root .. "/lib/theme/json.lua")
     local defaults = dofile(root .. "/lib/theme/defaults.lua")
+    local fonts = dofile(root .. "/lib/theme/fonts.lua")(root)
     local home = assert(os.getenv("HOME"), "HOME is required")
     local config = (os.getenv("XDG_CONFIG_HOME") or home .. "/.config") .. "/luna"
     M.path = config .. "/theme.json"
@@ -53,7 +54,7 @@ return function(root)
         result.version = 1
         result.name = name or "tokyo-night"
         validate.values(result)
-        return result
+        return fonts.apply(result)
     end
 
     function M.encode(exports)
@@ -78,7 +79,7 @@ return function(root)
             end
         end
         complete(result, defaults)
-        return result
+        return fonts.apply(result)
     end
 
     function M.active()

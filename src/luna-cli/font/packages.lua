@@ -53,6 +53,15 @@ return function(common)
             arguments = { "pacman", "-Syu" }
         end
 
+        -- Only the menu adapter opts into unattended package confirmations.
+        if options.menu_confirm then
+            table.insert(arguments, "--noconfirm")
+            if options.aur and arguments[1] == "yay" then
+                for _, value in ipairs({ "--answerclean", "None", "--answerdiff", "None", "--answeredit", "None", "--sudoloop" }) do
+                    table.insert(arguments, value)
+                end
+            end
+        end
         if not options.force then
             table.insert(arguments, "--needed")
         end
@@ -92,12 +101,16 @@ return function(common)
         return common.succeeds({ "pacman", "-Qm", "--", name }) and "foreign" or "pacman"
     end
 
-    function M.remove(names)
+    function M.remove(names, options)
         if #names == 0 then
             return
         end
 
-        local arguments = { "pacman", "-R", "--" }
+        local arguments = { "pacman", "-R" }
+        if options and options.menu_confirm then
+            table.insert(arguments, "--noconfirm")
+        end
+        table.insert(arguments, "--")
         for _, name in ipairs(names) do
             M.validate(name)
             table.insert(arguments, name)

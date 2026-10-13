@@ -33,7 +33,7 @@ function M.encode(value, array)
     end
     table.sort(keys)
     for _, key in ipairs(keys) do
-        table.insert(fields, quote(key) .. ":" .. M.encode(value[key], key == "sources" or key == "world_clocks"))
+        table.insert(fields, quote(key) .. ":" .. M.encode(value[key], key == "sources" or key == "world_clocks" or key == "targets"))
     end
     return "{" .. table.concat(fields, ",") .. "}"
 end

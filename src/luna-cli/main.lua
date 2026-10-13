@@ -23,10 +23,22 @@ local launcher = dofile(source_dir .. "/launcher/init.lua")(common, source_dir .
 launcher.register(parser)
 local windows = dofile(source_dir .. "/windows/init.lua")(common, source_dir .. "/windows")
 local windows_parser = windows.register(parser)
+local lock = dofile(source_dir .. "/lock/init.lua")(common, source_dir .. "/lock")
+lock.register(parser)
+local sleep = dofile(source_dir .. "/sleep/init.lua")(common, source_dir .. "/sleep")
+sleep.register(parser)
+local screensaver = dofile(source_dir .. "/screensaver/init.lua")(common, source_dir .. "/screensaver")
+screensaver.register(parser)
 local options = parser:parse()
 
 -- Bare entry points show help rather than performing any system operation.
-if options.windows then
+if options.screensaver or options.idle then
+    local ok, message = pcall(screensaver.run, options)
+    if not ok then
+        common.error("Screensaver command failed: " .. tostring(message))
+        os.exit(1)
+    end
+elseif options.windows then
     if not (options.install or options.start or options.stop or options.status or options.logs or options.delete) then
         common.info(windows_parser:get_help())
     else
@@ -36,17 +48,17 @@ if options.windows then
             os.exit(1)
         end
     end
-elseif options.settings or options.bar or options.launcher then
-    local handler = options.settings and settings or options.bar and bar or launcher
+elseif options.settings or options.bar or options.launcher or options.lock or options.suspend or options.hibernate then
+    local handler = options.settings and settings or options.bar and bar or options.lock and lock or (options.suspend or options.hibernate) and sleep or launcher
     local ok, message = pcall(handler.run, options)
     if not ok then
-        local label = options.settings and "Settings" or options.bar and "Bar" or "Launcher"
+        local label = options.settings and "Settings" or options.bar and "Bar" or options.lock and "Lock" or (options.suspend or options.hibernate) and "Sleep" or "Launcher"
         common.error(label .. " command failed: " .. tostring(message))
         os.exit(1)
     end
 elseif not options.font and not options.wallpaper and not options.theme then
     common.info(parser:get_help())
-elseif options.font and not (options.search or options.install or options.remove or options.list or options.refresh) then
+elseif options.font and not (options.search or options.install or options.remove or options.list or options.refresh or options.families or options.set) then
     common.info(font_parser:get_help())
 elseif options.wallpaper and not (options.add or options.set or options.remove or options.list
     or options.random or options.current or options.dir or options.open or options.start) then
