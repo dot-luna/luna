@@ -106,11 +106,11 @@ ShellRoot {
 
             anchors.centerIn: parent
             border.color: Luna.Theme.muted
-            border.width: 1
+            border.width: Luna.Theme.borderWidth
             color: Luna.Theme.background
-            height: body.implicitHeight + 32
-            radius: 14
-            width: Math.min(620, panel.width - 32)
+            height: body.implicitHeight + 24
+            radius: Math.min(Luna.Theme.barRounding, width / 2, height / 2)
+            width: Math.min(520, panel.width - 2 * Math.max(12, Luna.Theme.outerGap))
 
             MouseArea {
                 anchors.fill: parent
@@ -119,19 +119,19 @@ ShellRoot {
                 id: body
 
                 anchors.left: parent.left
-                anchors.margins: 16
+                anchors.margins: 12
                 anchors.right: parent.right
                 anchors.top: parent.top
-                spacing: 12
+                spacing: 8
 
                 RowLayout {
                     Layout.fillWidth: true
                     spacing: 12
 
                     Luna.Icon {
-                        implicitHeight: 22
-                        implicitWidth: 22
-                        ink: Luna.Theme.accent
+                        implicitHeight: 18
+                        implicitWidth: 18
+                        ink: Luna.Theme.foreground
                         name: "search"
                     }
                     TextField {
@@ -141,8 +141,9 @@ ShellRoot {
                         Accessible.name: "Search applications"
                         Layout.fillWidth: true
                         color: Luna.Theme.brightForeground
-                        font.pixelSize: 18
-                        implicitHeight: 44
+                        font.family: Luna.Theme.uiFont
+                        font.pixelSize: 16
+                        implicitHeight: 40
                         placeholderText: "Search applications"
                         placeholderTextColor: Luna.Theme.foreground
                         selectByMouse: true
@@ -172,7 +173,7 @@ ShellRoot {
                     Accessible.name: "Applications"
                     Accessible.role: Accessible.List
                     Layout.fillWidth: true
-                    Layout.preferredHeight: Math.min(400, Math.max(72, panel.height - 180), Math.max(72, count * 58))
+                    Layout.preferredHeight: Math.min(398, Math.max(64, panel.height - 140), Math.max(64, count * 50 - 2))
                     boundsBehavior: Flickable.StopAtBounds
                     clip: true
                     currentIndex: -1
@@ -180,7 +181,17 @@ ShellRoot {
                     spacing: 2
 
                     ScrollBar.vertical: ScrollBar {
+                        id: scrollbar
+
                         policy: ScrollBar.AsNeeded
+                        implicitWidth: 3
+                        contentItem: Rectangle {
+                            color: scrollbar.pressed ? Luna.Theme.accent : Luna.Theme.muted
+                            radius: Math.min(Luna.Theme.barRounding, width / 2)
+                            implicitWidth: 3
+                            opacity: scrollbar.size < 1 ? 1 : 0
+                        }
+                        background: Item {}
                     }
                     delegate: Button {
                         id: result
@@ -191,14 +202,15 @@ ShellRoot {
                         Accessible.name: modelData.name
                         Accessible.role: Accessible.ListItem
                         focusPolicy: Qt.NoFocus
-                        height: 56
-                        width: results.width
+                        height: 48
+                        width: results.width - (scrollbar.size < 1 ? 9 : 0)
+                        padding: 10
+                        hoverEnabled: true
+                        readonly property bool selected: results.currentIndex === index
 
                         background: Rectangle {
-                            border.color: Luna.Theme.accent
-                            border.width: results.currentIndex === result.index ? 1 : 0
-                            color: results.currentIndex === result.index ? Luna.Theme.selection : "transparent"
-                            radius: 7
+                            color: result.selected ? Luna.Theme.selection : "transparent"
+                            radius: Math.min(Luna.Theme.barRounding, width / 2, height / 2)
                         }
                         contentItem: RowLayout {
                             spacing: 12
@@ -206,40 +218,29 @@ ShellRoot {
                             Image {
                                 id: appIcon
 
-                                Layout.preferredHeight: 32
-                                Layout.preferredWidth: 32
+                                Layout.preferredHeight: 28
+                                Layout.preferredWidth: 28
                                 fillMode: Image.PreserveAspectFit
                                 source: result.modelData.icon.startsWith("/") ? "file://" + result.modelData.icon.split("/").map(encodeURIComponent).join("/") : Quickshell.iconPath(result.modelData.icon, true)
-                                sourceSize: Qt.size(32, 32)
+                                sourceSize: Qt.size(28, 28)
 
                                 Luna.Icon {
                                     anchors.centerIn: parent
-                                    height: 28
+                                    height: 22
+                                    ink: result.selected ? Luna.Theme.selectionForeground : Luna.Theme.foreground
                                     name: "monitor"
                                     visible: appIcon.status !== Image.Ready
-                                    width: 28
+                                    width: 22
                                 }
                             }
-                            ColumnLayout {
+                            Label {
                                 Layout.fillWidth: true
-                                spacing: 3
-
-                                Label {
-                                    Layout.fillWidth: true
-                                    color: Luna.Theme.brightForeground
-                                    elide: Text.ElideRight
-                                    font.pixelSize: 14
-                                    text: result.modelData.name
-                                    textFormat: Text.PlainText
-                                }
-                                Label {
-                                    Layout.fillWidth: true
-                                    color: Luna.Theme.foreground
-                                    elide: Text.ElideRight
-                                    font.pixelSize: 11
-                                    text: result.modelData.genericName || result.modelData.comment || result.modelData.id
-                                    textFormat: Text.PlainText
-                                }
+                                color: result.selected ? Luna.Theme.selectionForeground : Luna.Theme.brightForeground
+                                elide: Text.ElideRight
+                                font.family: Luna.Theme.uiFont
+                                font.pixelSize: 14
+                                text: result.modelData.name
+                                textFormat: Text.PlainText
                             }
                         }
 
@@ -253,25 +254,13 @@ ShellRoot {
                     Label {
                         anchors.centerIn: parent
                         color: Luna.Theme.foreground
+                        font.family: Luna.Theme.uiFont
+                        font.pixelSize: 13
                         text: search.text.trim() ? "No matching applications" : "No applications found"
                         visible: results.count === 0
                     }
                 }
-                RowLayout {
-                    Layout.fillWidth: true
 
-                    Label {
-                        Layout.fillWidth: true
-                        color: Luna.Theme.foreground
-                        font.pixelSize: 11
-                        text: results.count + (results.count === 1 ? " application" : " applications")
-                    }
-                    Label {
-                        color: Luna.Theme.foreground
-                        font.pixelSize: 11
-                        text: "↑ ↓ select   Enter launch   Esc close"
-                    }
-                }
             }
         }
     }

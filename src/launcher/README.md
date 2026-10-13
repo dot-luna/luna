@@ -33,7 +33,7 @@ Application icons come from installed icon themes or the entry's absolute image 
 
 ## Theme
 
-Reads the shared resolved `theme.json` at startup. After editing a theme, run `luna theme set <name>` to regenerate it, then `luna launcher reload`. No theme watcher is used.
+Reads the shared resolved `theme.json` at startup. The compact search panel and result rows share the bar’s colors, UI font, rounding, and panel border width. Results show application icons and names without a shortcut footer or description text. Backgrounds are solid theme colors; compositor effects remain Hyprland’s responsibility. After editing a theme, run `luna theme set <name>` to regenerate it, then `luna launcher reload`. No theme watcher is used.
 
 ## Source
 
