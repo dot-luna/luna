@@ -75,6 +75,15 @@ TestCase {
         compare(Search.installedFonts(fonts, "my local")[0].target, fonts[1].target);
         compare(Search.installedFonts(fonts, "missing").length, 0);
     }
+    function test_keybinding_guide_is_searchable_from_root_and_learn() {
+        const guide = {name: "Hyprland Keybindings", parent: "learn", parentLabel: "Learn", route: "learn.keybindings", keywords: ["keyboard", "shortcuts"]};
+        const menu = [{name: "Learn", route: "learn"}, guide];
+        compare(Search.rootEntries(menu, entries, "").length, 1);
+        compare(Search.rootEntries(menu, entries, "", "learn")[0], guide);
+        compare(Search.rootEntries(menu, entries, "keyboard shortcuts")[0], guide);
+        compare(Search.rootEntries(menu, entries, "hyprland", "learn")[0], guide);
+        compare(Search.rootEntries(menu, entries, "shortcuts", "system").length, 0);
+    }
     function test_emoji_search_names_categories_and_glyphs() {
         const emoji = [
             { name: "thumbs up: medium skin tone", emoji: "👍🏽", keywords: "People & Body hand-fingers-closed" },

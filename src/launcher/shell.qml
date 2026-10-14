@@ -8,6 +8,7 @@ import Quickshell.Wayland
 import Quickshell.Hyprland
 import Luna as Luna
 import "Search.js" as Search
+import "Keybindings.js" as Keybindings
 import "FontSelection.js" as FontSelection
 import "EmojiSelection.js" as EmojiSelection
 import "System.js" as System
@@ -180,6 +181,9 @@ ShellRoot {
     property bool hibernateAvailable: false
     property string currentMenu: ""
     readonly property bool appsView: currentMenu === "apps"
+    readonly property bool keybindingsView: currentMenu === "learn.keybindings"
+    property var keybindingEntries: []
+    property string keybindingMessage: ""
     readonly property bool fontsView: currentMenu === "install.style.font"
     readonly property bool removeFontsView: currentMenu === "remove.style.font"
     readonly property string fontRole: currentMenu === "style.font.ui" ? "ui" : currentMenu === "style.font.mono" ? "mono" : ""
@@ -207,7 +211,8 @@ ShellRoot {
         { name: "Clipboard", icon: "clipboard", route: "insert.clipboard", parent: "insert", parentLabel: "Insert" },
         { name: "Emoji", icon: "smile", route: "insert.emoji", parent: "insert", parentLabel: "Insert" },
         { name: "GIFs", icon: "film", route: "insert.gifs", parent: "insert", parentLabel: "Insert" },
-        { name: "Learn", icon: "book-open" },
+        { name: "Learn", icon: "book-open", route: "learn" },
+        { name: "Hyprland Keybindings", icon: "type", route: "learn.keybindings", parent: "learn", parentLabel: "Learn", keywords: ["keyboard", "shortcuts"] },
         { name: "Trigger", icon: "zap" },
         { name: "Style", icon: "palette", route: "style" },
         { name: "Setup", icon: "sliders-horizontal", route: "setup" },
@@ -244,7 +249,7 @@ ShellRoot {
         }))), [])
     readonly property var availableMenuEntries: menuEntries.concat(idleEntries).filter(entry =>
         entry.action !== "hibernate" || hibernateAvailable)
-    readonly property var matches: emojiView ? Search.insertEntries(emojiEntries, search.text) : gifSource ? gifEntries : clipboardView ? clipboardEntries.filter(entry => entry.name.toLowerCase().includes(search.text.toLowerCase())) : fontRole ? Search.installedFonts(fontFamilies, search.text) : removeFontsView ? Search.installedFonts(installedFonts, search.text) : fontsView ? fontResults : appsView
+    readonly property var matches: keybindingsView ? Keybindings.find(keybindingEntries, search.text) : emojiView ? Search.insertEntries(emojiEntries, search.text) : gifSource ? gifEntries : clipboardView ? clipboardEntries.filter(entry => entry.name.toLowerCase().includes(search.text.toLowerCase())) : fontRole ? Search.installedFonts(fontFamilies, search.text) : removeFontsView ? Search.installedFonts(installedFonts, search.text) : fontsView ? fontResults : appsView
         ? Search.find(DesktopEntries.applications.values, search.text)
         : Search.rootEntries(availableMenuEntries, DesktopEntries.applications.values, search.text, currentMenu)
 
@@ -293,6 +298,9 @@ ShellRoot {
     }
 
     function activate(entry) {
+        // This is a shortcut reference; selecting a row never dispatches its action.
+        if (entry && entry.keybinding)
+            return;
         if (emojiView || gifSource) {
             const selected = EmojiSelection.values(emojiSelection, entry);
             if (clipboardPaste.running || (emojiView ? !selected.length : !entry)) return;
@@ -421,6 +429,33 @@ ShellRoot {
             installedFonts = [];
             removalMessage = "";
             fontListing.running = true;
+        }
+    }
+
+    // Refresh from the compositor on entry so custom and reloaded bindings appear.
+    onKeybindingsViewChanged: {
+        if (keybindingsView && !keybindingListing.running) {
+            keybindingEntries = [];
+            keybindingMessage = "";
+            keybindingListing.running = true;
+        }
+    }
+
+    Process {
+        id: keybindingListing
+        command: ["timeout", "5s", "hyprctl", "binds"]
+        stdout: StdioCollector {}
+        stderr: StdioCollector {}
+        onExited: (code, status) => {
+            if (code !== 0) {
+                shell.keybindingMessage = "Could not load Hyprland keybindings.";
+                return;
+            }
+            try {
+                shell.keybindingEntries = Keybindings.parse(stdout.text);
+            } catch (error) {
+                shell.keybindingMessage = "Could not read Hyprland keybindings.";
+            }
         }
     }
 
@@ -756,7 +791,7 @@ ShellRoot {
                             id: search
 
                             Accessible.description: card.selectedEntry ? card.selectedEntry.name : "No matching entries"
-                            Accessible.name: shell.insertView ? "Search " + (shell.emojiView ? "emoji" : shell.gifSource ? "GIFs" : "clipboard") : (shell.fontsView || shell.removeFontsView || shell.fontRole) ? "Search fonts" : shell.appsView ? "Search applications" : "Search menu"
+                            Accessible.name: shell.keybindingsView ? "Search Hyprland keybindings" : shell.insertView ? "Search " + (shell.emojiView ? "emoji" : shell.gifSource ? "GIFs" : "clipboard") : (shell.fontsView || shell.removeFontsView || shell.fontRole) ? "Search fonts" : shell.appsView ? "Search applications" : "Search menu"
                             Layout.fillWidth: true
                             implicitHeight: 48 * shell.textScale
                             padding: 0
@@ -841,6 +876,15 @@ ShellRoot {
                         Layout.fillWidth: true
                         visible: shell.systemMessage.length > 0
                         text: shell.systemMessage
+                        wrapMode: Text.Wrap
+                        color: Luna.Theme.foreground
+                        font.family: shell.uiFont
+                        font.pointSize: shell.textSize
+                    }
+                    Label {
+                        Layout.fillWidth: true
+                        visible: shell.keybindingsView && shell.keybindingMessage.length > 0
+                        text: shell.keybindingMessage
                         wrapMode: Text.Wrap
                         color: Luna.Theme.foreground
                         font.family: shell.uiFont
@@ -1016,7 +1060,7 @@ ShellRoot {
                         id: results
                         visible: !shell.gridView
 
-                        Accessible.name: shell.clipboardView ? "Clipboard history" : shell.appsView ? "Applications" : "Menu entries"
+                        Accessible.name: shell.keybindingsView ? "Hyprland keybindings" : shell.clipboardView ? "Clipboard history" : shell.appsView ? "Applications" : "Menu entries"
                         Layout.preferredWidth: shell.insertView ? 320 * shell.textScale : -1
                         Accessible.role: Accessible.List
                         Layout.fillWidth: true
@@ -1048,9 +1092,9 @@ ShellRoot {
                             readonly property bool marked: (shell.fontsView || shell.removeFontsView) && FontSelection.contains(shell.fontSelection, modelData)
                             readonly property bool applicationEntry: typeof modelData.execute === "function"
 
-                            Accessible.name: modelData.name
-                            ToolTip.visible: hovered && !!modelData.targets
-                            ToolTip.text: modelData.description || ""
+                            Accessible.name: modelData.keybinding ? [modelData.name, modelData.shortcut, modelData.context].filter(Boolean).join(", ") : modelData.name
+                            ToolTip.visible: hovered && (!!modelData.targets || !!modelData.keybinding)
+                            ToolTip.text: modelData.keybinding ? [modelData.name, modelData.shortcut, modelData.context].filter(Boolean).join("\n") : modelData.description || ""
                             Accessible.role: Accessible.ListItem
                             focusPolicy: Qt.NoFocus
                             height: 48 * shell.textScale
@@ -1072,7 +1116,7 @@ ShellRoot {
                                 spacing: 14
 
                                 Item {
-                                    visible: !shell.clipboardView || !!result.modelData.image
+                                    visible: !shell.keybindingsView && (!shell.clipboardView || !!result.modelData.image)
                                     Layout.preferredWidth: result.modelData.image ? 48 : 20
                                     Layout.preferredHeight: result.modelData.image ? 32 : 20
 
@@ -1098,19 +1142,45 @@ ShellRoot {
                                     Luna.Icon {
                                         anchors.fill: parent
                                         visible: !result.modelData.emoji && !result.modelData.image && (!result.applicationEntry || appIcon.status !== Image.Ready)
-                                        name: result.applicationEntry ? "layout-grid" : result.modelData.icon
+                                        name: result.applicationEntry ? "layout-grid" : result.modelData.icon || "type"
                                         ink: result.selected ? Luna.Theme.selectionForeground : Luna.Theme.foreground
                                     }
                                 }
-                                Label {
+                                ColumnLayout {
                                     Layout.fillWidth: true
-                                    color: result.selected ? Luna.Theme.selectionForeground : Luna.Theme.brightForeground
-                                    font.family: shell.uiFont
-                                    font.pointSize: shell.textSize + 1
-                                    font.weight: result.selected ? Font.Medium : Font.Normal
-                                    elide: Text.ElideRight
-                                    text: result.modelData.name
+                                    spacing: 1
+
+                                    Label {
+                                        Layout.fillWidth: true
+                                        color: result.selected ? Luna.Theme.selectionForeground : Luna.Theme.brightForeground
+                                        font.family: shell.uiFont
+                                        font.pointSize: shell.textSize + 1
+                                        font.weight: result.selected ? Font.Medium : Font.Normal
+                                        elide: Text.ElideRight
+                                        text: result.modelData.name
+                                        textFormat: Text.PlainText
+                                    }
+                                    Label {
+                                        visible: shell.keybindingsView && !!result.modelData.context
+                                        Layout.fillWidth: true
+                                        color: result.selected ? Luna.Theme.selectionForeground : Luna.Theme.foreground
+                                        opacity: 0.65
+                                        font.family: shell.uiFont
+                                        font.pointSize: Math.max(1, shell.textSize - 2)
+                                        elide: Text.ElideRight
+                                        text: result.modelData.context || ""
+                                        textFormat: Text.PlainText
+                                    }
+                                }
+                                Label {
+                                    visible: !!result.modelData.keybinding
+                                    Layout.maximumWidth: results.width * 0.48
+                                    text: result.modelData.shortcut || ""
                                     textFormat: Text.PlainText
+                                    elide: Text.ElideRight
+                                    color: result.selected ? Luna.Theme.selectionForeground : Luna.Theme.accent
+                                    font.family: shell.uiFont
+                                    font.pointSize: shell.textSize
                                 }
                                 Label {
                                     visible: text.length > 0
@@ -1134,7 +1204,7 @@ ShellRoot {
                                     Layout.preferredHeight: 14
                                     name: "chevron-right"
                                     ink: Luna.Theme.selectionForeground
-                                    visible: !shell.insertView && result.selected && !result.applicationEntry && !result.modelData.repository && !result.modelData.family && !result.modelData.action && !result.modelData.idleSetting
+                                    visible: !shell.insertView && !result.modelData.keybinding && result.selected && !result.applicationEntry && !result.modelData.repository && !result.modelData.family && !result.modelData.action && !result.modelData.idleSetting
                                 }
                             }
                             onClicked: {
@@ -1160,7 +1230,7 @@ ShellRoot {
                             }
                             Label {
                                 Layout.alignment: Qt.AlignHCenter
-                                text: shell.emojiView ? (emojiListing.running ? "Loading…" : "No matching emoji") : shell.gifSource ? (gifSearch.running ? "Loading…" : shell.systemMessage ? "" : "No GIFs found") : shell.clipboardView ? (clipboardListing.running ? "Loading…" : "No clipboard entries") : shell.fontRole
+                                text: shell.keybindingsView ? (keybindingListing.running ? "Loading…" : shell.keybindingMessage ? "" : search.text.trim() ? "No matching keybindings" : "No keybindings found") : shell.emojiView ? (emojiListing.running ? "Loading…" : "No matching emoji") : shell.gifSource ? (gifSearch.running ? "Loading…" : shell.systemMessage ? "" : "No GIFs found") : shell.clipboardView ? (clipboardListing.running ? "Loading…" : "No clipboard entries") : shell.fontRole
                                     ? (fontFamilyList.running ? "Loading…" : shell.fontPreferenceMessage ? "" : "No matching fonts")
                                     : shell.removeFontsView
                                     ? (fontListing.running ? "Loading…" : shell.removalMessage ? "" : "No matching installed fonts")

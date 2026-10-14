@@ -179,14 +179,18 @@ for id = 1, 10 do assert(assignment(id) == (id <= 5 and 'right' or 'left')) end
     def test_global_shortcuts_consume_input_and_bypass_app_inhibitors(self):
         self.lua('''
 local bindings = {}
+local descriptions = {}
 hl = {
     config = function() end,
     bind = function(keys, action, flags)
         assert(flags.non_consuming == false, keys .. " must consume its input")
         assert(flags.dont_inhibit == true, keys .. " must bypass app shortcut inhibitors")
         assert(not flags.locked, keys .. " must respect the lock screen")
+        assert(type(flags.description) == "string" and flags.description:match("%S"),
+            keys .. " must describe its Lua action for the keybinding guide")
         assert(not bindings[keys], "Duplicate shortcut: " .. keys)
         bindings[keys] = action or true
+        descriptions[keys] = flags.description
     end,
 }
 dofile(arg[1])
@@ -200,6 +204,8 @@ for workspace = 1, 10 do
     local move = bindings["SUPER + SHIFT + " .. tostring(workspace % 10)]
     assert(move.workspace == workspace)
     assert(move.follow == true)
+    assert(descriptions["SUPER + " .. tostring(workspace % 10)]:find(tostring(workspace), 1, true))
+    assert(descriptions["SUPER + SHIFT + " .. tostring(workspace % 10)]:find(tostring(workspace), 1, true))
 end
 assert(bindings["SUPER + 0"])
 assert(bindings["SUPER + CTRL + Space"])

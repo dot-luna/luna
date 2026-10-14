@@ -34,6 +34,21 @@ Search keeps keyboard focus while selecting results. Clicking Apps opens the app
 
 The current view lists Apps, Learn, Trigger, Style, Setup, Install, Remove, About, and System in that order. Apps opens the searchable installed-application list. Typing at the root searches both menu sections and installed applications; application results show a small Apps parent label and launch directly. Search inside Apps stays scoped to applications. An empty root query shows only the main sections. Install → Style → Install Font opens live package search. Type at least two characters to search repositories and AUR through `luna font search --aur --json`. Each result shows its source and installed status. Enter opens a centered floating Kitty dialog using the shared font installer. Menu installs automatically confirm package prompts; sudo still requests authentication when needed. The normal CLI remains interactive. Installed results do not reinstall. Logs show completion or failure and wait for Enter before closing. Installing does not change the active theme font. Searches include descendants of the current section, with small parent labels for nested results. Remove → Style → Remove Font lists installed fonts, searchable by family, package, and source. Packaged fonts are grouped by package: selecting one removes that package and all fonts it contains. Local fonts are grouped by their primary Fontconfig family within each folder. A local entry removes all files in that group; copies in other folders and package-managed fonts remain separate. The source label includes the file count, and hovering shows the folder and styles. Sources are pacman, foreign (AUR or a manually installed package), and local. Removal uses the same centered terminal dialog, automatic confirmations, logs, and Enter-to-close behavior. Normal CLI removal still asks for confirmation. Other sections remain placeholders.
 
+## Keybindings
+
+Learn → Hyprland Keybindings shows the compositor's active shortcuts with their
+action names and key combinations. Search matches descriptions, keys, and submaps;
+combinations such as `Super+Shift+1` work, as do aliases such as `Win`, `Control`,
+and `Enter`. The list refreshes each time it opens, including custom bindings.
+Use the normal list navigation and Escape to return to Learn. Selecting a shortcut
+keeps the guide open without running its action.
+
+Luna's Hyprland bindings carry descriptions so Lua callbacks have readable names.
+Custom Lua bindings without descriptions appear as “Custom action”. Keycodes retain
+their numeric identity because their physical labels depend on the keyboard layout.
+The guide reads `hyprctl binds`, whose text output preserves Lua keycode labels that
+some Hyprland versions omit from the JSON response.
+
 ## Application search
 
 Quickshell discovers installed `.desktop` entries from the XDG application directories. Hidden and NoDisplay entries are excluded. Search matches names, descriptions, keywords and desktop IDs, with name matches ranked first.
@@ -48,6 +63,7 @@ Reads the shared resolved `theme.json` at startup. The menu has a search header 
 
 - `shell.qml`: overlay, search field, results and keyboard navigation.
 - `Search.js`: filtering and result ranking.
+- `Keybindings.js`: live shortcut parsing, display names, and key-combination search.
 - `../luna-cli/launcher/`: command registration.
 - `../../lib/quickshell.lua`: shared shell lifecycle and theme loading.
 

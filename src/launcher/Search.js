@@ -25,7 +25,7 @@ function rootEntries(menuEntries, applications, query, route) {
             return parent === route;
         if (route && parent !== route && !parent.startsWith(route + "."))
             return false;
-        const text = [entry.name, entry.parentLabel || ""].join(" ").toLocaleLowerCase();
+        const text = [entry.name, entry.parentLabel || ""].concat(entry.keywords || []).join(" ").toLocaleLowerCase();
         return words.every(word => text.includes(word));
     });
     return !route && words.length ? sections.concat(find(applications, query)) : sections;
