@@ -70,6 +70,25 @@ This installs `nvidia-open` and `nvidia-utils`, enables DRM modesetting, blackli
 | Super + Ctrl + B | Focus Luna Bar |
 | Super + Ctrl + Space | Toggle the control center |
 | Super + Space | Toggle the application launcher |
+| Super + N | Toggle notification history |
+| Super + Shift + N | Toggle Do Not Disturb |
+| Print | Select a screenshot region |
+| Shift + Print | Screenshot the active screen |
+| Alt + Print | Screenshot the active window |
+| Ctrl + Print | Screenshot all screens |
+| Super + Print | Start region recording or stop the current recording |
+| Super + Shift + Print | Stop recording |
+| Volume / mute / microphone keys | Adjust sound with a small on-screen indicator |
+| Brightness keys | Adjust backlight; hold to repeat |
+| Play / next / previous keys | Control the active media player |
+
+Screenshots are saved in `~/Pictures/Screenshots` and copied to the clipboard.
+The same actions are available under Luna's Trigger → Screenshot menu and through
+`luna screenshot [region|screen|window|all]`.
+
+Recordings save to `~/Videos/Recordings`; Trigger → Screen Recording and
+`luna record [region|screen|stop|toggle]` share the same worker and visible Stop control.
+The login hook also runs `luna auth start` for administrator password dialogs.
 
 Luna's global bindings consume their matching key events and bypass application shortcut inhibitors, including in fullscreen apps. They retain normal lock-screen protection. Personal global bindings can use the same flags:
 

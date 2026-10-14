@@ -23,6 +23,7 @@ PanelWindow {
     onActiveWorkspaceChanged: {
         if (calendarPanel) calendarPanel.dismiss();
         if (center) center.dismiss();
+        if (controller) controller.dismissNotifications(bar);
     }
     readonly property var workspaceIds: {
         const ids = [1, 2, 3, 4];
@@ -47,6 +48,8 @@ PanelWindow {
         for (let i = 0; i < workspaces.count; i++)
             result.push(workspaces.itemAt(i));
         result.push(clockButton);
+        for (const button of tray.controls()) result.push(button);
+        result.push(notificationButton);
         result.push(statusButton);
         return result;
     }
@@ -77,6 +80,8 @@ PanelWindow {
                 center.visible = false;
             if (calendarPanel)
                 calendarPanel.visible = false;
+            if (controller)
+                controller.dismissNotifications(bar);
         }
     }
 
@@ -236,6 +241,57 @@ PanelWindow {
             height: parent.glyphSize
             name: parent.symbol
         }
+    }
+    Tray {
+        id: tray
+        anchors.right: notificationButton.left
+        anchors.rightMargin: 6
+        anchors.verticalCenter: parent.verticalCenter
+        width: Math.min(implicitWidth, Math.max(0, notificationButton.x - clockButton.x - clockButton.width - 18))
+        height: Luna.Theme.barHeight - 4
+        panelWindow: bar
+        onBeforeAction: bar.controller.release()
+    }
+    Button {
+        id: notificationButton
+
+        anchors.right: statusButton.left
+        anchors.rightMargin: 5
+        anchors.verticalCenter: parent.verticalCenter
+        implicitHeight: Luna.Theme.barHeight - 4
+        implicitWidth: notificationContent.implicitWidth + 12
+        focusPolicy: Qt.StrongFocus
+        Accessible.name: "Notifications, " + bar.controller.notifications.unreadCount + " unread"
+            + (bar.controller.notifications.dnd ? ", Do Not Disturb enabled" : "")
+        ToolTip.visible: hovered
+        ToolTip.text: bar.controller.notifications.dnd ? "Notifications · Do Not Disturb" : "Notifications"
+        background: Rectangle {
+            color: notificationButton.hovered ? Luna.Theme.selection : "transparent"
+            border.width: notificationButton.visualFocus ? 1 : 0
+            border.color: Luna.Theme.accent
+            radius: Luna.Theme.barRounding
+        }
+        contentItem: RowLayout {
+            id: notificationContent
+            spacing: 4
+            Luna.Icon {
+                name: bar.controller.notifications.dnd ? "bell-off" : "bell"
+                ink: bar.controller.notifications.unreadCount > 0 ? Luna.Theme.accent : Luna.Theme.foreground
+                implicitWidth: 15
+                implicitHeight: 15
+            }
+            Rectangle {
+                visible: bar.controller.notifications.unreadCount > 0
+                Layout.preferredWidth: 4
+                Layout.preferredHeight: 4
+                Layout.alignment: Qt.AlignVCenter
+                radius: 2
+                color: Luna.Theme.accent
+            }
+        }
+        Keys.onEnterPressed: click()
+        Keys.onReturnPressed: click()
+        onClicked: bar.controller.toggleNotifications(bar)
     }
     Button {
         id: statusButton

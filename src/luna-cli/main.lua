@@ -33,10 +33,39 @@ local clipboard = dofile(source_dir .. "/clipboard/init.lua")(common, source_dir
 clipboard.register(parser)
 local insert = dofile(source_dir .. "/insert/init.lua")(common, source_dir .. "/insert")
 insert.register(parser)
+local screenshot = dofile(source_dir .. "/screenshot/init.lua")(common, source_dir .. "/screenshot")
+screenshot.register(parser)
+local notifications = dofile(source_dir .. "/notifications/init.lua")(common, source_dir .. "/notifications")
+notifications.register(parser)
+local auth = dofile(source_dir .. "/auth/init.lua")(common, source_dir .. "/auth")
+auth.register(parser)
+local control = dofile(source_dir .. "/control/init.lua")(common, source_dir .. "/control")
+control.register(parser)
+local record = dofile(source_dir .. "/record/init.lua")(common, source_dir .. "/record")
+record.register(parser)
 local options = parser:parse()
 
 -- Bare entry points show help rather than performing any system operation.
-if options.insert then
+if options.auth or options.control or options.record then
+    local handler = options.auth and auth or options.control and control or record
+    local ok, message = pcall(handler.run, options)
+    if not ok then
+        common.error(tostring(message))
+        os.exit(1)
+    end
+elseif options.notifications then
+    local ok, message = pcall(notifications.run, options)
+    if not ok then
+        common.error("Notifications command failed: " .. tostring(message))
+        os.exit(1)
+    end
+elseif options.screenshot then
+    local ok, message = pcall(screenshot.run, options)
+    if not ok then
+        common.error("Screenshot command failed: " .. tostring(message))
+        os.exit(1)
+    end
+elseif options.insert then
     local ok, message = pcall(insert.run, options)
     if not ok then
         common.error("Insert command failed: " .. tostring(message))

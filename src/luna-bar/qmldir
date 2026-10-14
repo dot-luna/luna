@@ -1,4 +1,9 @@
 singleton Desktop 1.0 Desktop.qml
+singleton Media 1.0 Media.qml
 Bar 1.0 Bar.qml
 ControlCenter 1.0 ControlCenter.qml
 CalendarPopover 1.0 CalendarPopover.qml
+HardwareControls 1.0 HardwareControls.qml
+HardwareOsd 1.0 HardwareOsd.qml
+BatteryAlerts 1.0 BatteryAlerts.qml
+RecordingIndicator 1.0 RecordingIndicator.qml

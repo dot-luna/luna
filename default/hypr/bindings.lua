@@ -1,8 +1,9 @@
 -- Global shortcuts belong to the compositor, including in apps that inhibit binds.
 -- Keep normal lock-screen protection; dont_inhibit only bypasses app requests.
 -- Descriptions expose Lua actions to the launcher's live keybinding guide.
-local function bind(keys, action, description)
-    return hl.bind(keys, action, { non_consuming = false, dont_inhibit = true, description = description })
+local function bind(keys, action, description, repeating)
+    return hl.bind(keys, action, { non_consuming = false, dont_inhibit = true, description = description,
+        repeating = repeating == true })
 end
 
 -- Register Luna's basic shortcuts whenever the Hyprland configuration loads.

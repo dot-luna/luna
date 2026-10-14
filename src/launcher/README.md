@@ -49,6 +49,29 @@ their numeric identity because their physical labels depend on the keyboard layo
 The guide reads `hyprctl binds`, whose text output preserves Lua keycode labels that
 some Hyprland versions omit from the JSON response.
 
+## Screenshots
+
+Trigger → Screenshot offers Select Region, Active Screen, Active Window, and All
+Screens. Root search also finds these actions, for example `screenshot window`.
+The menu closes before capture. Every capture saves a timestamped PNG into
+`~/Pictures/Screenshots` and copies the image to the clipboard. Escape cancels a
+region selection without creating a file or changing the clipboard.
+
+The same actions are available as `luna screenshot [region|screen|window|all]`;
+omitting the mode selects a region. Print selects a region, Shift + Print captures
+the active screen, Alt + Print captures the active window, and Ctrl + Print captures
+all screens. The shortcuts also appear under Learn → Hyprland Keybindings.
+See [the screenshot CLI](../luna-cli/screenshot/README.md) for details.
+
+## Screen recording
+
+Trigger → Screen Recording offers Record Region and Record Screen while idle,
+and Stop Recording while active. Recordings save to `~/Videos/Recordings` as MP4
+files. A red Stop control remains visible above fullscreen windows while recording.
+Super + Print starts region selection or stops the current recording; Super +
+Shift + Print stops it. Escape cancels region selection. Capture is silent.
+See [recording commands](../luna-cli/record/README.md) for CLI use and configuration.
+
 ## Application search
 
 Quickshell discovers installed `.desktop` entries from the XDG application directories. Hidden and NoDisplay entries are excluded. Search matches names, descriptions, keywords and desktop IDs, with name matches ranked first.

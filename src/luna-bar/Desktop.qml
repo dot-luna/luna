@@ -18,6 +18,8 @@ QtObject {
     }
     readonly property var source: Pipewire.defaultAudioSource
     readonly property bool microphoneAvailable: !!source && source.ready && !!source.audio
+    readonly property bool microphoneMuted: microphoneAvailable ? source.audio.muted : false
+    readonly property real microphoneVolume: microphoneAvailable ? source.audio.volume : 0
     readonly property var outputs: Pipewire.nodes.values.filter(node => !node.isStream && node.isSink && !!node.audio)
     readonly property var inputs: Pipewire.nodes.values.filter(node => !node.isStream && !node.isSink && !!node.audio)
     readonly property string volumeIcon: Status.volumeIcon(audioAvailable, muted, volume)
@@ -55,17 +57,22 @@ QtObject {
     readonly property bool bluetoothEnabled: adapter ? adapter.enabled : false
     property int brightness: 0
     property bool brightnessAvailable: false
+    property bool brightnessPending: false
+    property int brightnessRevision: 0
+    property int brightnessWriteRevision: 0
+    signal brightnessFinished(bool success, string message)
 
     // Coalesce slider motion and serialize writes to avoid competing processes.
     property Timer brightnessDebounce: Timer {
         interval: 120
 
         onTriggered: {
-            if (desktop.brightnessWrite.running) {
+            if (desktop.brightnessWrite.running || desktop.brightnessRead.running) {
                 restart();
                 return;
             }
-            desktop.brightnessWrite.command = ["brightnessctl", "-c", "backlight", "set", desktop.requestedBrightness + "%"];
+            desktop.brightnessWriteRevision = desktop.brightnessRevision;
+            desktop.brightnessWrite.command = ["brightnessctl", "-m", "-c", "backlight", "set", desktop.requestedBrightness + "%"];
             desktop.brightnessWrite.running = true;
         }
     }
@@ -75,13 +82,14 @@ QtObject {
 
         stderr: StdioCollector {
         }
-        stdout: StdioCollector {
-            onStreamFinished: {
-                const fields = text.trim().split(",");
-                const value = parseInt(fields[3]);
-                desktop.brightnessAvailable = Number.isFinite(value);
-                if (desktop.brightnessAvailable)
-                    desktop.brightness = value;
+        stdout: StdioCollector { id: brightnessReadResult }
+        onExited: (code, status) => {
+            const value = desktop.parseBrightness(brightnessReadResult.text);
+            desktop.brightnessAvailable = code === 0 && value >= 0;
+            if (desktop.brightnessAvailable) {
+                desktop.brightness = value;
+                if (!desktop.brightnessPending)
+                    desktop.requestedBrightness = value;
             }
         }
     }
@@ -89,12 +97,26 @@ QtObject {
         stderr: StdioCollector {
             id: brightnessError
         }
-        stdout: StdioCollector {
-        }
+        stdout: StdioCollector { id: brightnessWriteResult }
 
         onExited: (code, status) => {
-            desktop.error = code === 0 ? "" : brightnessError.text.trim() || "Brightness change failed";
-            desktop.refreshBrightness();
+            const value = desktop.parseBrightness(brightnessWriteResult.text);
+            const success = code === 0 && value >= 0;
+            desktop.error = success ? "" : brightnessError.text.trim() || "Brightness change failed";
+            if (success) {
+                desktop.brightness = value;
+                if (desktop.brightnessWriteRevision === desktop.brightnessRevision) {
+                    desktop.brightnessPending = false;
+                    desktop.requestedBrightness = value;
+                }
+            } else {
+                // Cancel queued repeats after a failed write instead of retrying permissions forever.
+                desktop.brightnessDebounce.stop();
+                desktop.brightnessPending = false;
+                desktop.requestedBrightness = desktop.brightness;
+                desktop.refreshBrightness();
+            }
+            desktop.brightnessFinished(success, desktop.error);
         }
     }
     property string error: ""
@@ -108,12 +130,24 @@ QtObject {
     readonly property bool wifiHardwareEnabled: Networking.wifiHardwareEnabled
 
     function refreshBrightness() {
-        if (!brightnessRead.running)
+        if (!brightnessRead.running && !brightnessPending && !brightnessWrite.running)
             brightnessRead.running = true;
+    }
+    function parseBrightness(text) {
+        const field = text.trim().split(",")[3] || "";
+        if (!/^\d+(?:\.\d+)?%$/.test(field))
+            return -1;
+        const value = Number(field.slice(0, -1));
+        return value >= 0 && value <= 100 ? Math.round(value) : -1;
     }
     function setBrightness(value) {
         requestedBrightness = Math.max(1, Math.min(100, Math.round(value)));
+        brightnessPending = true;
+        brightnessRevision++;
         brightnessDebounce.restart();
+    }
+    function adjustBrightness(change) {
+        setBrightness((brightnessPending ? requestedBrightness : brightness) + change);
     }
     function setVolume(value) {
         if (audioAvailable)
@@ -126,6 +160,10 @@ QtObject {
     function toggleMute() {
         if (audioAvailable)
             sink.audio.muted = !sink.audio.muted;
+    }
+    function toggleMicrophoneMute() {
+        if (microphoneAvailable)
+            source.audio.muted = !source.audio.muted;
     }
     function toggleWifi() {
         Networking.wifiEnabled = !Networking.wifiEnabled;

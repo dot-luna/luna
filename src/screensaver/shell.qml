@@ -100,7 +100,7 @@ ShellRoot {
         onExited: (code, status) => {
             if (code !== 0) {
                 console.warn("Auto-lock failed:", stderr.text);
-                Quickshell.execDetached(["notify-send", "Luna auto-lock failed", "Run luna lock to check the error."]);
+                Quickshell.execDetached(["env", "-u", "LD_LIBRARY_PATH", "-u", "LD_PRELOAD", "notify-send", "--app-name=Luna", "--urgency=critical", "Luna auto-lock failed", "Run luna lock to check the error."]);
             }
         }
     }

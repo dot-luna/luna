@@ -294,6 +294,11 @@ PanelWindow {
                     ControlLabel { Layout.fillWidth: false; Layout.preferredWidth: 34; text: Desktop.brightness + "%" }
                 }
             }
+            MediaCard {
+                Layout.fillWidth: true
+                media: Media
+                visible: Media.available
+            }
         }
     }
     Component {

@@ -16,12 +16,13 @@ Requires a Hyprland Wayland session and Quickshell 0.3.2 or newer. Each monitor 
 
 - Left: four workspace slots by default, with higher workspaces added while they exist or are active. Inactive workspaces are uniformly muted dots; the current workspace shows its configured icon or an accent-colored number (1–9, 0) without a filled background.
 - Center: system-local date and clock. Click to open the Gregorian calendar and configured world clocks.
+- Right: application tray icons with their native menus, followed by a notification bell with an unread dot, or a crossed bell while Do Not Disturb is enabled.
 - Right: a grouped control-center trigger. Sound and power are always present (AC power uses a plug); Wi-Fi and Bluetooth appear when enabled. Icons reflect Wi-Fi signal strength, volume/mute, Bluetooth connections, and battery level/charging.
 
 The 320px-wide control center uses a compact two-column tile grid with 44px-high tiles, 14px control icons (12px Bluetooth), 12px chevrons, and slim sliders. Its split Wi-Fi/Bluetooth tiles work as follows: the main button toggles the radio, and the chevron opens its detail screen. Sound has a mute tile and device-picker chevron; volume and supported brightness sliders sit beneath the grid. Power stays visible and opens battery details. Icons and highlights convey enabled/connected states, while text is reserved for names and useful values. The bar trigger has no dropdown arrow. There are no shortcut hints, settings redirects, or redundant headings on the main screen.
 
 - Wi-Fi details list nearby networks with signal icons and connected state. Select a connected network to disconnect, a saved/open network to connect, or enter a password for WPA/WPA2 personal and WPA3 SAE. Enterprise and legacy networks need a previously configured NetworkManager profile. Password fields are cleared when leaving the page.
-- Bluetooth details support radio control, connecting/disconnecting paired devices, battery levels when reported, discovery, and pairing/canceling nearby devices. PIN/passkey confirmation still relies on a system BlueZ pairing agent; Luna does not implement that agent. Scans started by the panel stop when leaving it.
+- Bluetooth details support radio control, connecting/disconnecting paired devices, battery levels when reported, discovery, and pairing/canceling nearby devices. Luna's BlueZ agent presents PIN/passkey entry and confirmation dialogs. Requests require an explicit response and close on cancellation, timeout, or device disappearance. Scans started by the panel stop when leaving it.
 - Sound details select PipeWire output/input devices and control volume and microphone mute/level.
 - Power details show battery charge, charging state, remaining time when reported, and available power profiles. Profile controls require a working `powerprofilesctl` and power-profiles service.
 
@@ -108,6 +109,11 @@ The bar shows time first, for example `19:40 · Mon, 12 Oct` or `7:40 PM · Mon,
 | --- | --- |
 | Super + Ctrl + B | Start and focus the bar |
 | Super + Ctrl + Space | Start and toggle the control center |
+| Super + N | Toggle notification history |
+| Super + Shift + N | Toggle Do Not Disturb |
+| Volume / mute / microphone keys | Adjust the current audio device and show a brief indicator |
+| Brightness keys | Adjust screen backlight in 5% steps; hold to repeat |
+| Play / next / previous keys | Control the active media player |
 | Tab / Shift + Tab | Next / previous control, wrapping within the active panel |
 | Left / Right on bar | Focus previous / next workspace or control-center button |
 | Enter / Space on a button | Activate |
@@ -115,6 +121,22 @@ The bar shows time first, for example `19:40 · Mon, 12 Oct` or `7:40 PM · Mon,
 | Escape / Alt + Left | Go back within the control center; Escape on its main screen closes it |
 
 The bar does not take keyboard focus during ordinary use. Clicking outside the control center dismisses it. The keyboard shortcuts use the monitor currently focused by Hyprland.
+
+Volume and brightness keys repeat in 5% steps. Audio stays between 0% and 100%;
+raising or lowering volume unmutes it. The indicator shows only an icon and level,
+does not take focus or mouse input, and disappears after 1.5 seconds. Unavailable
+devices and failed brightness writes show a short error. The same commands are
+available through `luna control`.
+
+Tray icons expose each application's native menu with right-click or Menu/Shift+F10;
+left-click activates the application, and middle-click uses its secondary action.
+Passive items are hidden. The control center shows a media card when a supported
+player exists, with title, artist, optional local artwork, and available playback
+buttons. Playing players take priority; the selected player is retained when paused.
+
+Battery warnings appear once at 15%, with a persistent critical alert at 5%.
+Charging resets the warning cycle; recovery above 20%/8% rearms each threshold.
+They use Luna notifications and respect Do Not Disturb.
 
 The bar hides on monitors whose active workspace has a fullscreen window, releasing its reserved space and dismissing the control center. It returns when fullscreen ends or you switch to a workspace without fullscreen content. Other monitors are unaffected.
 
@@ -130,8 +152,53 @@ Theme values load from the shared generated `theme.json` once per launch. After 
 - `Bar.qml`: workspace buttons, date/time and status button.
 - `ControlCenter.qml`: quick controls and keyboard navigation.
 - `Desktop.qml`: PipeWire, NetworkManager, BlueZ, UPower and brightnessctl integration.
-- `components/`: themed buttons and sliders.
+- `HardwareControls.qml`, `HardwareOsd.qml`: hardware-key actions and brief feedback.
+- `BatteryAlerts.qml`: low and critical battery warnings.
+- `Media.qml`: shared media-player selection and playback actions.
+- `RecordingIndicator.qml`: visible recording stop control.
+- `bluetooth/`: BlueZ authentication agent and pairing dialogs.
+- `components/`: themed controls, application tray and media card.
 - `../qml/Luna/`: shared theme and SVG icon components.
 - `../luna-cli/bar/`: lifecycle commands and startup theme snapshot.
 
-Launch the bar manually for now. Autostart is not configured.
+The Hyprland startup hook runs `luna notifications start`, which starts the bar and
+notification provider together. `luna notifications setup` activates it in the
+current session; later application notifications can also activate it through D-Bus.
+
+## Notifications
+
+The bell and `luna notifications open` open a panel with the newest messages first,
+Do Not Disturb, and Clear all. Opening it marks the list read and hides
+current popups. Escape or clicking outside closes the panel. Tab and Shift + Tab
+navigate its controls. Left-click opens the default application action, screenshot, or recording;
+right-click dismisses a popup or removes a history item. A popup without an open
+action opens history; a history item without one expands its text. Enter/Space opens
+the focused card and Delete dismisses it. Cards and the panel have no cross buttons.
+
+Every card shows the sending application's icon when available (with a priority-icon
+fallback), title, plain-text body, available actions, and a local image
+preview when supplied. Priority badges, timestamps, counts, and explanatory footers
+are omitted. Low priority uses
+a quiet information style and a four-second popup. Normal uses the theme accent
+and seven seconds. Critical uses an error-colored border and stays
+until dismissed. An application's explicit timeout overrides low/normal defaults;
+zero means persistent. Hovering pauses the timer. Up to three popups appear on the
+focused monitor, with critical messages taking precedence.
+
+Do Not Disturb suppresses all popups while collecting history; switching it off
+does not replay the backlog. Its preference is saved in
+`~/.config/luna/notifications.json` (or `$XDG_CONFIG_HOME/luna/notifications.json`).
+History holds up to 100 messages in memory and resets on a service restart. Messages
+marked transient by their sender are never archived. Expired popups remain in
+history with live actions; closing a notification disables its application actions.
+Screenshot and recording notices retain their local file-opening action.
+
+Low, normal, and critical arrivals play distinct short event sounds at progressively
+stronger levels. Sounds never loop, overlap, or change system volume. Bursts coalesce
+to the highest priority. Do Not Disturb, an open history panel, and the sender's
+`suppress-sound` hint silence them; replacements and reloads do not replay sounds.
+
+Luna owns the desktop notification service through Quickshell. Setup installs a
+user service and D-Bus activation and masks Dunst for this user so only Luna handles
+delivery. Bar reload/stop commands control that service once configured. See
+[notification lifecycle commands](../luna-cli/notifications/README.md).

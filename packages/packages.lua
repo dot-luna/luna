@@ -43,6 +43,7 @@ return {
         { name = "qt6-svg", source = "pacman", purpose = "Render SVG icons in the custom desktop UI" },
         { name = "qt6-imageformats", source = "pacman", purpose = "Decode additional wallpaper formats, including WebP" },
         { name = "polkit", source = "pacman", purpose = "Desktop authorization backend; also needs an authentication agent" },
+        { name = "polkit-kde-agent", source = "pacman", purpose = "Administrator password dialogs" },
 
         -- Audio service, compatibility layers, and device session management.
         { name = "pipewire", source = "pacman", purpose = "Audio and video service" },
@@ -68,6 +69,15 @@ return {
         { name = "cliphist", source = "pacman", purpose = "Text and image clipboard history" },
         { name = "wtype", source = "pacman", purpose = "Paste clipboard selections into Wayland applications" },
         { name = "wl-clipboard", source = "pacman", purpose = "Wayland clipboard tools" },
+        { name = "grim", source = "pacman", purpose = "Capture Wayland screenshots" },
+        { name = "slurp", source = "pacman", purpose = "Select a screenshot region" },
+        { name = "python", source = "pacman", purpose = "Run screenshot, clipboard, and insert helpers" },
+        { name = "python-dbus", source = "pacman", purpose = "Bluetooth pairing agent communication" },
+        { name = "python-gobject", source = "pacman", purpose = "Bluetooth pairing event loop" },
+        { name = "wf-recorder", source = "pacman", purpose = "Record a Wayland screen or selected region" },
+        { name = "libnotify", source = "pacman", purpose = "Send desktop notifications from Luna tools" },
+        { name = "libcanberra", source = "pacman", purpose = "Play desktop notification event sounds" },
+        { name = "sound-theme-freedesktop", source = "pacman", purpose = "Standard sounds for notification priorities" },
         { name = "hyprlock", source = "pacman", purpose = "Screen locking" },
     },
 

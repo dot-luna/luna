@@ -87,6 +87,50 @@ file:close()
         self.cli('controls')
         self.assertEqual(self.commands()[-1]['args'][-1], 'controls')
 
+    def test_service_entry_runs_foreground(self):
+        self.cli('serve')
+        launch = self.commands()[-1]
+        self.assertEqual(launch['args'][0], '-p')
+        self.assertIn('--no-duplicate', launch['args'])
+        self.assertNotIn('--daemonize', launch['args'])
+
+    def test_managed_reload_and_stop_use_service(self):
+        unit = self.root / 'config/systemd/user/luna-notifications.service'
+        unit.parent.mkdir(parents=True)
+        unit.write_text('[Service]\n')
+        systemctl = self.root / 'bin/systemctl'
+        systemctl.write_text('''#!/usr/bin/python3
+import os, pathlib, sys
+root = pathlib.Path(os.environ['TEST_ROOT'])
+with (root / 'service-commands').open('a') as log:
+    log.write(' '.join(sys.argv[1:]) + '\\n')
+if sys.argv[2] == 'restart':
+    (root / 'running').touch()
+elif sys.argv[2] == 'stop':
+    (root / 'running').unlink(missing_ok=True)
+''')
+        systemctl.chmod(0o755)
+        self.cli('reload')
+        self.cli('stop')
+        self.assertEqual((self.root / 'service-commands').read_text().splitlines(),
+                         ['--user restart luna-notifications.service', '--user stop luna-notifications.service'])
+        self.assertFalse(any(call['args'][0] == '-p' for call in self.commands()))
+
+    def test_invalid_theme_preserves_managed_service(self):
+        self.selected_theme()
+        unit = self.root / 'config/systemd/user/luna-notifications.service'
+        unit.parent.mkdir(parents=True)
+        unit.write_text('[Service]\n')
+        systemctl = self.root / 'bin/systemctl'
+        systemctl.write_text('''#!/usr/bin/python3
+import os, pathlib
+(pathlib.Path(os.environ['TEST_ROOT']) / 'service-called').touch()
+''')
+        systemctl.chmod(0o755)
+        (self.root / 'config/luna/theme.json').write_text('invalid theme')
+        self.cli('reload', ok=False)
+        self.assertFalse((self.root / 'service-called').exists())
+
     def test_reload_fresh_snapshot_and_stop(self):
         theme = self.selected_theme()
         (theme / 'hyprland.lua').write_text('return { decoration = { rounding = 8, active_opacity = 0.9 } }')

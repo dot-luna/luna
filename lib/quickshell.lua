@@ -43,10 +43,18 @@ return function(common, root, renderer, target, label)
         for key, value in pairs(environment or {}) do
             table.insert(command, key .. "=" .. value)
         end
-        for _, argument in ipairs({ "qs", "-p", renderer, "--daemonize", "--no-duplicate" }) do
+        local renderer_command = { "qs", "-p", renderer, "--no-duplicate" }
+        if action ~= "serve" then
+            table.insert(renderer_command, "--daemonize")
+        end
+        for _, argument in ipairs(renderer_command) do
             table.insert(command, argument)
         end
         common.run(command)
+        -- D-Bus/systemd activation needs a foreground process for the shell's lifetime.
+        if action == "serve" then
+            return
+        end
         local method = (action == "start" or action == "reload") and "ping" or action
         for _ = 1, 30 do
             local _, ok = M.ipc(method)

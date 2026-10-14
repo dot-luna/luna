@@ -5,3 +5,5 @@ WorldClock 1.0 WorldClock.qml
 
 ControlTile 1.0 ControlTile.qml
 ControlLabel 1.0 ControlLabel.qml
+MediaCard 1.0 MediaCard.qml
+Tray 1.0 Tray.qml

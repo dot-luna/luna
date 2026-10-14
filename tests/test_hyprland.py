@@ -22,7 +22,7 @@ local function binding_api()
     hl.curve = function() end
     hl.animation = function() end
     hl.dsp = {
-        exec_cmd = function() end,
+        exec_cmd = function(command) return command end,
         window = { close = function() end, move = function(options) return options end, fullscreen = function(options) return options end },
         focus = function() end,
     }
@@ -180,6 +180,7 @@ for id = 1, 10 do assert(assignment(id) == (id <= 5 and 'right' or 'left')) end
         self.lua('''
 local bindings = {}
 local descriptions = {}
+local repeat_flags = {}
 hl = {
     config = function() end,
     bind = function(keys, action, flags)
@@ -191,12 +192,13 @@ hl = {
         assert(not bindings[keys], "Duplicate shortcut: " .. keys)
         bindings[keys] = action or true
         descriptions[keys] = flags.description
+        repeat_flags[keys] = flags.repeating
     end,
 }
 dofile(arg[1])
 local count = 0
 for _ in pairs(bindings) do count = count + 1 end
-assert(count == 28)
+assert(count == 45)
 assert(bindings["SUPER + F"].action == "toggle")
 assert(bindings["SUPER + F"].mode == "fullscreen")
 assert(bindings["SUPER + F"].layout_aware == false)
@@ -211,6 +213,20 @@ assert(bindings["SUPER + 0"])
 assert(bindings["SUPER + CTRL + Space"])
 assert(bindings["SUPER + Space"])
 assert(bindings["SUPER + L"])
+assert(bindings["Print"]:match(" screenshot region$"))
+assert(bindings["SHIFT + Print"]:match(" screenshot screen$"))
+assert(bindings["ALT + Print"]:match(" screenshot window$"))
+assert(bindings["CTRL + Print"]:match(" screenshot all$"))
+assert(bindings["SUPER + N"]:match(" notifications open$"))
+assert(bindings["SUPER + SHIFT + N"]:match(" notifications dnd$"))
+assert(bindings["SUPER + Print"]:match(" record toggle$"))
+assert(bindings["SUPER + SHIFT + Print"]:match(" record stop$"))
+assert(bindings["XF86AudioRaiseVolume"]:match(" control volume%-up$"))
+assert(bindings["XF86AudioMicMute"]:match(" control mic%-mute$"))
+assert(bindings["XF86MonBrightnessDown"]:match(" control brightness%-down$"))
+assert(bindings["XF86AudioPlay"]:match(" control play%-pause$"))
+assert(repeat_flags["XF86AudioRaiseVolume"] and repeat_flags["XF86MonBrightnessDown"])
+assert(not repeat_flags["XF86AudioMute"] and not repeat_flags["XF86AudioPlay"])
 ''')
 
     def test_symlink_entry_point(self):

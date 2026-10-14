@@ -161,6 +161,9 @@ ShellRoot {
         command: [shell.lunaCli, "clipboard", "target"]
         stdout: StdioCollector {}
         onExited: (code, status) => {
+            if (!shell.awaitingOpen)
+                return;
+            shell.awaitingOpen = false;
             if (code === 0) shell.clipboardTarget = JSON.parse(stdout.text);
             panel.visible = true;
             focusDelay.restart();
@@ -171,14 +174,16 @@ ShellRoot {
         stderr: StdioCollector {}
         onExited: (code, status) => {
             if (code !== 0) {
-                Quickshell.execDetached(["notify-send", "Luna Insert", stderr.text.trim() || "Could not paste clipboard entry."]);
+                Quickshell.execDetached(["env", "-u", "LD_LIBRARY_PATH", "-u", "LD_PRELOAD", "notify-send", "--app-name=Luna", "--urgency=normal", "Could not paste", stderr.text.trim() || "Could not paste clipboard entry."]);
             }
         }
     }
 
     property string menuScreenName: ""
     property string systemMessage: ""
+    property bool awaitingOpen: false
     property bool hibernateAvailable: false
+    property bool recordingActive: false
     property string currentMenu: ""
     readonly property bool appsView: currentMenu === "apps"
     readonly property bool keybindingsView: currentMenu === "learn.keybindings"
@@ -213,7 +218,16 @@ ShellRoot {
         { name: "GIFs", icon: "film", route: "insert.gifs", parent: "insert", parentLabel: "Insert" },
         { name: "Learn", icon: "book-open", route: "learn" },
         { name: "Hyprland Keybindings", icon: "type", route: "learn.keybindings", parent: "learn", parentLabel: "Learn", keywords: ["keyboard", "shortcuts"] },
-        { name: "Trigger", icon: "zap" },
+        { name: "Trigger", icon: "zap", route: "trigger" },
+        { name: "Screenshot", icon: "monitor", route: "trigger.screenshot", parent: "trigger", parentLabel: "Trigger", keywords: ["capture", "print screen"] },
+        { name: "Select Region", icon: "monitor", capture: "region", parent: "trigger.screenshot", parentLabel: "Trigger › Screenshot", keywords: ["capture", "area", "selection"] },
+        { name: "Active Screen", icon: "monitor", capture: "screen", parent: "trigger.screenshot", parentLabel: "Trigger › Screenshot", keywords: ["capture", "monitor", "display"] },
+        { name: "Active Window", icon: "monitor", capture: "window", parent: "trigger.screenshot", parentLabel: "Trigger › Screenshot", keywords: ["capture", "application"] },
+        { name: "All Screens", icon: "monitor", capture: "all", parent: "trigger.screenshot", parentLabel: "Trigger › Screenshot", keywords: ["capture", "monitors", "displays", "desktop"] },
+        { name: "Screen Recording", icon: "film", route: "trigger.record", parent: "trigger", parentLabel: "Trigger", keywords: ["video", "record", "capture"] },
+        { name: "Record Region", icon: "film", record: "region", parent: "trigger.record", parentLabel: "Trigger › Screen Recording", keywords: ["video", "area", "selection"] },
+        { name: "Record Screen", icon: "monitor", record: "screen", parent: "trigger.record", parentLabel: "Trigger › Screen Recording", keywords: ["video", "monitor", "display"] },
+        { name: "Stop Recording", icon: "square", record: "stop", parent: "trigger.record", parentLabel: "Trigger › Screen Recording", keywords: ["video", "finish", "save"] },
         { name: "Style", icon: "palette", route: "style" },
         { name: "Setup", icon: "sliders-horizontal", route: "setup" },
         { name: "Idle", icon: "moon", parent: "setup", parentLabel: "Setup", route: "setup.idle" },
@@ -248,7 +262,8 @@ ShellRoot {
             idleSetting: setting, seconds: seconds
         }))), [])
     readonly property var availableMenuEntries: menuEntries.concat(idleEntries).filter(entry =>
-        entry.action !== "hibernate" || hibernateAvailable)
+        (entry.action !== "hibernate" || hibernateAvailable)
+        && (!entry.record || (entry.record === "stop") === recordingActive))
     readonly property var matches: keybindingsView ? Keybindings.find(keybindingEntries, search.text) : emojiView ? Search.insertEntries(emojiEntries, search.text) : gifSource ? gifEntries : clipboardView ? clipboardEntries.filter(entry => entry.name.toLowerCase().includes(search.text.toLowerCase())) : fontRole ? Search.installedFonts(fontFamilies, search.text) : removeFontsView ? Search.installedFonts(installedFonts, search.text) : fontsView ? fontResults : appsView
         ? Search.find(DesktopEntries.applications.values, search.text)
         : Search.rootEntries(availableMenuEntries, DesktopEntries.applications.values, search.text, currentMenu)
@@ -341,6 +356,24 @@ ShellRoot {
         }
         if (!entry)
             return;
+        if (entry.record) {
+            if (recordingAction.running)
+                return;
+            panel.visible = false;
+            systemMessage = "";
+            recordingAction.command = [lunaCli, "record", entry.record];
+            recordingAction.running = true;
+            return;
+        }
+        if (entry.capture) {
+            if (screenshotAction.running)
+                return;
+            systemMessage = "";
+            screenshotAction.command = [lunaCli, "screenshot", entry.capture];
+            panel.visible = false;
+            screenshotAction.running = true;
+            return;
+        }
         if (entry.idleSetting) {
             if (!idleUpdate.running) {
                 systemMessage = "";
@@ -383,6 +416,9 @@ ShellRoot {
     }
 
     function open() {
+        awaitingOpen = true;
+        if (!recordingStatus.running)
+            recordingStatus.running = true;
         if (!hibernateCheck.running)
             hibernateCheck.running = true;
         if (!idleRead.running)
@@ -567,6 +603,53 @@ ShellRoot {
     }
 
     Process {
+        id: screenshotAction
+        stdout: StdioCollector {}
+        stderr: StdioCollector {}
+        onExited: (code, status) => {
+            // Successful captures and cancelled selections keep the menu dismissed.
+            if (code !== 0) {
+                shell.open();
+                shell.systemMessage = stderr.text.trim() || "Screenshot failed.";
+                console.warn(shell.systemMessage);
+            }
+        }
+    }
+    Process {
+        id: recordingAction
+        stdout: StdioCollector {}
+        stderr: StdioCollector {}
+        onExited: (code, status) => {
+            if (!recordingStatus.running)
+                recordingStatus.running = true;
+            if (code !== 0) {
+                shell.open();
+                shell.systemMessage = stderr.text.trim() || "Recording failed.";
+            }
+        }
+    }
+    Process {
+        id: recordingStatus
+        command: [shell.lunaCli, "record", "status"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                try {
+                    shell.recordingActive = JSON.parse(text).running === true;
+                } catch (error) {
+                    shell.recordingActive = false;
+                }
+            }
+        }
+        stderr: StdioCollector {}
+    }
+    Timer {
+        interval: 1000
+        running: panel.visible && shell.currentMenu === "trigger.record"
+        repeat: true
+        onTriggered: if (!recordingStatus.running) recordingStatus.running = true
+    }
+
+    Process {
         id: systemAction
         stdout: StdioCollector {}
         stderr: StdioCollector {}
@@ -627,6 +710,11 @@ ShellRoot {
     IpcHandler {
         function open(): void {
             shell.open();
+        }
+        function close(): void {
+            // A capture can dismiss the menu while its initial focus lookup is pending.
+            shell.awaitingOpen = false;
+            panel.visible = false;
         }
         function applyFonts(value: string): void {
             Luna.Theme.applyFonts(JSON.parse(value));
@@ -1204,7 +1292,7 @@ ShellRoot {
                                     Layout.preferredHeight: 14
                                     name: "chevron-right"
                                     ink: Luna.Theme.selectionForeground
-                                    visible: !shell.insertView && !result.modelData.keybinding && result.selected && !result.applicationEntry && !result.modelData.repository && !result.modelData.family && !result.modelData.action && !result.modelData.idleSetting
+                                    visible: !shell.insertView && !result.modelData.keybinding && result.selected && !result.applicationEntry && !result.modelData.repository && !result.modelData.family && !result.modelData.action && !result.modelData.capture && !result.modelData.idleSetting
                                 }
                             }
                             onClicked: {
