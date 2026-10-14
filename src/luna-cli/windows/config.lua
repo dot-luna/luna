@@ -54,6 +54,14 @@ return function(common, root)
         assert(found, "Cannot locate the Luna launcher")
         launcher = launcher:gsub("\n$", "")
         assert(not launcher:find("[%c]"), "Launcher path cannot contain control characters")
+
+        -- Use the bundled logo regardless of the installed icon theme.
+        local icon, icon_found = common.capture({ "realpath", "-e", "--", root .. "/src/luna-cli/windows/windows.svg" })
+        assert(icon_found, "Cannot locate the Windows icon")
+        icon = icon:gsub("\n$", "")
+        assert(not icon:find("[%c]"), "Icon path cannot contain control characters")
+        icon = icon:gsub("\\", "\\\\")
+
         -- Desktop Exec has its own quoting and percent field codes, not shell quoting.
         local escaped = launcher:gsub(".", function(character)
             if character == "\\" then return string.rep("\\", 4) end
@@ -68,7 +76,7 @@ return function(common, root)
         local file = assert(io.open(temporary, "w"))
         assert(file:write(table.concat({
             "[Desktop Entry]", "Type=Application", "Name=Windows", "Comment=Windows virtual machine",
-            'Exec="' .. escaped .. '" windows start', "Icon=computer", "Terminal=false",
+            'Exec="' .. escaped .. '" windows start', "Icon=" .. icon, "Terminal=false",
             "Categories=System;Emulator;", "Keywords=Windows;VM;RDP;Dockur;", "StartupNotify=false", "",
         }, "\n")))
         assert(file:close())
