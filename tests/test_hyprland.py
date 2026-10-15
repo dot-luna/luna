@@ -30,6 +30,134 @@ end
 """
 
 
+WORKSPACE_API = '''
+local events, rules, pending = {}, {}, nil
+local monitors, workspaces = {}, {}
+local active_monitor, active_window
+local cursor = { x = 360, y = 220 }
+
+local function monitor(name, x)
+    local output = { name = name, x = x, y = 0 }
+    table.insert(monitors, output)
+    return output
+end
+
+local function workspace(output, id, options)
+    options = options or {}
+    local current = {
+        id = id,
+        name = options.name or tostring(id),
+        monitor = output,
+        is_empty = options.is_empty ~= false,
+        is_persistent = options.is_persistent == true,
+    }
+    table.insert(workspaces, current)
+    if options.active then output.active_workspace = current end
+    return current
+end
+
+local function assignment(id)
+    local target
+    for _, rule in ipairs(rules) do
+        if rule.enabled and rule.workspace == tostring(id) then
+            assert(not target, "duplicate assignment")
+            target = rule.monitor
+        end
+    end
+    return target
+end
+
+local function get_workspace(id)
+    for _, current in ipairs(workspaces) do
+        if current.id == id then return current end
+    end
+end
+
+local function get_monitor(selector)
+    for _, output in ipairs(monitors) do
+        if output == selector or output.name == selector then return output end
+    end
+    error("Unknown monitor")
+end
+
+local function show_workspace(current)
+    local output = current.monitor
+    local previous = output.active_workspace
+    output.active_workspace = current
+    active_monitor = output
+    active_window = current.window
+    cursor = { x = output.x + 960, y = 540 }
+
+    -- Hyprland removes an empty, nonpersistent workspace after switching away.
+    if previous and previous ~= current and previous.is_empty and not previous.is_persistent then
+        for index, candidate in ipairs(workspaces) do
+            if candidate == previous then table.remove(workspaces, index); break end
+        end
+    end
+end
+
+hl = {
+    get_monitors = function() return monitors end,
+    get_workspaces = function() return workspaces end,
+    get_active_monitor = function() return active_monitor end,
+    get_active_window = function() return active_window end,
+    get_cursor_pos = function() return cursor end,
+    on = function(event, callback) events[event] = callback end,
+    timer = function(callback) pending = callback end,
+    workspace_rule = function(spec)
+        spec.enabled = true
+        function spec:set_enabled(value) self.enabled = value end
+        table.insert(rules, spec)
+        return spec
+    end,
+    dsp = {
+        workspace = { move = function(options) return { move = options } end },
+        focus = function(options) return { focus = options } end,
+        cursor = { move = function(options) return { cursor = options } end },
+    },
+    dispatch = function(action)
+        if action.move then
+            local current = assert(get_workspace(action.move.workspace))
+            current.monitor = get_monitor(action.move.monitor)
+        elseif action.cursor then
+            cursor = { x = action.cursor.x, y = action.cursor.y }
+        elseif action.focus.workspace then
+            local id = action.focus.workspace
+            local current = get_workspace(id)
+            if not current then current = workspace(get_monitor(assignment(id)), id) end
+            show_workspace(current)
+        elseif action.focus.window then
+            local window = action.focus.window
+            show_workspace(window.workspace)
+            active_window = window
+        elseif action.focus.monitor then
+            show_workspace(get_monitor(action.focus.monitor).active_workspace)
+        else
+            error("Unsupported dispatch")
+        end
+    end,
+}
+
+local function flush()
+    if pending then
+        local callback = pending
+        pending = nil
+        callback()
+    end
+end
+
+local function update(event)
+    events[event]()
+    flush()
+end
+
+local function load_workspaces()
+    local root = arg[1]:match("^(.*)/config/hypr/")
+    dofile(root .. '/default/hypr/workspaces.lua')
+end
+'''
+
+
 class HyprlandThemeTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix="luna hypr '")
@@ -129,6 +257,9 @@ local third = { name = "third", x = 3840, y = 0 }
 local monitors = { right, left }
 hl = {
     get_monitors = function() return monitors end,
+    get_active_monitor = function() return nil end,
+    get_active_window = function() return nil end,
+    get_cursor_pos = function() return { x = 0, y = 0 } end,
     get_workspaces = function() return {
         { id = 2, monitor = right }, { id = 9, monitor = left }, { id = -1, monitor = left },
     } end,
@@ -175,6 +306,124 @@ left.x = 3000
 update('monitor.layout_changed')
 for id = 1, 10 do assert(assignment(id) == (id <= 5 and 'right' or 'left')) end
 ''')
+
+    def test_hotplug_replaces_empty_overflow_and_preserves_window_focus(self):
+        self.lua(WORKSPACE_API + '''
+local left = monitor("left", 0)
+local first = workspace(left, 1, { active = true, is_empty = false })
+local ninth = workspace(left, 9, { is_empty = false })
+local window = { workspace = first, mapped = true, address = '0x1234' }
+first.window = window
+active_monitor, active_window = left, window
+load_workspaces()
+update('config.reloaded')
+for id = 1, 10 do assert(assignment(id) == 'left') end
+
+-- All ten rules still point left when the delayed monitor callback is queued.
+local right = monitor("right", 1920)
+workspace(right, 11, { active = true })
+update('monitor.added')
+assert(right.active_workspace.id == 6, "hotplug left workspace 11 visible")
+assert(not get_workspace(11), "temporary workspace should disappear after switching")
+assert(ninth.monitor == right, "existing numbered workspaces must still move")
+for id = 1, 10 do assert(assignment(id) == (id <= 5 and 'left' or 'right')) end
+assert(active_window == window and active_monitor == left, "hotplug stole keyboard focus")
+assert(cursor.x == 360 and cursor.y == 220, "hotplug warped the pointer")
+''')
+
+    def test_overflow_repair_with_unchanged_topology_and_no_focused_window(self):
+        for event in ('config.reloaded', 'monitor.layout_changed'):
+            with self.subTest(event=event):
+                self.lua(WORKSPACE_API + '''
+local left = monitor("left", 0)
+local right = monitor("right", 1920)
+workspace(left, 1, { active = true })
+active_monitor = left
+load_workspaces()
+update('config.reloaded')
+local original_rule_count = #rules
+
+workspace(right, 11, { active = true })
+update('EVENT')
+assert(right.active_workspace.id == 6, "unchanged topology skipped overflow repair")
+assert(#rules == original_rule_count, "unchanged topology duplicated workspace rules")
+assert(not get_workspace(11))
+assert(active_monitor == left and active_window == nil, "empty desktop lost monitor focus")
+assert(cursor.x == 360 and cursor.y == 220, "empty desktop pointer moved")
+'''.replace('EVENT', event))
+
+    def test_coalesced_disconnect_reconnect_repairs_same_named_monitor(self):
+        self.lua(WORKSPACE_API + '''
+local left = monitor("left", 0)
+local right = monitor("right", 1920)
+workspace(left, 1, { active = true })
+active_monitor = left
+load_workspaces()
+update('config.reloaded')
+local original_rule_count = #rules
+
+monitors = { left }
+events['monitor.removed']()
+right = monitor("right", 1920)
+workspace(right, 11, { active = true })
+events['monitor.added']()
+flush()
+assert(right.active_workspace.id == 6, "same-named reconnect left workspace 11 visible")
+assert(not get_workspace(11))
+assert(#rules == original_rule_count)
+assert(active_monitor == left and cursor.x == 360 and cursor.y == 220)
+''')
+
+    def test_overflow_uses_first_workspace_in_physical_monitor_range(self):
+        for positions, expected in (((0, 1920, 3840), 8), ((1920, 3840, 0), 1)):
+            with self.subTest(positions=positions):
+                self.lua(WORKSPACE_API + '''
+local left = monitor("left", LEFT_X)
+local right = monitor("right", RIGHT_X)
+local third = monitor("third", THIRD_X)
+workspace(left, LEFT_ID, { active = true })
+workspace(right, RIGHT_ID, { active = true })
+workspace(third, 11, { active = true })
+active_monitor = left
+load_workspaces()
+update('monitor.added')
+assert(third.active_workspace.id == EXPECTED, "wrong workspace for physical output order")
+assert(not get_workspace(11))
+assert(active_monitor == left and cursor.x == 360 and cursor.y == 220)
+'''.replace('LEFT_X', str(positions[0]))
+                    .replace('RIGHT_X', str(positions[1]))
+                    .replace('THIRD_X', str(positions[2]))
+                    .replace('LEFT_ID', '1' if expected == 8 else '5')
+                    .replace('RIGHT_ID', '5' if expected == 8 else '8')
+                    .replace('EXPECTED', str(expected)))
+
+    def test_overflow_repair_preserves_user_workspaces(self):
+        cases = (
+            (11, '{ is_empty = false, active = true }', False),
+            (11, '{ is_persistent = true, active = true }', False),
+            (11, '{ name = "project", active = true }', False),
+            (-1, '{ name = "special:scratchpad", active = true }', False),
+            (8, '{ active = true }', False),
+            (11, '{ active = true }', True),
+        )
+        for workspace_id, options, special in cases:
+            with self.subTest(workspace_id=workspace_id, options=options, special=special):
+                self.lua(WORKSPACE_API + '''
+local left = monitor("left", 0)
+local right = monitor("right", 1920)
+workspace(left, 1, { active = true })
+local original = workspace(right, WORKSPACE_ID, OPTIONS)
+if SPECIAL then
+    right.active_special_workspace = workspace(right, -2, { name = 'special:overlay' })
+end
+active_monitor = left
+load_workspaces()
+update('monitor.added')
+assert(right.active_workspace == original, "a user workspace was replaced")
+assert(get_workspace(WORKSPACE_ID) == original, "a user workspace was removed")
+assert(active_monitor == left and cursor.x == 360 and cursor.y == 220)
+'''.replace('WORKSPACE_ID', str(workspace_id)).replace('OPTIONS', options)
+                    .replace('SPECIAL', 'true' if special else 'false'))
 
     def test_global_shortcuts_consume_input_and_bypass_app_inhibitors(self):
         self.lua('''

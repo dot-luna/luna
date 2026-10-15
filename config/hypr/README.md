@@ -48,7 +48,9 @@ Windows animate in 200 ms, fades in 150 ms, layers in 180 ms, and workspaces in 
 
 `default/hypr/workspaces.lua` divides workspaces 1–10 evenly into consecutive ranges across connected monitors, ordered left to right (then top to bottom for equal horizontal positions). Two monitors get 1–5 and 6–10; three get 1–4, 5–7, and 8–10. The 0 key still selects workspace 10. Extra workspaces from an uneven split go to the leftmost monitors. Mirrored outputs do not get a separate range.
 
-Assignments update after startup, reload, hotplug, or monitor rearrangement, moving existing numbered workspaces with their windows. With one display, all ten belong to it. Named/special workspaces and numbers above 10 are unchanged.
+Assignments update after startup, reload, hotplug, or monitor rearrangement, moving existing numbered workspaces with their windows. With one display, all ten belong to it.
+
+When a display starts before its workspace range is reassigned, Hyprland can temporarily open an empty workspace above 10. Luna switches that display to the first workspace in its assigned range (6 on the second of two displays) and restores the previous focus and cursor position. This also covers a quick reconnect with the same monitor arrangement. Populated, persistent, explicitly renamed, and special workspaces are preserved.
 
 New outputs use their preferred resolution and refresh rate, automatic placement, and scale 1. Monitor scaling belongs in your personal display configuration. Add output-specific `hl.monitor()` rules after bootstrap for a fixed arrangement.
 
