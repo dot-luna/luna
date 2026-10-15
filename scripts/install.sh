@@ -8,7 +8,7 @@
 #
 # The checkout stays in ~/.local/src/luna because deployed configs refer to it.
 # Run as your normal user in a terminal; sudo is used for system setup.
-# Existing clean checkouts can be reused, but are never switched or updated here.
+# Every run replaces the install checkout with a fresh copy of the requested ref.
 set -euo pipefail
 
 # Decide before tee replaces stdout, then share that choice with setup children.
@@ -43,7 +43,7 @@ Requires Arch Linux, a normal user with sudo access, and an interactive terminal
 Installs dependencies and Hyprland configuration using scripts/setup.sh.
 Package installation may perform a full system upgrade without package-manager confirmations.
 Sudo authentication and the optional NVIDIA confirmation remain interactive.
-An existing checkout must be clean and match the requested branch or tag.
+An existing install directory is removed and freshly cloned, without a backup.
 HELP
 }
 
@@ -226,7 +226,7 @@ check_system() {
     fi
 
     local tool
-    for tool in pacman sudo tee sed mktemp date mkdir realpath; do
+    for tool in pacman sudo tee sed mktemp date mkdir rm; do
         if ! command -v "$tool" >/dev/null 2>&1; then
             fail "Required command is missing: $tool"
         fi
@@ -236,50 +236,6 @@ check_system() {
     # must read the user's terminal instead of consuming script text or EOF.
     if ! { exec </dev/tty; } 2>/dev/null; then
         fail 'Run this installer in an interactive terminal for sudo and NVIDIA confirmation.'
-    fi
-}
-
-verify_checkout() {
-    local install_dir=$1
-    local ref=$2
-    local root origin branch tag_commit
-
-    if [[ -L "$install_dir" || ! -d "$install_dir/.git" ]]; then
-        fail "Install location is occupied by something other than a Luna checkout: $install_dir"
-    fi
-
-    root=$(git -C "$install_dir" rev-parse --show-toplevel)
-    if [[ "$root" != "$(realpath -- "$install_dir")" ]]; then
-        fail "Install location is not the root of its Git checkout: $install_dir"
-    fi
-
-    # Read the stored URL so user-configured Git mirrors (insteadOf) also work.
-    origin=$(git -C "$install_dir" config --get remote.origin.url)
-    case "$origin" in
-        https://github.com/dot-luna/luna.git|git@github.com:dot-luna/luna.git)
-            ;;
-        *)
-            fail "Existing checkout has a different origin: $origin"
-            ;;
-    esac
-
-    if [[ -n "$(git -C "$install_dir" status --porcelain --untracked-files=normal)" ]]; then
-        fail 'Existing checkout has local changes. Save them before rerunning the installer.'
-    fi
-
-    # Branch installs must remain on that exact branch. A detached checkout is
-    # accepted only for the requested tag; peel annotated tags to their commit.
-    if branch=$(git -C "$install_dir" symbolic-ref --quiet HEAD); then
-        if [[ "$branch" != "refs/heads/$ref" ]]; then
-            fail "Existing checkout is on ${branch#refs/heads/}; requested $ref. Switch it explicitly before rerunning."
-        fi
-    else
-        if ! tag_commit=$(git -C "$install_dir" rev-parse --verify "refs/tags/$ref^{commit}" 2>/dev/null); then
-            fail "Existing checkout is detached and does not match the requested tag: $ref"
-        fi
-        if [[ "$(git -C "$install_dir" rev-parse HEAD)" != "$tag_commit" ]]; then
-            fail "Existing checkout does not match tag $ref. Switch it explicitly before rerunning."
-        fi
     fi
 }
 
@@ -350,14 +306,17 @@ main() {
     log OK 'Git is ready.'
 
     step '3/4 — Prepare the Luna checkout'
+    mkdir -p -- "$HOME/.local/src"
+
+    # Running the installer authorizes replacing this fixed install location,
+    # including local changes. rm removes a destination symlink, not its target.
     if [[ -e "$install_dir" || -L "$install_dir" ]]; then
-        verify_checkout "$install_dir" "$ref"
-        log INFO 'Reusing the matching local checkout without updating it.'
-    else
-        mkdir -p -- "$HOME/.local/src"
-        log INFO "Cloning $ref..."
-        run_tool git clone --branch "$ref" --single-branch -- "$repo_url" "$install_dir"
+        log INFO "Removing existing install checkout: $install_dir"
+        rm -rf -- "$install_dir"
     fi
+
+    log INFO "Cloning $ref..."
+    run_tool git clone --branch "$ref" --single-branch -- "$repo_url" "$install_dir"
     if [[ ! -f "$install_dir/scripts/setup.sh" ]]; then
         fail "The selected version does not contain scripts/setup.sh: $ref"
     fi

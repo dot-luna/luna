@@ -180,6 +180,7 @@ sys.exit(int(os.environ.get("TEST_SETUP_STATUS", "0")))
     def assert_success(self, result):
         self.assertEqual(result.returncode, 0, result.stdout)
         self.assertIn("[OK] Luna setup completed.", result.stdout)
+        self.assertEqual(list(self.destination.parent.glob("luna.luna-backup*")), [])
 
     def assert_refused(self, result):
         self.assertNotEqual(result.returncode, 0, result.stdout)
@@ -203,68 +204,143 @@ sys.exit(int(os.environ.get("TEST_SETUP_STATUS", "0")))
         self.assertEqual(self.git_run("-C", str(self.destination), "branch", "--show-current"),
                          "feature/installer")
 
-    def test_selected_tag_reuses_detached_checkout(self):
+    def test_selected_tag_replaces_detached_checkout(self):
         self.assert_success(self.run_installer("--ref", "v1.2.3"))
         self.assertEqual(self.git_run("-C", str(self.destination), "branch", "--show-current"), "")
         self.assertEqual(self.git_run("-C", str(self.destination), "describe", "--tags", "--exact-match"),
                          "v1.2.3")
         self.assert_success(self.run_installer("--ref", "v1.2.3"))
         self.assertEqual(len(self.setups()), 2)
+        self.assertEqual(len([call for call in self.calls("git") if "clone" in call]), 2)
+        self.assertEqual(self.git_run("-C", str(self.destination), "describe", "--tags", "--exact-match"),
+                         "v1.2.3")
 
-    def test_annotated_tag_reuses_its_commit(self):
+    def test_annotated_tag_replaces_checkout_with_its_commit(self):
         self.git_run("-C", str(self.remote), "tag", "-a", "v2.0.0", "-m", "Release fixture")
         self.assert_success(self.run_installer("--ref", "v2.0.0"))
         self.assertEqual(self.git_run("-C", str(self.destination), "rev-parse", "HEAD"),
                          self.git_run("-C", str(self.remote), "rev-parse", "v2.0.0^{commit}"))
         self.assert_success(self.run_installer("--ref", "v2.0.0"))
         self.assertEqual(len(self.setups()), 2)
+        self.assertEqual(self.git_run("-C", str(self.destination), "rev-parse", "HEAD"),
+                         self.git_run("-C", str(self.remote), "rev-parse", "v2.0.0^{commit}"))
 
     def test_unknown_ref_stops_before_setup(self):
         self.assert_refused(self.run_installer("--ref", "missing-version"))
         self.assertFalse(self.destination.exists())
         self.assertEqual(self.setups(), [])
 
-    def test_repeated_install_reuses_checkout_without_updating(self):
+    def test_repeated_install_clones_latest_version(self):
         self.assert_success(self.run_installer())
         head = self.git_run("-C", str(self.destination), "rev-parse", "HEAD")
         (self.remote / "new-version").write_text("A later remote commit\n")
         self.git_run("-C", str(self.remote), "add", ".")
         self.git_run("-C", str(self.remote), "commit", "--quiet", "-m", "Advance remote")
         self.assert_success(self.run_installer())
-        self.assertEqual(self.git_run("-C", str(self.destination), "rev-parse", "HEAD"), head)
+        self.assertNotEqual(self.git_run("-C", str(self.destination), "rev-parse", "HEAD"), head)
+        self.assertEqual((self.destination / "new-version").read_text(), "A later remote commit\n")
         self.assertEqual(len(self.setups()), 2)
-        self.assertEqual(len([call for call in self.calls("git") if "clone" in call]), 1)
+        self.assertEqual(len([call for call in self.calls("git") if "clone" in call]), 2)
         self.assertFalse(any(action in call for call in self.calls("git")
                              for action in ("pull", "fetch", "reset")))
 
-    def test_dirty_checkout_is_preserved_and_refused(self):
+    def test_dirty_checkout_is_replaced_with_clean_clone(self):
         self.assert_success(self.run_installer())
         changed = self.destination / "scripts/setup.sh"
         contents = changed.read_text() + "# Personal modification\n"
         changed.write_text(contents)
-        self.assert_refused(self.run_installer())
-        self.assertEqual(changed.read_text(), contents)
-        self.assertEqual(len(self.setups()), 1)
+        (self.destination / "untracked-file").write_text("Keep untracked\n")
+        (self.destination / "staged-file").write_text("Keep staged\n")
+        self.git_run("-C", str(self.destination), "add", "staged-file")
+        self.assert_success(self.run_installer())
+        self.assertFalse((self.destination / "untracked-file").exists())
+        self.assertFalse((self.destination / "staged-file").exists())
+        self.assertEqual(self.git_run("-C", str(self.destination), "status", "--porcelain"), "")
+        self.assertNotIn("# Personal modification", changed.read_text())
+        self.assertEqual(len(self.setups()), 2)
 
-    def test_different_origin_is_refused(self):
+    def test_different_origin_is_replaced_with_luna_clone(self):
         self.assert_success(self.run_installer())
         self.git_run("-C", str(self.destination), "remote", "set-url", "origin", "https://example.invalid/other.git")
-        self.assert_refused(self.run_installer())
-        self.assertEqual(len(self.setups()), 1)
-
-    def test_different_ref_is_refused_without_switching(self):
         self.assert_success(self.run_installer())
-        self.assert_refused(self.run_installer("--ref", "v1.2.3"))
-        self.assertEqual(self.git_run("-C", str(self.destination), "branch", "--show-current"), "master")
-        self.assertEqual(len(self.setups()), 1)
+        self.assertEqual(self.git_run("-C", str(self.destination), "config", "remote.origin.url"), ORIGIN)
+        self.assertEqual(len(self.setups()), 2)
 
-    def test_nonrepository_destination_is_preserved(self):
+    def test_different_branch_is_replaced_with_requested_branch(self):
+        self.assert_success(self.run_installer())
+        self.assert_success(self.run_installer("--ref", "feature/installer"))
+        self.assertEqual(self.git_run("-C", str(self.destination), "branch", "--show-current"),
+                         "feature/installer")
+        self.assertEqual(len(self.setups()), 2)
+
+    def test_branch_can_be_replaced_with_requested_tag(self):
+        self.assert_success(self.run_installer())
+        self.assert_success(self.run_installer("--ref", "v1.2.3"))
+        self.assertEqual(self.git_run("-C", str(self.destination), "branch", "--show-current"), "")
+        self.assertEqual(self.git_run("-C", str(self.destination), "describe", "--tags", "--exact-match"),
+                         "v1.2.3")
+
+    def test_nonrepository_directory_is_replaced(self):
         self.destination.mkdir(parents=True)
         personal = self.destination / "personal-file"
         personal.write_text("Keep me\n")
-        self.assert_refused(self.run_installer())
-        self.assertEqual(personal.read_text(), "Keep me\n")
-        self.assertEqual(self.setups(), [])
+        self.assert_success(self.run_installer())
+        self.assertFalse(personal.exists())
+        self.assertTrue((self.destination / ".git").is_dir())
+        self.assertEqual(len(self.setups()), 1)
+
+    def test_nonrepository_file_is_replaced(self):
+        self.destination.parent.mkdir(parents=True)
+        self.destination.write_text("Keep my file\n")
+        self.assert_success(self.run_installer())
+        self.assertTrue((self.destination / ".git").is_dir())
+
+    def test_symlink_is_replaced_without_touching_external_target(self):
+        external = self.root / "external target"
+        external.mkdir()
+        (external / "personal-file").write_text("Keep external\n")
+        self.destination.parent.mkdir(parents=True)
+        target = os.path.relpath(external, self.destination.parent)
+        self.destination.symlink_to(target, target_is_directory=True)
+        self.assert_success(self.run_installer())
+        self.assertFalse(self.destination.is_symlink())
+        self.assertTrue((self.destination / ".git").is_dir())
+        self.assertEqual((external / "personal-file").read_text(), "Keep external\n")
+        self.assertEqual([path.name for path in external.iterdir()], ["personal-file"])
+
+    def test_dangling_symlink_is_replaced(self):
+        self.destination.parent.mkdir(parents=True)
+        self.destination.symlink_to("missing-target")
+        self.assert_success(self.run_installer())
+        self.assertFalse(self.destination.is_symlink())
+        self.assertTrue((self.destination / ".git").is_dir())
+        self.assertFalse((self.destination.parent / "missing-target").exists())
+
+    def test_unknown_ref_does_not_run_setup_again(self):
+        self.assert_success(self.run_installer())
+        self.assert_refused(self.run_installer("--ref", "missing-version"))
+        self.assertEqual(len(self.setups()), 1)
+
+    def test_selected_version_missing_setup_stops_before_running_setup(self):
+        self.assert_success(self.run_installer())
+        self.git_run("-C", str(self.remote), "rm", "scripts/setup.sh")
+        self.git_run("-C", str(self.remote), "commit", "--quiet", "-m", "Version without setup")
+        result = self.run_installer()
+        self.assert_refused(result)
+        self.assertIn("scripts/setup.sh", result.stdout)
+        self.assertEqual(len(self.setups()), 1)
+
+    def test_setup_failure_propagates_after_replacing_existing_checkout(self):
+        self.assert_success(self.run_installer())
+        (self.destination / "personal-file").write_text("Old checkout\n")
+        self.env["TEST_SETUP_STATUS"] = "37"
+        result = self.run_installer("--ref", "feature/installer")
+        self.assert_refused(result)
+        self.assertEqual(result.returncode, 37, result.stdout)
+        self.assertEqual(self.git_run("-C", str(self.destination), "branch", "--show-current"),
+                         "feature/installer")
+        self.assertFalse((self.destination / "personal-file").exists())
+        self.assertEqual(len(self.setups()), 2)
 
     def test_setup_failure_propagates_and_is_logged(self):
         self.env["TEST_SETUP_STATUS"] = "37"
