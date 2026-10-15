@@ -47,7 +47,7 @@ return function(common, directory)
         -- Running shells update in place; inactive shells read the saved JSON on startup.
         if common.available("qs") and os.getenv("WAYLAND_DISPLAY") then
             for _, item in ipairs({ { "launcher", "launcher" }, { "luna-bar", "bar" },
-                { "screensaver", "screensaver" }, { "settings", "settings" } }) do
+                { "screensaver", "screensaver" }, { "luna-settings", "settings" } }) do
                 common.capture({ "qs", "ipc", "-p", root .. "/src/" .. item[1],
                     "call", item[2], "applyFonts", json.encode(theme.fonts) }, true)
             end

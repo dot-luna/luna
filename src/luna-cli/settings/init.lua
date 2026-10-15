@@ -2,7 +2,7 @@
 return function(common, directory)
     local root = directory .. "/../../.."
     local shell = dofile(root .. "/lib/quickshell.lua")(common, root,
-        directory .. "/../../settings", "settings", "Luna Settings")
+        directory .. "/../../luna-settings", "settings", "Luna Settings")
     local M = {}
 
     function M.register(parser)

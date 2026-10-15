@@ -66,7 +66,7 @@ else:
         self.assertEqual(len(launches), 1)
         launch = launches[0]
         args = launch['args']
-        self.assertEqual(Path(args[args.index('-p') + 1]).resolve(), REPO / 'src/settings')
+        self.assertEqual(Path(args[args.index('-p') + 1]).resolve(), REPO / 'src/luna-settings')
         self.assertIn('--no-duplicate', args)
         self.assertIn('--daemonize', args)
         imports = launch['imports'].split(':')
