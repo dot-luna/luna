@@ -5,7 +5,7 @@ local script_dir = assert(arg[0]:match("^(.*)/"), "Run this script using its pat
 local common = dofile(script_dir .. "/../lib/common.lua")
 local argparse = require("argparse")
 local parser = argparse("install-deps.lua", "Install a Luna package group.")
-parser:argument("group", "Package group"):choices({ "core", "main", "extra" })
+parser:argument("group", "Package group"):choices({ "core", "main", "fonts", "extra" })
 parser:flag("--force", "Reinstall packages even when already installed")
 local options = parser:parse()
 
@@ -16,7 +16,7 @@ local function install()
     local seen = {}
 
     -- Validate the entire manifest before any installation. Core is pacman-only.
-    for _, group in ipairs({ "core", "main", "extra" }) do
+    for _, group in ipairs({ "core", "main", "fonts", "extra" }) do
         assert(type(manifest[group]) == "table", "Missing group: " .. group)
         for _, entry in ipairs(manifest[group]) do
             assert(type(entry.name) == "string" and entry.name:match("^[%w@._+%-]+$"), "Invalid package name")

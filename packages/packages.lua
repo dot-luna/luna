@@ -1,7 +1,7 @@
 -- Package manifest for Luna on an existing Arch Linux installation.
 -- Each entry declares its installation source and why Luna uses it.
 -- Core contains setup tools and desktop dependencies; main contains everyday
--- applications and AUR packages.
+-- applications and AUR packages. Fonts are installed after main.
 -- Extra is reserved for optional additions outside the main setup.
 -- Package managers resolve transitive dependencies automatically.
 --
@@ -21,6 +21,8 @@ return {
         { name = "lua", source = "pacman", purpose = "Run Lua setup scripts and read this manifest" },
         { name = "lua-argparse", source = "pacman", purpose = "Parse Luna CLI commands and generate help" },
         { name = "base-devel", source = "pacman", purpose = "Build AUR packages when needed" },
+        { name = "mise", source = "pacman", purpose = "Manage development tools and runtime versions" },
+        { name = "ripgrep", source = "pacman", purpose = "Search files from the terminal" },
 
         -- Deploy configuration from this checkout into the user's home.
         { name = "stow", source = "pacman", purpose = "Link repository configs into the home directory" },
@@ -52,11 +54,12 @@ return {
         { name = "pipewire-pulse", source = "pacman", purpose = "PulseAudio compatibility" },
         { name = "wireplumber", source = "pacman", purpose = "Manage PipeWire devices and sessions" },
 
-        -- Network and Bluetooth backends plus battery reporting.
+        -- Network and Bluetooth backends plus battery reporting and power modes.
         { name = "networkmanager", source = "pacman", purpose = "Network connection management" },
         { name = "bluez", source = "pacman", purpose = "Bluetooth service" },
         { name = "bluez-utils", source = "pacman", purpose = "Bluetooth command-line tools" },
         { name = "upower", source = "pacman", purpose = "Battery and power information" },
+        { name = "power-profiles-daemon", source = "pacman", purpose = "Provide powerprofilesctl and desktop power mode switching" },
 
         -- Container runtime and Windows VM client; Docker is enabled separately.
         { name = "docker", source = "pacman", purpose = "Run containers and the Dockur Windows VM" },
@@ -65,7 +68,6 @@ return {
 
         -- Desktop controls for brightness, clipboard access, and locking.
         { name = "brightnessctl", source = "pacman", purpose = "Display brightness controls" },
-        { name = "noto-fonts-emoji", source = "pacman", purpose = "Color emoji rendering" },
         { name = "cliphist", source = "pacman", purpose = "Text and image clipboard history" },
         { name = "wtype", source = "pacman", purpose = "Paste clipboard selections into Wayland applications" },
         { name = "wl-clipboard", source = "pacman", purpose = "Wayland clipboard tools" },
@@ -86,11 +88,18 @@ return {
         -- Everyday applications and development tools.
         { name = "kitty", source = "pacman", purpose = "Terminal emulator" },
         { name = "zed", source = "pacman", purpose = "Code editor" },
-        { name = "ripgrep", source = "pacman", purpose = "Search files from the terminal" },
         { name = "github-cli", source = "pacman", purpose = "GitHub repository workflows" },
 
         -- AUR packages require a separate build/helper installation step.
         { name = "zen-browser-bin", source = "aur", purpose = "Zen Browser prebuilt release" },
+        { name = "t3code-nightly-bin", source = "aur", purpose = "T3 Code desktop app, prebuilt nightly release" },
+    },
+
+    -- Install after main so an AUR helper is ready for the interface font.
+    fonts = {
+        { name = "ttf-iosevka-nerd", source = "pacman", purpose = "Provide Luna's default monospace font" },
+        { name = "noto-fonts-emoji", source = "pacman", purpose = "Color emoji rendering" },
+        { name = "ttf-outfit", source = "aur", purpose = "Provide Luna's default interface font" },
     },
 
     -- Optional additions outside the main setup.

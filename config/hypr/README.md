@@ -20,7 +20,7 @@ bash scripts/setup-config.sh
 ```
 
 - Use `--force` to remove a conflicting old Hyprland entry point before Stowing Luna's file.
-- The main `setup.sh` runs this step after package installation.
+- The main `scripts/setup.sh` runs this step after package installation.
 - Stow links into `$XDG_CONFIG_HOME/hypr/hyprland.lua` (normally `~/.config/hypr/hyprland.lua`). Other files in the existing Hyprland directory are preserved.
 - The entry point follows symlinks back to the checkout. If copying it instead, set `LUNA_PATH` to the checkout directory before starting Hyprland.
 - To integrate with an existing Lua config, add this at the desired point in its load order, replacing the example checkout path:
