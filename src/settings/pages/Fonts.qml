@@ -2,6 +2,7 @@ import "../components"
 import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Layouts
+import Luna 1.0 as Luna
 
 ColumnLayout {
     spacing: 12
@@ -65,7 +66,7 @@ ColumnLayout {
 
     Label {
         text: "Sample font names · this preview does not install or change fonts."
-        color: "#a6a6ad"
+        color: Luna.Theme.foreground
         font.pixelSize: 12
         wrapMode: Text.WordWrap
         Layout.fillWidth: true

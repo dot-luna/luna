@@ -8,6 +8,11 @@ luna settings
 
 Requires Quickshell and a Wayland session. The source lives here; no separate install or Stow package is needed.
 
+The interface uses Luna's active theme colors, UI font, and corner rounding. Font
+changes made with `luna font set` update an open window. After changing the theme,
+run `luna settings reload` to reopen it with the new theme. `luna settings stop`
+closes the window.
+
 ## Preview
 
 - Appearance: sample themes and color mode.

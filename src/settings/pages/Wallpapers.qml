@@ -2,6 +2,7 @@ import "../components"
 import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Layouts
+import Luna 1.0 as Luna
 
 ColumnLayout {
     spacing: 12
@@ -13,7 +14,7 @@ ColumnLayout {
 
     Label {
         text: "Choose a background for your desktop."
-        color: "#a6a6ad"
+        color: Luna.Theme.foreground
         Layout.fillWidth: true
         wrapMode: Text.WordWrap
     }
@@ -82,7 +83,7 @@ ColumnLayout {
 
     Label {
         text: "Sample wallpapers · file and URL import will be added later."
-        color: "#a6a6ad"
+        color: Luna.Theme.foreground
         font.pixelSize: 12
         wrapMode: Text.WordWrap
         Layout.fillWidth: true

@@ -2,6 +2,7 @@ import "../components"
 import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Layouts
+import Luna 1.0 as Luna
 
 ColumnLayout {
     spacing: 12
@@ -13,7 +14,7 @@ ColumnLayout {
 
     Label {
         text: "Colors for your desktop and applications."
-        color: "#a6a6ad"
+        color: Luna.Theme.foreground
         Layout.fillWidth: true
         wrapMode: Text.WordWrap
     }
@@ -83,14 +84,14 @@ ColumnLayout {
     SettingsGroup {
         SettingsRow {
             title: "Theme accent"
-            description: "Tokyo Night · #7aa2f7"
+            description: Luna.Theme.snapshot.name + " · " + Luna.Theme.accent
             divider: false
 
             Rectangle {
                 width: 24
                 height: 24
                 radius: 12
-                color: "#7aa2f7"
+                color: Luna.Theme.accent
             }
 
         }

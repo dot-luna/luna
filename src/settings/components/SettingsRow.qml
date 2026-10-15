@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Layouts
+import Luna 1.0 as Luna
 
 Item {
     id: row
@@ -26,6 +27,7 @@ Item {
 
             Label {
                 text: row.title
+                color: Luna.Theme.brightForeground
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
             }
@@ -33,7 +35,7 @@ Item {
             Label {
                 visible: row.description !== ""
                 text: row.description
-                color: "#a6a6ad"
+                color: Luna.Theme.foreground
                 font.pixelSize: 12
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
@@ -57,7 +59,7 @@ Item {
         anchors.leftMargin: 16
         anchors.rightMargin: 16
         height: 1
-        color: "#404044"
+        color: Luna.Theme.muted
     }
 
 }

@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Layouts
+import Luna 1.0 as Luna
 
 // Checkable buttons make miniature desktop previews keyboard accessible.
 Button {
@@ -22,10 +23,10 @@ Button {
     Accessible.name: name + " theme"
 
     background: Rectangle {
-        radius: 10
-        color: card.hovered ? "#39393d" : "#303033"
+        radius: Math.min(Luna.Theme.barRounding, width / 2, height / 2)
+        color: card.hovered ? Luna.Theme.selection : Luna.Theme.lighterBackground
         border.width: card.checked || card.visualFocus ? 2 : 1
-        border.color: card.visualFocus ? "#ffffff" : card.checked ? "#8bb5f5" : "#46464c"
+        border.color: card.visualFocus ? Luna.Theme.brightForeground : card.checked ? Luna.Theme.accent : Luna.Theme.muted
     }
 
     contentItem: ColumnLayout {
@@ -79,7 +80,7 @@ Button {
             text: card.name
             font.bold: card.checked
             Layout.alignment: Qt.AlignHCenter
-            color: "#eeeeef"
+            color: card.hovered ? Luna.Theme.selectionForeground : Luna.Theme.foreground
         }
 
     }

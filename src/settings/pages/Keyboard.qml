@@ -2,6 +2,7 @@ import "../components"
 import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Layouts
+import Luna 1.0 as Luna
 
 ColumnLayout {
     spacing: 12
@@ -13,7 +14,7 @@ ColumnLayout {
 
     Label {
         text: "Super is the Windows or Command key on your keyboard."
-        color: "#a6a6ad"
+        color: Luna.Theme.foreground
         Layout.fillWidth: true
         wrapMode: Text.WordWrap
     }
@@ -24,7 +25,7 @@ ColumnLayout {
 
             Label {
                 text: "Super + Return"
-                color: "#a6a6ad"
+                color: Luna.Theme.foreground
             }
 
         }
@@ -34,7 +35,7 @@ ColumnLayout {
 
             Label {
                 text: "Super + Shift + Return"
-                color: "#a6a6ad"
+                color: Luna.Theme.foreground
             }
 
         }
@@ -44,7 +45,7 @@ ColumnLayout {
 
             Label {
                 text: "Super + W"
-                color: "#a6a6ad"
+                color: Luna.Theme.foreground
             }
 
         }
@@ -54,7 +55,7 @@ ColumnLayout {
 
             Label {
                 text: "Super + 1–9"
-                color: "#a6a6ad"
+                color: Luna.Theme.foreground
             }
 
         }
@@ -65,7 +66,7 @@ ColumnLayout {
 
             Label {
                 text: "Super + 0"
-                color: "#a6a6ad"
+                color: Luna.Theme.foreground
             }
 
         }
@@ -82,7 +83,7 @@ ColumnLayout {
 
             Label {
                 text: "Tab / Shift + Tab"
-                color: "#a6a6ad"
+                color: Luna.Theme.foreground
             }
 
         }
@@ -92,14 +93,14 @@ ColumnLayout {
 
             Label {
                 text: "Alt + 1–5"
-                color: "#a6a6ad"
+                color: Luna.Theme.foreground
             }
 
         }
 
         SettingsRow {
             title: "Previous / next page"
-            Label { text: "Ctrl + Shift + Tab / Ctrl + Tab"; color: "#a6a6ad" }
+            Label { text: "Ctrl + Shift + Tab / Ctrl + Tab"; color: Luna.Theme.foreground }
         }
 
         SettingsRow {
@@ -107,7 +108,7 @@ ColumnLayout {
 
             Label {
                 text: "Ctrl + L"
-                color: "#a6a6ad"
+                color: Luna.Theme.foreground
             }
 
         }
@@ -118,7 +119,7 @@ ColumnLayout {
 
             Label {
                 text: "Ctrl + Q"
-                color: "#a6a6ad"
+                color: Luna.Theme.foreground
             }
 
         }

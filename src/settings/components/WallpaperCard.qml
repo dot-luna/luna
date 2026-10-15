@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Layouts
+import Luna 1.0 as Luna
 
 // Local sample landscapes need no downloaded assets or user images.
 Button {
@@ -21,10 +22,10 @@ Button {
     Accessible.name: name + " wallpaper"
 
     background: Rectangle {
-        radius: 9
-        color: "#303033"
+        radius: Math.min(Luna.Theme.barRounding, width / 2, height / 2)
+        color: card.hovered ? Luna.Theme.selection : Luna.Theme.lighterBackground
         border.width: card.checked || card.visualFocus ? 2 : 1
-        border.color: card.visualFocus ? "#ffffff" : card.checked ? "#8bb5f5" : "#46464c"
+        border.color: card.visualFocus ? Luna.Theme.brightForeground : card.checked ? Luna.Theme.accent : Luna.Theme.muted
     }
 
     contentItem: ColumnLayout {
@@ -59,6 +60,7 @@ Button {
 
         Label {
             text: card.name
+            color: card.hovered ? Luna.Theme.selectionForeground : Luna.Theme.foreground
             Layout.alignment: Qt.AlignHCenter
             Layout.bottomMargin: 4
             font.pixelSize: 12
