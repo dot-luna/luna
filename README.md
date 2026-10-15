@@ -26,6 +26,8 @@ The URL selects the installer script; `--ref` selects the checkout to install. E
 
 The installer clones Luna into `~/.local/src/luna`, installs dependencies and fonts, then links the Hyprland configuration, source directories, and `~/.local/bin/luna`. Source links live in `~/.local/src/`. Conflicting paths are backed up beside the originals with `.luna-backup` suffixes, numbered when needed. Setup adds the command directory to your shell's PATH; open a new terminal afterward and run `luna --version`.
 
+Git apps are listed in `packages/packages.git.lua` and installed after fonts. Setup clones each repository into `~/.local/src/<name>` and runs its declared install script with `--prefix "$HOME/.local" --non-interactive`. The app manages its own dependencies and native build. Reinstalling replaces that app's source checkout without a backup. Whatly is included from [our personal fork](https://github.com/dot-luna/whatly), with a **WhatsApp** desktop launcher.
+
 Setup automatically enables and starts Docker, logging a warning if it cannot. Package installation may upgrade the system and runs without package-manager confirmations; `sudo` may still ask for your password. The final installation step offers optional NVIDIA setup, with confirmation defaulting to **No**. It supports Turing or newer GPUs using Arch's standard `linux` kernel.
 
 When setup finishes, it automatically reloads the configuration in an active Hyprland session. NVIDIA driver changes still require a reboot.

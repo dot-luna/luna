@@ -52,6 +52,8 @@ if os.getenv("TEST_FAIL_STEP") == arg[1] then
     os.exit(29)
 end
 ''')
+        (self.steps / "git-apps.lua").write_text(
+            'table.insert(arg, 1, "git-apps")\n' + (self.steps / "install-deps.lua").read_text())
 
     def setup(self, *arguments):
         return subprocess.run(["bash", str(self.checkout / "scripts/setup.sh"), *arguments],
@@ -67,14 +69,14 @@ end
         result = self.setup()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(self.recorded_calls(), [[step] for step in
-                         ("lua", "core", "aur", "main", "fonts", "services", "config", "src", "command", "nvidia", "session")])
+                         ("lua", "core", "aur", "main", "fonts", "git-apps", "services", "config", "src", "command", "nvidia", "session")])
 
     def test_force_is_forwarded_only_to_steps_accepting_it(self):
         result = self.setup("--force")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(self.recorded_calls(), [
             ["lua", "--force"], ["core", "--force"], ["aur"], ["main", "--force"],
-            ["fonts", "--force"], ["services"], ["config", "--force"], ["src", "--force"],
+            ["fonts", "--force"], ["git-apps", "--force"], ["services"], ["config", "--force"], ["src", "--force"],
             ["command", "--force"], ["nvidia"], ["session"],
         ])
 
