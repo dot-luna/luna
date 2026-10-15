@@ -1,8 +1,8 @@
 #!/usr/bin/lua -E
--- Install one manifest group after setup-lua.sh prepares Lua and argparse.
+-- Install one manifest group after lua.sh prepares Lua and argparse.
 -- Resolve shared helpers before parsing commands; never rely on the caller's cwd.
 local script_dir = assert(arg[0]:match("^(.*)/"), "Run this script using its path")
-local common = dofile(script_dir .. "/../lib/common.lua")
+local common = dofile(script_dir .. "/../../lib/common.lua")
 local argparse = require("argparse")
 local parser = argparse("install-deps.lua", "Install a Luna package group.")
 parser:argument("group", "Package group"):choices({ "core", "main", "fonts", "extra" })
@@ -11,7 +11,7 @@ local options = parser:parse()
 
 local function install()
     -- Resolve the manifest from the script, not the caller's working directory.
-    local manifest = dofile(script_dir .. "/../packages/packages.lua")
+    local manifest = dofile(script_dir .. "/../../packages/packages.lua")
     local packages = { pacman = {}, aur = {} }
     local seen = {}
 
@@ -41,7 +41,7 @@ local function install()
     if #packages.aur > 0 then
         assert(not common.is_root(), "Run AUR installation as a normal user")
         helper = common.available("yay") and "yay" or common.available("paru") and "paru"
-        assert(helper, "Run scripts/setup-aur.sh first")
+        assert(helper, "Run scripts/setup/aur.sh first")
     end
 
     for _, source in ipairs({ "pacman", "aur" }) do

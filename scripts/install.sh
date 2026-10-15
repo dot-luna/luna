@@ -272,14 +272,14 @@ main() {
     log OK "Checkout ready at commit $(git -C "$install_dir" rev-parse --short HEAD)."
 
     step '4/4 — Run Luna setup'
-    # No --force: conflicting personal configurations are left for the user to
-    # resolve. Run from the checkout so setup also has a predictable cwd.
+    # Setup backs up and replaces config/source conflicts, then asks separately
+    # about NVIDIA drivers. Run from the checkout for a predictable cwd.
     cd -- "$install_dir"
     bash "$install_dir/scripts/setup.sh"
 
     printf '\n'
     log OK 'Luna setup completed.'
-    log INFO 'Dependencies and Hyprland configuration are installed.'
+    log INFO 'Dependencies, Hyprland configuration, and source links are installed.'
     log INFO 'Keep the checkout in place; your configuration links depend on it.'
     log INFO 'Log out and select Hyprland in your session chooser, or start it using your usual method.'
     log INFO 'If system packages requested a reboot, reboot before starting the new session.'

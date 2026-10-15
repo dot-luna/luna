@@ -1,5 +1,5 @@
 #!/usr/bin/lua -E
--- Luna CLI entry point. Run with Lua after scripts/setup-lua.sh prepares argparse.
+-- Luna CLI entry point. Run with Lua after scripts/setup/lua.sh prepares argparse.
 
 -- Locate shared helpers relative to this file, independently of the caller's cwd.
 local source_dir = arg[0]:match("^(.*)/") or "."

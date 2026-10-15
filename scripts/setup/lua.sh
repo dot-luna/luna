@@ -5,7 +5,7 @@ set -euo pipefail
 
 # Load repository-wide helpers, including when reached via a symlink.
 script_path=$(readlink -f -- "${BASH_SOURCE[0]}")
-source "$(dirname -- "$script_path")/../lib/common.sh"
+source "$(dirname -- "$script_path")/../../lib/common.sh"
 
 # Read options before checking dependencies so help works on a fresh system.
 force=false

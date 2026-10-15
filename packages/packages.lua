@@ -5,11 +5,11 @@
 -- Extra is reserved for optional additions outside the main setup.
 -- Package managers resolve transitive dependencies automatically.
 --
--- scripts/setup-lua.sh bootstraps lua and lua-argparse before this file
+-- scripts/setup/lua.sh bootstraps lua and lua-argparse before this file
 -- can be read. Other core tools will be handled by the main setup later.
 return {
     -- Never put AUR packages in core: every core entry must use pacman.
-    -- Only Lua and argparse are installed by setup-lua.sh; keep those two
+    -- Only Lua and argparse are installed by scripts/setup/lua.sh; keep those two
     -- entries in sync with that script.
     core = {
         -- Bootstrap, repository, and package build tools.

@@ -13,17 +13,25 @@
 
 Requires Hyprland 0.55 or newer with Lua configuration support.
 
-- Run the setup script to deploy the config with GNU Stow:
+Run the configuration step to deploy the config with GNU Stow:
 
 ```sh
-bash scripts/setup-config.sh
+bash scripts/setup/config.sh
 ```
 
-- Use `--force` to remove a conflicting old Hyprland entry point before Stowing Luna's file.
-- The main `scripts/setup.sh` runs this step after package installation.
-- Stow links into `$XDG_CONFIG_HOME/hypr/hyprland.lua` (normally `~/.config/hypr/hyprland.lua`). Other files in the existing Hyprland directory are preserved.
-- The entry point follows symlinks back to the checkout. If copying it instead, set `LUNA_PATH` to the checkout directory before starting Hyprland.
-- To integrate with an existing Lua config, add this at the desired point in its load order, replacing the example checkout path:
+Stow links into `$XDG_CONFIG_HOME/hypr/hyprland.lua` (normally `~/.config/hypr/hyprland.lua`). Conflicting files, directories, or symlinks are moved beside their original location with a `.luna-backup` suffix before replacement. Existing backups are preserved using numbered suffixes, such as `.luna-backup.1`. A matching symlink is reused. Other files in a real Hyprland directory are preserved; if the Hyprland directory itself is a symlink or a file, it is backed up first.
+
+The source step links each whole directory under `src/` into `~/.local/src/`:
+
+```sh
+bash scripts/setup/src.sh
+```
+
+For example, `~/.local/src/luna-bar` points to the checkout's `src/luna-bar`. Whole-directory links preserve the source modules' relative paths back into the checkout. Matching links are reused, and conflicting paths are backed up and replaced using the same naming convention.
+
+The main `scripts/setup.sh` runs package installation in core, main, and fonts order, then config and source setup automatically without confirmation. Its final step asks whether to install the NVIDIA driver. Individual setup steps live under `scripts/setup/`.
+
+The configuration entry point follows symlinks back to the checkout. If copying it instead, set `LUNA_PATH` to the checkout directory before starting Hyprland. To integrate with an existing Lua config, add this at the desired point in its load order, replacing the example checkout path:
 
 ```lua
 local root = "/path/to/luna"
@@ -51,10 +59,10 @@ hyprctl monitors all
 For supported NVIDIA GPUs on Arch's standard `linux` kernel, the optional driver setup is:
 
 ```sh
-bash scripts/setup-nvidia.sh
+bash scripts/setup/nvidia.sh
 ```
 
-This installs `nvidia-open` and `nvidia-utils`, enables DRM modesetting, blacklists Nouveau, and rebuilds initramfs. Run it only on Turing or newer NVIDIA hardware. It requests administrator authentication through polkit. Reboot to activate the driver before testing an external display; a Hyprland reload cannot replace the running GPU driver.
+This step supports Turing or newer NVIDIA hardware and asks for confirmation before making changes; pressing Enter or declining skips it. After confirmation, it uses `sudo` to update the system and install `linux`, `nvidia-open`, `nvidia-utils` (including `nvidia-smi`), and `nvidia-settings`. It enables DRM modesetting, blacklists Nouveau, and rebuilds initramfs. Reboot to activate the driver before testing an external display; a Hyprland reload cannot replace the running GPU driver.
 
 ## Keybindings
 

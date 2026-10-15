@@ -12,7 +12,7 @@ for option in "$@"; do
         --force)
             ;;
         -h|--help)
-            printf 'Usage: %s [--force]\n\nSet up Lua, core packages, an AUR helper, main packages, fonts, and Stow configs.\n--force reinstalls packages and replaces conflicting Hyprland entry points. Extra packages are excluded.\n' "${0##*/}"
+            printf 'Usage: %s [--force]\n\nSet up Lua, core packages, an AUR helper, main packages, fonts, and config/source links.\nConfig and source conflicts are backed up and replaced automatically.\nThe final step asks whether to install NVIDIA drivers and tools.\n--force reinstalls packages. Extra packages are excluded.\n' "${0##*/}"
             exit 0
             ;;
         *)
@@ -22,24 +22,31 @@ for option in "$@"; do
     esac
 done
 
-# Locate neighboring setup scripts independently of the caller's directory.
+# Keep individual steps together, independently of the caller's directory.
 setup_dir=$(luna_script_dir "${BASH_SOURCE[0]}")
+steps_dir="$setup_dir/setup"
 
 # Step 1: prepare Lua and argparse before running any Lua setup logic.
 # Forward --force consistently to bootstrap and package installation.
-bash "$setup_dir/setup-lua.sh" "$@"
+bash "$steps_dir/lua.sh" "$@"
 
 # Step 2: install official setup tools and desktop dependencies.
-/usr/bin/lua -E "$setup_dir/install-deps.lua" core "$@"
+/usr/bin/lua -E "$steps_dir/install-deps.lua" core "$@"
 
 # Step 3: prepare an AUR helper for main packages and fonts.
-bash "$setup_dir/setup-aur.sh"
+bash "$steps_dir/aur.sh"
 
 # Step 4: install everyday apps and AUR packages. Extra remains opt-in.
-/usr/bin/lua -E "$setup_dir/install-deps.lua" main "$@"
+/usr/bin/lua -E "$steps_dir/install-deps.lua" main "$@"
 
 # Step 5: install desktop fonts from official repositories and the AUR.
-/usr/bin/lua -E "$setup_dir/install-deps.lua" fonts "$@"
+/usr/bin/lua -E "$steps_dir/install-deps.lua" fonts "$@"
 
-# Step 6: deploy the config package after dependencies and fonts are ready.
-bash "$setup_dir/setup-config.sh" "$@"
+# Step 6: deploy configuration, backing up existing conflicting paths.
+bash "$steps_dir/config.sh" "$@"
+
+# Step 7: expose source packages through whole-directory links.
+bash "$steps_dir/src.sh" "$@"
+
+# Step 8: optional hardware-specific setup must remain last and ask for consent.
+bash "$steps_dir/nvidia.sh"
