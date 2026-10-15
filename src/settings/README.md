@@ -1,5 +1,7 @@
 # Luna Settings
 
+See the [roadmap](ROADMAP.md) for planned pages, shared behavior, and implementation order.
+
 ## Launch
 
 ```sh
