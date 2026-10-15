@@ -28,7 +28,7 @@ class SetupRunnerTests(unittest.TestCase):
         self.env.pop("TEST_FAIL_STEP", None)
 
         # No production child script runs: these fixtures only record arguments.
-        for name in ("lua", "aur", "config", "src", "nvidia"):
+        for name in ("lua", "aur", "services", "config", "src", "command", "nvidia"):
             (self.steps / f"{name}.sh").write_text('''#!/usr/bin/env bash
 set -euo pipefail
 step=${0##*/}
@@ -67,14 +67,15 @@ end
         result = self.setup()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(self.recorded_calls(), [[step] for step in
-                         ("lua", "core", "aur", "main", "fonts", "config", "src", "nvidia")])
+                         ("lua", "core", "aur", "main", "fonts", "services", "config", "src", "command", "nvidia")])
 
-    def test_force_is_forwarded_except_to_aur_and_nvidia(self):
+    def test_force_is_forwarded_only_to_steps_accepting_it(self):
         result = self.setup("--force")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(self.recorded_calls(), [
             ["lua", "--force"], ["core", "--force"], ["aur"], ["main", "--force"],
-            ["fonts", "--force"], ["config", "--force"], ["src", "--force"], ["nvidia"],
+            ["fonts", "--force"], ["services"], ["config", "--force"], ["src", "--force"],
+            ["command", "--force"], ["nvidia"],
         ])
 
     def test_failed_step_stops_later_work_and_propagates_status(self):

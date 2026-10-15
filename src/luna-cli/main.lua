@@ -3,12 +3,36 @@
 
 -- Locate shared helpers relative to this file, independently of the caller's cwd.
 local source_dir = arg[0]:match("^(.*)/") or "."
+
+-- Report the checkout version even before argparse or desktop modules are ready.
+local function show_version()
+    local file, message = io.open(source_dir .. "/../../VERSION", "r")
+    if not file then
+        io.stderr:write("Cannot read Luna version: " .. tostring(message) .. "\n")
+        os.exit(1)
+    end
+
+    local version = file:read("*l")
+    file:close()
+    if not version or not version:match("%S") then
+        io.stderr:write("Luna VERSION file is empty.\n")
+        os.exit(1)
+    end
+    print("luna " .. version)
+end
+
+if #arg == 1 and (arg[1] == "--version" or arg[1] == "-v") then
+    show_version()
+    return
+end
+
 local common = dofile(source_dir .. "/../../lib/common.lua")
 local argparse = require("argparse")
 
 -- Command implementations live in their own directories; argparse owns usage errors.
 local parser = argparse("luna", "Luna personal Arch desktop tools.")
 parser:require_command(false)
+parser:flag("-v --version", "Show Luna version and exit.")
 local fonts = dofile(source_dir .. "/font/init.lua")(common, source_dir .. "/font")
 local font_parser = fonts.register(parser)
 local wallpapers = dofile(source_dir .. "/wallpaper/init.lua")(common, source_dir .. "/wallpaper")
@@ -44,6 +68,11 @@ control.register(parser)
 local record = dofile(source_dir .. "/record/init.lua")(common, source_dir .. "/record")
 record.register(parser)
 local options = parser:parse()
+
+if options.version then
+    show_version()
+    return
+end
 
 -- Bare entry points show help rather than performing any system operation.
 if options.auth or options.control or options.record then

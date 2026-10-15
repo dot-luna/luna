@@ -42,20 +42,21 @@ done
 
 # Install build prerequisites only when this script is invoked independently.
 if ! pacman -Q git base-devel >/dev/null 2>&1; then
-    sudo pacman -Syu --needed -- git base-devel
+    luna_run sudo pacman -Syu --noconfirm --needed -- git base-devel
 fi
 
 # Isolate build files and remove only this script's temporary directory on exit.
 build_dir=$(mktemp -d -t luna-aur.XXXXXXXX)
 trap 'rm -rf -- "$build_dir"' EXIT
 
-git clone -- https://aur.archlinux.org/yay.git "$build_dir/yay"
+luna_info 'Building the yay AUR helper.'
+luna_run git clone -- https://aur.archlinux.org/yay.git "$build_dir/yay"
 cd -- "$build_dir/yay"
-makepkg -si
+luna_run makepkg -si --noconfirm
 
 if ! luna_available yay; then
     luna_error "AUR setup failed: yay is unavailable after installation."
     exit 1
 fi
 
-luna_info "AUR helper ready: yay"
+luna_success "AUR helper ready: yay"

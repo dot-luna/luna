@@ -1,12 +1,105 @@
 # Shared Bash helpers. Source this file after enabling the caller's shell options.
 
-# Print literal messages without treating user-provided text as a format string.
+# Preserve terminal detection when the installer sends output through its log tee.
+# NO_COLOR also applies when a parent explicitly enabled terminal colors.
+if [[ -n "${NO_COLOR:-}" ]]; then
+    LUNA_COLOR=0
+elif [[ "${LUNA_COLOR:-auto}" == auto ]]; then
+    if [[ -t 1 && "${TERM:-}" != dumb ]]; then
+        LUNA_COLOR=1
+    else
+        LUNA_COLOR=0
+    fi
+fi
+export LUNA_COLOR
+
+# Label Luna output consistently; attention messages start a fresh visual block.
+luna_log() {
+    local level=$1
+    shift
+    local color=
+    local reset=
+
+    case "$level" in
+        STEP|WARN|ERROR)
+            printf '\n'
+            ;;
+    esac
+    if [[ "$LUNA_COLOR" == 1 ]]; then
+        reset=$'\e[0m'
+        case "$level" in
+            STEP)
+                color=$'\e[1;36m'
+                ;;
+            OK)
+                color=$'\e[32m'
+                ;;
+            WARN|INPUT)
+                color=$'\e[1;33m'
+                ;;
+            ERROR)
+                color=$'\e[1;31m'
+                ;;
+            *)
+                color=$'\e[36m'
+                ;;
+        esac
+    fi
+    printf '%s[%(%H:%M:%S)T] [%s]%s %s\n' "$color" -1 "$level" "$reset" "$*"
+}
+
 luna_info() {
-    printf '%s\n' "$*"
+    luna_log INFO "$*"
+}
+
+luna_success() {
+    luna_log OK "$*"
+}
+
+luna_warn() {
+    luna_log WARN "$*" >&2
 }
 
 luna_error() {
-    printf '%s\n' "$*" >&2
+    luna_log ERROR "$*" >&2
+}
+
+luna_step() {
+    luna_log STEP "$*"
+}
+
+# Keep external tools visually separate from Luna. Strip their ANSI sequences so
+# a package manager's reset cannot cancel the muted color halfway through a line.
+luna_tool_output() {
+    local line
+    local ansi=$'\e''\[[0-?]*[ -/]*[@-~]'
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        while [[ "$line" =~ $ansi ]]; do
+            line=${line/"${BASH_REMATCH[0]}"/}
+        done
+        if [[ "$LUNA_COLOR" == 1 ]]; then
+            printf '\e[90m  %s\e[0m\n' "$line"
+        else
+            printf '  %s\n' "$line"
+        fi
+    done
+}
+
+# Stream stdout/stderr without consuming stdin. Capture both pipeline statuses
+# inside a conditional so errexit cannot hide a command failure during cleanup.
+luna_run() {
+    local -a statuses
+    printf '\n'
+    if "$@" 2>&1 | luna_tool_output; then
+        statuses=("${PIPESTATUS[@]}")
+    else
+        statuses=("${PIPESTATUS[@]}")
+    fi
+    printf '\n'
+    if (( statuses[0] != 0 )); then
+        return "${statuses[0]}"
+    fi
+    return "${statuses[1]}"
 }
 
 # Return a status so callers can choose whether absence is an error or a skip.
@@ -32,8 +125,13 @@ luna_confirm() {
         choices='Y/n'
     fi
 
+    printf '\n'
     while true; do
-        printf '%s [%s] ' "$question" "$choices"
+        if [[ "$LUNA_COLOR" == 1 ]]; then
+            printf '\e[1;33m[INPUT] %s [%s]\e[0m ' "$question" "$choices"
+        else
+            printf '[INPUT] %s [%s] ' "$question" "$choices"
+        fi
         if ! IFS= read -r answer; then
             printf '\n'
             return 1

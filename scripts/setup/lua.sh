@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Bootstrap the system Lua runtime before Luna's Lua setup can run.
-# Invoke directly; package installation keeps pacman's confirmation prompts.
+# Invoke directly; package confirmations are automatic while sudo may authenticate.
 set -euo pipefail
 
 # Load repository-wide helpers, including when reached via a symlink.
@@ -56,14 +56,14 @@ fi
 
 # Refresh packages with a full upgrade, keeping Arch dependencies consistent.
 # Force omits --needed so even installed targets are reinstalled.
-options=(-Syu)
+options=(-Syu --noconfirm)
 
 if [[ "$force" == false ]]; then
     options+=(--needed)
 fi
 
 luna_info "Setting up Lua and argparse (includes a system upgrade)."
-"${installer[@]}" "${options[@]}" -- lua lua-argparse
+luna_run "${installer[@]}" "${options[@]}" -- lua lua-argparse
 
 # Verify the runtime rather than assuming a successful transaction is enough.
 if ! lua_ready; then
@@ -71,4 +71,4 @@ if ! lua_ready; then
     exit 1
 fi
 
-luna_info "Lua and argparse are ready."
+luna_success "Lua and argparse are ready."

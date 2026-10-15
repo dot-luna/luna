@@ -7,9 +7,21 @@
 #   curl -fsSL https://raw.githubusercontent.com/dot-luna/luna/master/scripts/install.sh | bash -s -- --ref v1.0.0
 #
 # The checkout stays in ~/.local/src/luna because deployed configs refer to it.
-# Run as your normal user in a terminal; sudo is used only for package setup.
+# Run as your normal user in a terminal; sudo is used for system setup.
 # Existing clean checkouts can be reused, but are never switched or updated here.
 set -euo pipefail
+
+# Decide before tee replaces stdout, then share that choice with setup children.
+if [[ -n "${NO_COLOR:-}" ]]; then
+    LUNA_COLOR=0
+elif [[ "${LUNA_COLOR:-auto}" == auto ]]; then
+    if [[ -t 1 && "${TERM:-}" != dumb ]]; then
+        LUNA_COLOR=1
+    else
+        LUNA_COLOR=0
+    fi
+fi
+export LUNA_COLOR
 
 usage() {
     cat <<'HELP'
@@ -29,7 +41,8 @@ Logs:     $XDG_STATE_HOME/luna/ (defaults to ~/.local/state/luna/)
 
 Requires Arch Linux, a normal user with sudo access, and an interactive terminal.
 Installs dependencies and Hyprland configuration using scripts/setup.sh.
-Package installation may perform a full system upgrade and retains its prompts.
+Package installation may perform a full system upgrade without package-manager confirmations.
+Sudo authentication and the optional NVIDIA confirmation remain interactive.
 An existing checkout must be clean and match the requested branch or tag.
 HELP
 }
@@ -37,7 +50,63 @@ HELP
 log() {
     local level=$1
     shift
-    printf '[%(%H:%M:%S)T] [%s] %s\n' -1 "$level" "$*"
+    local color=
+    local reset=
+    if [[ "$level" == WARN || "$level" == ERROR ]]; then
+        printf '\n'
+    fi
+    if [[ "$LUNA_COLOR" == 1 ]]; then
+        reset=$'\e[0m'
+        case "$level" in
+            STEP)
+                color=$'\e[1;36m'
+                ;;
+            OK)
+                color=$'\e[32m'
+                ;;
+            WARN)
+                color=$'\e[1;33m'
+                ;;
+            ERROR)
+                color=$'\e[1;31m'
+                ;;
+            *)
+                color=$'\e[36m'
+                ;;
+        esac
+    fi
+    printf '%s[%(%H:%M:%S)T] [%s]%s %s\n' "$color" -1 "$level" "$reset" "$*"
+}
+
+# These small helpers stay self-contained: the checkout does not exist yet.
+tool_output() {
+    local line
+    local ansi=$'\e''\[[0-?]*[ -/]*[@-~]'
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        while [[ "$line" =~ $ansi ]]; do
+            line=${line/"${BASH_REMATCH[0]}"/}
+        done
+        if [[ "$LUNA_COLOR" == 1 ]]; then
+            printf '\e[90m  %s\e[0m\n' "$line"
+        else
+            printf '  %s\n' "$line"
+        fi
+    done
+}
+
+run_tool() {
+    local -a statuses
+    printf '\n'
+    if "$@" 2>&1 | tool_output; then
+        statuses=("${PIPESTATUS[@]}")
+    else
+        statuses=("${PIPESTATUS[@]}")
+    fi
+    printf '\n'
+    if (( statuses[0] != 0 )); then
+        return "${statuses[0]}"
+    fi
+    return "${statuses[1]}"
 }
 
 fail() {
@@ -52,6 +121,9 @@ step() {
 }
 
 welcome() {
+    if [[ "$LUNA_COLOR" == 1 ]]; then
+        printf '\e[1;36m'
+    fi
     cat <<'BANNER'
 
      __    __  ___   _____
@@ -64,6 +136,9 @@ welcome() {
     Your desktop, your space.
 
 BANNER
+    if [[ "$LUNA_COLOR" == 1 ]]; then
+        printf '\e[0m'
+    fi
 }
 
 # Restore the terminal streams before waiting for tee, so the log is complete
@@ -96,6 +171,23 @@ finish() {
     exit "$status"
 }
 
+# tee keeps prompts without newlines visible immediately. Wait for the plain-log
+# filter as well as tee so finish() never reports success before the log is saved.
+copy_log() {
+    local plain_fd plain_pid
+    local tee_status=0
+    local plain_status=0
+    exec {plain_fd}> >(LC_ALL=C sed -u $'s/\033\\[[0-?]*[ -/]*[@-~]//g' >> "$log_file")
+    plain_pid=$!
+    tee "/dev/fd/$plain_fd" || tee_status=$?
+    exec {plain_fd}>&-
+    wait "$plain_pid" || plain_status=$?
+    if (( tee_status != 0 )); then
+        return "$tee_status"
+    fi
+    return "$plain_status"
+}
+
 start_log() {
     local state_dir=${XDG_STATE_HOME:-"$HOME/.local/state"}
     if [[ "$state_dir" != /* ]]; then
@@ -105,10 +197,10 @@ start_log() {
     mkdir -p -- "$state_dir/luna"
     log_file=$(mktemp "$state_dir/luna/install-$(date +%Y%m%d-%H%M%S)-XXXXXX.log")
 
-    # Plain text goes to both the terminal and a private log, including output
-    # from Git and package managers. Save the original streams for finish().
+    # Terminal colors stay visible; the private log receives only plain text.
+    # Save the original streams for finish(), including child command output.
     exec 3>&1 4>&2
-    exec > >(tee -a "$log_file") 2>&1
+    exec > >(copy_log) 2>&1
     log_pid=$!
 }
 
@@ -134,16 +226,16 @@ check_system() {
     fi
 
     local tool
-    for tool in pacman sudo tee mktemp date mkdir realpath; do
+    for tool in pacman sudo tee sed mktemp date mkdir realpath; do
         if ! command -v "$tool" >/dev/null 2>&1; then
             fail "Required command is missing: $tool"
         fi
     done
 
-    # curl owns stdin while streaming the script. Package manager confirmations
+    # curl owns stdin while streaming the script. Sudo and the NVIDIA question
     # must read the user's terminal instead of consuming script text or EOF.
     if ! { exec </dev/tty; } 2>/dev/null; then
-        fail 'Run this installer in an interactive terminal to answer package prompts.'
+        fail 'Run this installer in an interactive terminal for sudo and NVIDIA confirmation.'
     fi
 }
 
@@ -238,7 +330,7 @@ main() {
     log INFO "Repository: $repo_url"
     log INFO "Branch/tag: $ref"
     log INFO "Checkout:   $install_dir"
-    log INFO 'Setup installs packages and may upgrade the system. Review package-manager prompts.'
+    log WARN 'Setup installs packages and may upgrade the system without further package confirmations.'
 
     step '1/4 — Check system and sudo access'
     sudo -v
@@ -247,7 +339,7 @@ main() {
     step '2/4 — Prepare Git'
     if ! command -v git >/dev/null 2>&1; then
         log INFO 'Installing Git with pacman.'
-        sudo pacman -Syu --needed -- git
+        run_tool sudo pacman -Syu --needed --noconfirm -- git
     fi
     if ! command -v git >/dev/null 2>&1; then
         fail 'Git is still unavailable after package installation.'
@@ -264,7 +356,7 @@ main() {
     else
         mkdir -p -- "$HOME/.local/src"
         log INFO "Cloning $ref..."
-        git clone --branch "$ref" --single-branch -- "$repo_url" "$install_dir"
+        run_tool git clone --branch "$ref" --single-branch -- "$repo_url" "$install_dir"
     fi
     if [[ ! -f "$install_dir/scripts/setup.sh" ]]; then
         fail "The selected version does not contain scripts/setup.sh: $ref"
@@ -279,7 +371,8 @@ main() {
 
     printf '\n'
     log OK 'Luna setup completed.'
-    log INFO 'Dependencies, Hyprland configuration, and source links are installed.'
+    log INFO 'Dependencies, Hyprland configuration, source links, and the Luna command are installed.'
+    log INFO 'Open a new terminal, then run luna --version to check the installed version.'
     log INFO 'Keep the checkout in place; your configuration links depend on it.'
     log INFO 'Log out and select Hyprland in your session chooser, or start it using your usual method.'
     log INFO 'If system packages requested a reboot, reboot before starting the new session.'

@@ -45,5 +45,5 @@ for source_package in "$repo_dir/src"/*; do
     fi
 done
 
-stow --dir="$repo_dir" --target="$source_target" --restow src
-luna_info "Stowed Luna source directories: $source_target"
+luna_run stow --dir="$repo_dir" --target="$source_target" --restow src
+luna_success "Stowed Luna source directories: $source_target"

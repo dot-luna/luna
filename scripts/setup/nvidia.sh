@@ -16,7 +16,7 @@ fi
 
 luna_info 'Optional NVIDIA setup: nvidia-open, nvidia-smi, and nvidia-settings.'
 luna_info 'Supported hardware: Turing or newer NVIDIA GPUs using the standard Arch linux kernel.'
-luna_info 'Installation updates system packages and rebuilds initramfs. A reboot is required.'
+luna_warn 'Installation updates system packages and rebuilds initramfs. A reboot is required.'
 
 # Decline before checking or requesting privileges, including when input reaches EOF.
 if ! luna_confirm 'Install NVIDIA drivers and tools now?' 'n'; then
@@ -24,7 +24,7 @@ if ! luna_confirm 'Install NVIDIA drivers and tools now?' 'n'; then
     exit 0
 fi
 
-pacman -Q linux >/dev/null || {
+pacman -Q linux >/dev/null 2>&1 || {
     luna_error 'This script requires the standard Arch linux kernel. Other kernels need a matching NVIDIA package.'
     exit 1
 }
@@ -41,14 +41,14 @@ fi
 
 # Keep the kernel and driver in the same repository transaction. Do not unload the
 # active Nouveau module: it may currently drive a display and must change at reboot.
-"${privilege[@]}" pacman -Syu --needed -- linux nvidia-open nvidia-utils nvidia-settings
+luna_run "${privilege[@]}" pacman -Syu --noconfirm --needed -- linux nvidia-open nvidia-utils nvidia-settings
 
 # Persist Wayland modesetting and prevent Nouveau from claiming the GPU next boot.
-"${privilege[@]}" install -d /etc/modprobe.d
+luna_run "${privilege[@]}" install -d /etc/modprobe.d
 "${privilege[@]}" tee /etc/modprobe.d/luna-nvidia.conf >/dev/null <<'EOF'
 blacklist nouveau
 options nvidia_drm modeset=1 fbdev=1
 EOF
 
-"${privilege[@]}" mkinitcpio -P
-luna_info 'NVIDIA drivers and tools installed. Reboot to load the driver, then check nvidia-smi.'
+luna_run "${privilege[@]}" mkinitcpio -P
+luna_success 'NVIDIA drivers and tools installed. Reboot to load the driver, then check nvidia-smi.'

@@ -16,11 +16,11 @@ To install a specific version, replace `BRANCH_OR_TAG` with an existing branch o
 curl -fsSL https://raw.githubusercontent.com/dot-luna/luna/master/scripts/install.sh | bash -s -- --ref BRANCH_OR_TAG
 ```
 
-The installer clones Luna into `~/.local/src/luna`, installs dependencies and fonts, then links the Hyprland configuration and source directories. Source links live in `~/.local/src/`. Config and source setup run automatically; conflicting paths are backed up beside the originals with `.luna-backup` suffixes, numbered when needed.
+The installer clones Luna into `~/.local/src/luna`, installs dependencies and fonts, then links the Hyprland configuration, source directories, and `~/.local/bin/luna`. Source links live in `~/.local/src/`. Conflicting paths are backed up beside the originals with `.luna-backup` suffixes, numbered when needed. Setup adds the command directory to your shell's PATH; open a new terminal afterward and run `luna --version`.
 
-The final step offers optional NVIDIA setup, with confirmation defaulting to **No**. It supports Turing or newer GPUs using Arch's standard `linux` kernel. Package installation may upgrade the system and retains package manager prompts.
+Setup automatically enables and starts Docker, logging a warning if it cannot. Package installation may upgrade the system and runs without package-manager confirmations; `sudo` may still ask for your password. The final step offers optional NVIDIA setup, with confirmation defaulting to **No**. It supports Turing or newer GPUs using Arch's standard `linux` kernel.
 
-Logs are saved in `~/.local/state/luna/`, or `$XDG_STATE_HOME/luna/` when set. An existing checkout must be clean and match the requested branch or tag; the installer reuses it without updating it.
+Luna's terminal messages use colors and separated steps; external tool output is muted gray. Set `NO_COLOR=1` to disable colors. Plain-text logs are saved in `~/.local/state/luna/`, or `$XDG_STATE_HOME/luna/` when set. An existing checkout must be clean and match the requested branch or tag; the installer reuses it without updating it.
 
 ## Run setup again
 

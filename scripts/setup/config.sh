@@ -54,5 +54,5 @@ fi
 
 # Target XDG_CONFIG_HOME directly so custom config locations also work.
 # No directory folding: keep other Hyprland files outside Luna's package intact.
-stow --dir="$package_dir" --target="$config_dir" --no-folding --restow .config
-luna_info "Stowed Luna Hyprland config: $entry_point"
+luna_run stow --dir="$package_dir" --target="$config_dir" --no-folding --restow .config
+luna_success "Stowed Luna Hyprland config: $entry_point"

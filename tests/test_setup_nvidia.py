@@ -46,11 +46,8 @@ if tool == "sudo":
 elif tool == "pacman":
     if args == ["-Q", "linux"]:
         sys.exit(int(os.environ.get("TEST_NVIDIA_KERNEL_STATUS", "0")))
-    if args != ["-Syu", "--needed", "--", "linux", "nvidia-open", "nvidia-utils", "nvidia-settings"]:
+    if args != ["-Syu", "--noconfirm", "--needed", "--", "linux", "nvidia-open", "nvidia-utils", "nvidia-settings"]:
         sys.exit("Unexpected pacman invocation: " + repr(args))
-    print("Fixture pacman confirmation: ", end="", flush=True)
-    if sys.stdin.readline().strip().lower() != "yes":
-        sys.exit(1)
     sys.exit(int(os.environ.get("TEST_NVIDIA_PACKAGE_STATUS", "0")))
 elif tool == "install":
     if args != ["-d", "/etc/modprobe.d"]:
@@ -88,14 +85,14 @@ elif tool == "mkinitcpio":
                 self.assertEqual(self.calls(), [])
 
     def test_accepted_setup_installs_tools_before_configuring_and_rebuilding(self):
-        result = self.setup(answer="yes\nyes\n")
+        result = self.setup(answer="yes\n")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.count("Install NVIDIA drivers and tools now?"), 1)
         self.assertIn("Reboot to load the driver", result.stdout)
         operations = [call for call in self.calls() if call[0] != "sudo"]
         self.assertEqual(operations, [
             ["pacman", "-Q", "linux"],
-            ["pacman", "-Syu", "--needed", "--", "linux", "nvidia-open", "nvidia-utils", "nvidia-settings"],
+            ["pacman", "-Syu", "--noconfirm", "--needed", "--", "linux", "nvidia-open", "nvidia-utils", "nvidia-settings"],
             ["install", "-d", "/etc/modprobe.d"],
             ["tee", "/etc/modprobe.d/luna-nvidia.conf"],
             ["mkinitcpio", "-P"],
@@ -133,21 +130,21 @@ elif tool == "mkinitcpio":
 
     def test_package_failure_does_not_write_config_or_rebuild(self):
         self.env["TEST_NVIDIA_PACKAGE_STATUS"] = "7"
-        result = self.setup(answer="yes\nyes\n")
+        result = self.setup(answer="yes\n")
         self.assertEqual(result.returncode, 7)
         self.assertFalse((self.root / "luna-nvidia.conf").exists())
         self.assertFalse(any(call[0] in ("install", "tee", "mkinitcpio") for call in self.calls()))
         self.assertNotIn("drivers and tools installed", result.stdout)
 
-    def test_pacman_can_still_be_declined_without_writing_config(self):
+    def test_package_install_does_not_ask_for_a_second_confirmation(self):
         result = self.setup(answer="yes\nno\n")
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("Fixture pacman confirmation", result.stdout)
-        self.assertFalse((self.root / "luna-nvidia.conf").exists())
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue((self.root / "luna-nvidia.conf").exists())
+        self.assertIn("--noconfirm", next(call for call in self.calls() if "-Syu" in call))
 
     def test_initramfs_failure_is_not_reported_as_success(self):
         self.env["TEST_NVIDIA_INITRAMFS_STATUS"] = "9"
-        result = self.setup(answer="yes\nyes\n")
+        result = self.setup(answer="yes\n")
         self.assertEqual(result.returncode, 9)
         self.assertNotIn("drivers and tools installed", result.stdout)
 

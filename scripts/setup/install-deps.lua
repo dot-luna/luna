@@ -3,6 +3,7 @@
 -- Resolve shared helpers before parsing commands; never rely on the caller's cwd.
 local script_dir = assert(arg[0]:match("^(.*)/"), "Run this script using its path")
 local common = dofile(script_dir .. "/../../lib/common.lua")
+common.setup_logging()
 local argparse = require("argparse")
 local parser = argparse("install-deps.lua", "Install a Luna package group.")
 parser:argument("group", "Package group"):choices({ "core", "main", "fonts", "extra" })
@@ -14,6 +15,7 @@ local function install()
     local manifest = dofile(script_dir .. "/../../packages/packages.lua")
     local packages = { pacman = {}, aur = {} }
     local seen = {}
+    local installed = 0
 
     -- Validate the entire manifest before any installation. Core is pacman-only.
     for _, group in ipairs({ "core", "main", "fonts", "extra" }) do
@@ -29,10 +31,15 @@ local function install()
                 if options.force or not common.succeeds({ "pacman", "-Q", "--", entry.name }) then
                     table.insert(packages[entry.source], entry.name)
                 else
-                    common.info("Already installed: " .. entry.name)
+                    installed = installed + 1
                 end
             end
         end
+    end
+
+    if installed > 0 then
+        local noun = installed == 1 and "package" or "packages"
+        common.info(string.format("%s: %d %s already installed.", options.group, installed, noun))
     end
 
     -- Preflight both sources so a missing helper cannot cause a partial group install.
@@ -49,13 +56,26 @@ local function install()
         if #names > 0 then
             local arguments
             if source == "pacman" then
-                arguments = { "pacman", "-Syu" }
+                arguments = { "pacman", "-Syu", "--noconfirm" }
                 if not common.is_root() then
                     assert(common.available("sudo"), "sudo is required")
                     table.insert(arguments, 1, "sudo")
                 end
             else
-                arguments = { helper, "-S" }
+                arguments = { helper, "-S", "--noconfirm" }
+                -- AUR helpers have review menus in addition to pacman confirmation.
+                if helper == "yay" then
+                    local review_options = {
+                        "--answerclean", "None", "--answerdiff", "None",
+                        "--answeredit", "None", "--noremovemake",
+                    }
+                    for _, value in ipairs(review_options) do
+                        table.insert(arguments, value)
+                    end
+                else
+                    table.insert(arguments, "--skipreview")
+                    table.insert(arguments, "--noremovemake")
+                end
             end
 
             if not options.force then
@@ -66,7 +86,10 @@ local function install()
                 table.insert(arguments, name)
             end
 
-            -- Keep package manager prompts and verify each target after installation.
+            -- Sudo can still authenticate; package confirmations use their defaults.
+            -- Verify each target rather than relying only on the command's status.
+            local suffix = #names == 1 and "" or "s"
+            common.info(string.format("Installing %d %s package%s for %s.", #names, source, suffix, options.group))
             common.run(arguments)
             for _, name in ipairs(names) do
                 assert(common.succeeds({ "pacman", "-Q", "--", name }), "Package was not installed: " .. name)
@@ -74,11 +97,7 @@ local function install()
         end
     end
 
-    common.info("Dependencies ready: " .. options.group)
-    if options.group == "core" then
-        common.info("Enable Docker when ready: sudo systemctl enable --now docker")
-        common.info("Use sudo docker for daemon commands unless Docker access is configured for your user.")
-    end
+    common.success("Dependencies ready: " .. options.group)
 end
 
 local ok, error_message = pcall(install)

@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import pty
+import re
 import shutil
 import subprocess
 import sys
@@ -50,7 +51,7 @@ class InstallerTests(unittest.TestCase):
             BASH_ENV=str(self.root / "bash-env"),
             NO_COLOR="1",
         )
-        for name in ("XDG_STATE_HOME", "TEST_BOOTSTRAP_GIT", "TEST_SETUP_STATUS"):
+        for name in ("XDG_STATE_HOME", "TEST_BOOTSTRAP_GIT", "TEST_SETUP_STATUS", "TEST_SETUP_COLOR"):
             self.env.pop(name, None)
 
         # Override only OS discovery and Git availability; never mutate the host.
@@ -86,11 +87,8 @@ elif tool == "sudo":
         sys.exit("Unexpected sudo command: " + repr(args))
     os.execv(str(root / "bin/pacman"), ["pacman", *args[1:]])
 elif tool == "pacman":
-    if args != ["-Syu", "--needed", "--", "git"]:
+    if args != ["-Syu", "--needed", "--noconfirm", "--", "git"]:
         sys.exit("Unexpected pacman command: " + repr(args))
-    print("Fixture package prompt: ", end="", flush=True)
-    if not sys.stdin.isatty() or sys.stdin.readline().strip() != "yes":
-        sys.exit("Package prompt did not receive terminal input")
     (root / "git-installed").touch()
 '''
         for name in ("sudo", "pacman", "git"):
@@ -109,6 +107,9 @@ if answer != "yes" or not sys.stdin.isatty():
     sys.exit("Setup did not receive terminal input")
 print("Fixture setup stdout")
 print("Fixture setup stderr", file=sys.stderr)
+if os.environ.get("TEST_SETUP_COLOR") == "1":
+    print("\\x1b[31mFixture colored output\\x1b[0m")
+    print("\\x1b[32mFixture colored tail\\x1b[0m", end="", flush=True)
 sys.exit(int(os.environ.get("TEST_SETUP_STATUS", "0")))
 ''')
 
@@ -275,12 +276,33 @@ sys.exit(int(os.environ.get("TEST_SETUP_STATUS", "0")))
         self.assertEqual(len(logs), 1)
         self.assertIn("Fixture setup stderr", logs[0].read_text())
 
-    def test_missing_git_bootstraps_with_terminal_prompt(self):
+    def test_missing_git_bootstraps_without_package_prompt(self):
         self.env["TEST_BOOTSTRAP_GIT"] = "1"
         self.assert_success(self.run_installer())
-        self.assertEqual(self.calls("pacman"), [["pacman", "-Syu", "--needed", "--", "git"]])
+        self.assertEqual(self.calls("pacman"), [["pacman", "-Syu", "--needed", "--noconfirm", "--", "git"]])
         self.assertTrue((self.root / "git-installed").exists())
         self.assertEqual(self.setups()[0]["answer"], "yes")
+
+    def test_forced_color_console_keeps_complete_plain_log(self):
+        self.env.pop("NO_COLOR", None)
+        self.env["LUNA_COLOR"] = "1"
+        self.env["TEST_SETUP_COLOR"] = "1"
+        result = self.run_installer()
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertIn("\x1b[", result.stdout)
+        plain_console = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", result.stdout)
+        self.assertIn("[OK] Luna setup completed.", plain_console)
+        self.assertEqual(self.setups()[0]["answer"], "yes")
+
+        logs = list((self.home / ".local/state/luna").glob("install-*.log"))
+        self.assertEqual(len(logs), 1)
+        contents = logs[0].read_text()
+        self.assertNotIn("\x1b", contents)
+        self.assertIn("Fixture setup prompt:", contents)
+        self.assertIn("Fixture colored output", contents)
+        self.assertIn("Fixture colored tail", contents)
+        self.assertIn("[OK] Luna setup completed.", contents)
+        self.assertIn("Install log:", contents)
 
     def test_no_terminal_stops_before_package_or_clone_writes(self):
         self.env["TEST_BOOTSTRAP_GIT"] = "1"
