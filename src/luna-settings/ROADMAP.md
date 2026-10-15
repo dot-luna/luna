@@ -1,8 +1,10 @@
 # Luna Settings roadmap
 
 This is the proposed scope and organization for Luna Settings. The current app
-is a themed preview; the controls described here still need to be connected to
-real configuration and system behavior.
+provides a themed navigation scaffold with the 12 pages below grouped into
+Desktop, Devices, and System. Each page shows a title, description, and “Coming
+soon” placeholder. The controls and backend behavior described here still need
+to be implemented.
 
 ## Pages and navigation
 

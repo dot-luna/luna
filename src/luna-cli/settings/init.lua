@@ -1,4 +1,4 @@
--- Launch settings with the same resolved theme and lifecycle as the desktop shells.
+-- Launch Luna Settings with the same resolved theme and lifecycle as the desktop shells.
 return function(common, directory)
     local root = directory .. "/../../.."
     local shell = dofile(root .. "/lib/quickshell.lua")(common, root,
@@ -6,7 +6,7 @@ return function(common, directory)
     local M = {}
 
     function M.register(parser)
-        local command = parser:command("settings", "Open the Luna Settings mockup.")
+        local command = parser:command("settings", "Open Luna Settings.")
         command:argument("settings_action", "Action"):args("?"):default("open")
             :choices({ "open", "start", "reload", "stop" })
         return command
