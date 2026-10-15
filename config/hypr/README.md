@@ -29,7 +29,7 @@ bash scripts/setup/src.sh
 
 For example, `~/.local/src/luna-bar` points to the checkout's `src/luna-bar`. Whole-directory links preserve the source modules' relative paths back into the checkout. Matching links are reused, and conflicting paths are backed up and replaced using the same naming convention.
 
-The main `scripts/setup.sh` installs core packages, main packages, and fonts without package-manager confirmations, then attempts to enable and start Docker. It deploys config/source links and installs `~/.local/bin/luna` automatically. Open a new terminal after setup so the shell uses that command path. Its final step asks whether to install the NVIDIA driver. Individual setup steps live under `scripts/setup/`.
+The main `scripts/setup.sh` installs core packages, main packages, and fonts without package-manager confirmations, then attempts to enable and start Docker. It deploys config/source links and installs `~/.local/bin/luna` automatically. Open a new terminal after setup so the shell uses that command path. Its final installation step asks whether to install the NVIDIA driver, then setup reloads the configuration in an active Hyprland session. Individual setup steps live under `scripts/setup/`.
 
 The configuration entry point follows symlinks back to the checkout. If copying it instead, set `LUNA_PATH` to the checkout directory before starting Hyprland. To integrate with an existing Lua config, add this at the desired point in its load order, replacing the example checkout path:
 

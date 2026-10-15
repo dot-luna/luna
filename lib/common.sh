@@ -71,6 +71,8 @@ luna_step() {
 # Keep external tools visually separate from Luna. Strip their ANSI sequences so
 # a package manager's reset cannot cancel the muted color halfway through a line.
 luna_tool_output() {
+    # ANSI byte ranges need C collation; keep this local to the output filter.
+    local LC_ALL=C
     local line
     local ansi=$'\e''\[[0-?]*[ -/]*[@-~]'
     while IFS= read -r line || [[ -n "$line" ]]; do

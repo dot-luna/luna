@@ -12,7 +12,7 @@ for option in "$@"; do
         --force)
             ;;
         -h|--help)
-            printf 'Usage: %s [--force]\n\nSet up packages, fonts, Docker, config/source links, and the Luna command.\nPackages install without confirmation; sudo may ask for authentication.\nConfig and source conflicts are backed up and replaced automatically.\nThe final step asks whether to install NVIDIA drivers and tools.\n--force reinstalls packages. Extra packages are excluded.\n' "${0##*/}"
+            printf 'Usage: %s [--force]\n\nSet up packages, fonts, Docker, config/source links, and the Luna command.\nPackages install without confirmation; sudo may ask for authentication.\nConfig and source conflicts are backed up and replaced automatically.\nThe final installation step asks whether to install NVIDIA drivers and tools.\nAn active Hyprland session is reloaded when setup finishes.\n--force reinstalls packages. Extra packages are excluded.\n' "${0##*/}"
             exit 0
             ;;
         *)
@@ -63,6 +63,10 @@ bash "$steps_dir/src.sh" "$@"
 luna_step '9/10 — Install the Luna command'
 bash "$steps_dir/command.sh" "$@"
 
-# Step 10: optional hardware-specific setup must remain last and ask for consent.
+# Step 10: keep optional hardware setup last among installation steps and ask for consent.
 luna_step '10/10 — Optional NVIDIA setup'
 bash "$steps_dir/nvidia.sh"
+
+# Apply the completed configuration to an active session without another prompt.
+luna_step 'Apply Hyprland configuration'
+bash "$steps_dir/session.sh"

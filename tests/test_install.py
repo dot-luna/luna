@@ -51,7 +51,8 @@ class InstallerTests(unittest.TestCase):
             BASH_ENV=str(self.root / "bash-env"),
             NO_COLOR="1",
         )
-        for name in ("XDG_STATE_HOME", "TEST_BOOTSTRAP_GIT", "TEST_SETUP_STATUS", "TEST_SETUP_COLOR"):
+        for name in ("XDG_STATE_HOME", "TEST_BOOTSTRAP_GIT", "TEST_SETUP_STATUS", "TEST_SETUP_COLOR",
+                     "TEST_TOOL_LOCALE"):
             self.env.pop(name, None)
 
         # Override only OS discovery and Git availability; never mutate the host.
@@ -79,6 +80,9 @@ args = sys.argv[1:]
 with (root / "calls.jsonl").open("a") as output:
     output.write(json.dumps([tool, *args]) + "\\n")
 if tool == "git":
+    if args and args[0] == "clone" and os.environ.get("TEST_TOOL_LOCALE") == "1":
+        print("Fixture clone locale: " + os.environ["LC_ALL"], flush=True)
+        print("\\x1b[31mFixture Unicode café — काठमाडौं\\x1b[0m", flush=True)
     os.execv(os.environ["TEST_GIT"], ["git", *args])
 elif tool == "sudo":
     if args == ["-v"]:
@@ -107,6 +111,8 @@ if answer != "yes" or not sys.stdin.isatty():
     sys.exit("Setup did not receive terminal input")
 print("Fixture setup stdout")
 print("Fixture setup stderr", file=sys.stderr)
+if os.environ.get("TEST_TOOL_LOCALE") == "1":
+    print("Fixture setup locale: " + os.environ["LC_ALL"], flush=True)
 if os.environ.get("TEST_SETUP_COLOR") == "1":
     print("\\x1b[31mFixture colored output\\x1b[0m")
     print("\\x1b[32mFixture colored tail\\x1b[0m", end="", flush=True)
@@ -379,6 +385,43 @@ sys.exit(int(os.environ.get("TEST_SETUP_STATUS", "0")))
         self.assertIn("Fixture colored tail", contents)
         self.assertIn("[OK] Luna setup completed.", contents)
         self.assertIn("Install log:", contents)
+
+    def test_english_locale_keeps_console_and_log_free_of_regex_errors(self):
+        if not shutil.which("locale"):
+            self.skipTest("locale is needed to find an English UTF-8 locale")
+        available = subprocess.run(["locale", "-a"], capture_output=True, text=True,
+                                   check=True, timeout=5).stdout.splitlines()
+        locale_name = next((name for name in available
+                            if name.lower().replace("-", "") == "en_us.utf8"), None)
+        if locale_name is None:
+            self.skipTest("An en_US UTF-8 locale is not installed")
+
+        self.env.pop("NO_COLOR", None)
+        self.env.update(LC_ALL=locale_name, LANG=locale_name, TEST_TOOL_LOCALE="1")
+        log_dir = self.home / ".local/state/luna"
+        for color in ("0", "1"):
+            with self.subTest(color=color):
+                self.env["LUNA_COLOR"] = color
+                previous_logs = set(log_dir.glob("install-*.log"))
+                result = self.run_installer()
+                self.assertEqual(result.returncode, 0, result.stdout)
+                self.assertNotRegex(result.stdout, r"invalid regex|Invalid range end")
+                self.assertNotIn("\x1b[31m", result.stdout)
+                self.assertEqual("\x1b[90m" in result.stdout, color == "1")
+                if color == "0":
+                    self.assertNotIn("\x1b", result.stdout)
+                plain_console = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", result.stdout)
+
+                logs = set(log_dir.glob("install-*.log")) - previous_logs
+                self.assertEqual(len(logs), 1)
+                contents = logs.pop().read_text()
+                self.assertNotIn("\x1b", contents)
+                self.assertNotRegex(contents, r"invalid regex|Invalid range end")
+                for output in (plain_console, contents):
+                    self.assertIn("Fixture Unicode café — काठमाडौं", output)
+                    self.assertIn("Fixture clone locale: " + locale_name, output)
+                    self.assertIn("Fixture setup locale: " + locale_name, output)
+                    self.assertIn("[OK] Luna setup completed.", output)
 
     def test_no_terminal_stops_before_package_or_clone_writes(self):
         self.env["TEST_BOOTSTRAP_GIT"] = "1"

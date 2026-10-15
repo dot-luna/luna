@@ -80,6 +80,8 @@ log() {
 
 # These small helpers stay self-contained: the checkout does not exist yet.
 tool_output() {
+    # ANSI byte ranges need C collation; keep this local to the output filter.
+    local LC_ALL=C
     local line
     local ansi=$'\e''\[[0-?]*[ -/]*[@-~]'
     while IFS= read -r line || [[ -n "$line" ]]; do
@@ -333,7 +335,7 @@ main() {
     log INFO 'Dependencies, Hyprland configuration, source links, and the Luna command are installed.'
     log INFO 'Open a new terminal, then run luna --version to check the installed version.'
     log INFO 'Keep the checkout in place; your configuration links depend on it.'
-    log INFO 'Log out and select Hyprland in your session chooser, or start it using your usual method.'
+    log INFO 'If Hyprland is not running, select it in your session chooser or start it using your usual method.'
     log INFO 'If system packages requested a reboot, reboot before starting the new session.'
 }
 

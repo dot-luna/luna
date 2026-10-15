@@ -30,7 +30,8 @@ class LoggingTestCase(unittest.TestCase):
                         TEST_PYTHON=sys.executable,
                         TEST_COMMON_LUA=str(REPO / "lib/common.lua"))
         for name in ("LUNA_COLOR", "NO_COLOR", "BASH_ENV", "ENV", "LUA_INIT",
-                     "TEST_TOOL_COLOR", "TEST_TOOL_STATUS", "TEST_TOOL_READ_STDIN"):
+                     "TEST_TOOL_COLOR", "TEST_TOOL_STATUS", "TEST_TOOL_READ_STDIN",
+                     "TEST_TOOL_LOCALE"):
             self.env.pop(name, None)
         self.command = self.root / "command probe.py"
         self.env["TEST_COMMAND"] = str(self.command)
@@ -44,6 +45,9 @@ diagnostic = "tool diagnostic"
 if os.environ.get("TEST_TOOL_COLOR") == "1":
     diagnostic = "\\x1b[31m" + diagnostic + "\\x1b[0m"
 print(diagnostic, file=sys.stderr, flush=True)
+if os.environ.get("TEST_TOOL_LOCALE") == "1":
+    print("tool locale: " + os.environ["LC_ALL"], flush=True)
+    print("\\x1b[35mUnicode café — काठमाडौं\\x1b[0m", flush=True)
 print("partial final line", end="", flush=True)
 sys.exit(int(os.environ.get("TEST_TOOL_STATUS", "0")))
 ''')
@@ -194,6 +198,41 @@ luna_step 'next step'
         self.assertNotIn("\x1b[31m", result.stdout)
         diagnostic = next(line for line in result.stdout.splitlines() if "tool diagnostic" in line)
         self.assertIn("\x1b[0m", diagnostic)
+
+    def test_english_locale_strips_ansi_without_changing_text_or_caller_locale(self):
+        if not shutil.which("locale"):
+            self.skipTest("locale is needed to find an English UTF-8 locale")
+        available = subprocess.run(["locale", "-a"], capture_output=True, text=True,
+                                   check=True, timeout=5).stdout.splitlines()
+        locale_name = next((name for name in available
+                            if name.lower().replace("-", "") == "en_us.utf8"), None)
+        if locale_name is None:
+            self.skipTest("An en_US UTF-8 locale is not installed")
+
+        self.env.update(LC_ALL=locale_name, LANG=locale_name,
+                        TEST_TOOL_COLOR="1", TEST_TOOL_LOCALE="1")
+        for color in ("0", "1"):
+            with self.subTest(color=color):
+                self.env["LUNA_COLOR"] = color
+                # Invoke the filter directly as well as through luna_run: its
+                # locale override must remain local even without a pipeline.
+                result = self.run_code(self.command_source() + '''
+luna_tool_output <<< $'\\e[35mDirect café — काठमाडौं\\e[0m'
+printf 'caller locale: %s\\n' "$LC_ALL"
+''')
+                self.assert_success(result)
+                self.assertEqual(result.stderr, "")
+                self.assertNotRegex(result.stdout, r"invalid regex|Invalid range end")
+                self.assertNotIn("\x1b[31m", result.stdout)
+                self.assertNotIn("\x1b[35m", result.stdout)
+                plain = ANSI.sub("", result.stdout)
+                self.assertIn("Unicode café — काठमाडौं", plain)
+                self.assertIn("Direct café — काठमाडौं", plain)
+                self.assertIn("tool locale: " + locale_name, plain)
+                self.assertIn("caller locale: " + locale_name, plain)
+                self.assertEqual("\x1b[90m" in result.stdout, color == "1")
+                if color == "0":
+                    self.assertNotIn("\x1b", result.stdout)
 
 
 @unittest.skipUnless(Path("/usr/bin/lua").is_file(), "System Lua is required")
