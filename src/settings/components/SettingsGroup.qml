@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Layouts
+import Luna 1.0 as Luna
 
 // Related controls share one inset desktop preferences surface.
 Pane {
@@ -10,9 +11,9 @@ Pane {
     Layout.fillWidth: true
 
     background: Rectangle {
-        color: "#303033"
-        radius: 10
-        border.color: "#404044"
+        color: Luna.Theme.lighterBackground
+        radius: Math.min(Luna.Theme.barRounding, width / 2, height / 2)
+        border.color: Luna.Theme.muted
     }
 
     contentItem: ColumnLayout {

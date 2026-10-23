@@ -3,6 +3,8 @@ import QtQuick.Controls.Basic
 import QtQuick.Layouts
 import QtQuick.Window
 import Quickshell
+import Quickshell.Io
+import Luna 1.0 as Luna
 
 ShellRoot {
     id: shell
@@ -47,6 +49,27 @@ ShellRoot {
         navigation.itemAt(page).forceActiveFocus(Qt.ShortcutFocusReason);
     }
 
+    IpcHandler {
+        target: "settings"
+
+        function open(): void {
+            window.visible = true;
+            window.contentItem.Window.window.requestActivate();
+        }
+
+        function applyFonts(value: string): void {
+            Luna.Theme.applyFonts(JSON.parse(value));
+        }
+
+        function ping(): string {
+            return "ready";
+        }
+
+        function stop(): void {
+            Qt.quit();
+        }
+    }
+
     FloatingWindow {
         id: window
 
@@ -55,24 +78,8 @@ ShellRoot {
         implicitWidth: 960
         implicitHeight: 760
         minimumSize: Qt.size(760, 540)
-        color: "#242426"
+        color: Luna.Theme.background
         Component.onCompleted: navigation.itemAt(0).forceActiveFocus(Qt.TabFocusReason)
-
-        // Basic Qt controls provide tab traversal, arrow keys and activation semantics.
-        contentItem.palette {
-            window: "#242426"
-            windowText: "#eeeeef"
-            base: "#303033"
-            alternateBase: "#39393d"
-            text: "#eeeeef"
-            button: "#404044"
-            buttonText: "#eeeeef"
-            highlight: "#8bb5f5"
-            highlightedText: "#172235"
-            light: "#5e5e65"
-            mid: "#54545c"
-            dark: "#1e1e20"
-        }
 
         Shortcut {
             sequence: "Ctrl+Q"
@@ -142,209 +149,238 @@ ShellRoot {
             target: window.contentItem.Window.window
         }
 
-        RowLayout {
+        // Controls inherit the shared font and palette through every loaded page.
+        Control {
             anchors.fill: parent
-            spacing: 0
+            padding: 0
+            font.family: Luna.Theme.uiFont
+            font.pixelSize: 14
 
-            Rectangle {
-                color: "#2d2d30"
-                Layout.preferredWidth: 224
-                Layout.fillHeight: true
+            palette {
+                window: Luna.Theme.background
+                windowText: Luna.Theme.foreground
+                base: Luna.Theme.lighterBackground
+                alternateBase: Luna.Theme.background
+                text: Luna.Theme.foreground
+                button: Luna.Theme.lighterBackground
+                buttonText: Luna.Theme.foreground
+                highlight: Luna.Theme.accent
+                highlightedText: Luna.Theme.accentForeground
+                light: Luna.Theme.foreground
+                mid: Luna.Theme.muted
+                dark: Luna.Theme.foreground
+                shadow: Luna.Theme.colors.dark_background
+                placeholderText: Luna.Theme.foreground
+                toolTipBase: Luna.Theme.lighterBackground
+                toolTipText: Luna.Theme.foreground
+                link: Luna.Theme.colors.link
+                linkVisited: Luna.Theme.colors.secondary_accent
+            }
 
-                ColumnLayout {
-                    anchors.fill: parent
-                    spacing: 0
+            contentItem: RowLayout {
+                spacing: 0
 
-                    Label {
-                        text: "Luna Settings"
-                        font.bold: true
-                        font.pixelSize: 16
-                        color: "#eeeeef"
-                        Layout.fillWidth: true
-                        Layout.margins: 22
-                    }
-
-                    Rectangle {
-                        Layout.fillWidth: true
-                        height: 1
-                        color: "#404044"
-                    }
+                Rectangle {
+                    color: Luna.Theme.lighterBackground
+                    Layout.preferredWidth: 224
+                    Layout.fillHeight: true
 
                     ColumnLayout {
-                        Layout.fillWidth: true
-                        Layout.margins: 12
-                        spacing: 4
+                        anchors.fill: parent
+                        spacing: 0
 
-                        Repeater {
-                            id: navigation
+                        Label {
+                            text: "Luna Settings"
+                            font.bold: true
+                            font.pixelSize: 16
+                            color: Luna.Theme.brightForeground
+                            Layout.fillWidth: true
+                            Layout.margins: 22
+                        }
 
-                            model: shell.sections
+                        Rectangle {
+                            Layout.fillWidth: true
+                            height: 1
+                            color: Luna.Theme.muted
+                        }
 
-                            delegate: Button {
-                                id: navigationButton
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            Layout.margins: 12
+                            spacing: 4
 
-                                required property int index
-                                required property string modelData
+                            Repeater {
+                                id: navigation
 
-                                text: modelData
-                                focusPolicy: shell.page === index ? Qt.StrongFocus : Qt.ClickFocus
-                                Layout.fillWidth: true
-                                implicitHeight: 46
-                                Accessible.name: modelData + " settings"
-                                onClicked: shell.selectPage(index)
-                                Keys.onUpPressed: shell.selectPage(index - 1)
-                                Keys.onDownPressed: shell.selectPage(index + 1)
-                                Keys.onRightPressed: shell.focusPage(false)
-                                Keys.onTabPressed: shell.focusPage(false)
-                                Keys.onBacktabPressed: shell.focusPage(true)
-                                Keys.onReturnPressed: shell.focusPage(false)
-                                Keys.onEnterPressed: shell.focusPage(false)
+                                model: shell.sections
 
-                                background: Rectangle {
-                                    radius: 7
-                                    color: shell.page === navigationButton.index ? "#414d60" : navigationButton.hovered ? "#39393e" : "transparent"
-                                    border.width: navigationButton.visualFocus ? 2 : 0
-                                    border.color: "#8bb5f5"
-                                }
+                                delegate: Button {
+                                    id: navigationButton
 
-                                contentItem: Label {
-                                    text: navigationButton.text
-                                    leftPadding: 14
-                                    verticalAlignment: Text.AlignVCenter
-                                    font.bold: shell.page === navigationButton.index
-                                    color: "#eeeeef"
+                                    required property int index
+                                    required property string modelData
+
+                                    text: modelData
+                                    focusPolicy: shell.page === index ? Qt.StrongFocus : Qt.ClickFocus
+                                    Layout.fillWidth: true
+                                    implicitHeight: 46
+                                    Accessible.name: modelData + " settings"
+                                    onClicked: shell.selectPage(index)
+                                    Keys.onUpPressed: shell.selectPage(index - 1)
+                                    Keys.onDownPressed: shell.selectPage(index + 1)
+                                    Keys.onRightPressed: shell.focusPage(false)
+                                    Keys.onTabPressed: shell.focusPage(false)
+                                    Keys.onBacktabPressed: shell.focusPage(true)
+                                    Keys.onReturnPressed: shell.focusPage(false)
+                                    Keys.onEnterPressed: shell.focusPage(false)
+
+                                    background: Rectangle {
+                                        radius: Math.min(Luna.Theme.barRounding, height / 2)
+                                        color: shell.page === navigationButton.index || navigationButton.hovered ? Luna.Theme.selection : "transparent"
+                                        border.width: navigationButton.visualFocus ? 2 : 0
+                                        border.color: Luna.Theme.accent
+                                    }
+
+                                    contentItem: Label {
+                                        text: navigationButton.text
+                                        leftPadding: 14
+                                        verticalAlignment: Text.AlignVCenter
+                                        font.bold: shell.page === navigationButton.index
+                                        color: shell.page === navigationButton.index || navigationButton.hovered ? Luna.Theme.selectionForeground : Luna.Theme.foreground
+                                    }
+
                                 }
 
                             }
 
                         }
 
-                    }
+                        Item {
+                            Layout.fillHeight: true
+                        }
 
-                    Item {
-                        Layout.fillHeight: true
-                    }
+                        Label {
+                            text: "Hyprland desktop"
+                            font.pixelSize: 12
+                            color: Luna.Theme.foreground
+                            Layout.margins: 22
+                        }
 
-                    Label {
-                        text: "Hyprland desktop"
-                        font.pixelSize: 12
-                        color: "#a6a6ad"
-                        Layout.margins: 22
-                    }
-
-                }
-
-            }
-
-            Rectangle {
-                Layout.fillHeight: true
-                width: 1
-                color: "#404044"
-            }
-
-            ColumnLayout {
-                Layout.fillWidth: true
-                Layout.fillHeight: true
-                spacing: 0
-
-                // The header stays fixed while long settings pages scroll beneath it.
-                RowLayout {
-                    Layout.fillWidth: true
-                    Layout.preferredHeight: 68
-                    Layout.leftMargin: 28
-                    Layout.rightMargin: 16
-
-                    Label {
-                        text: shell.sections[shell.page]
-                        font.bold: true
-                        font.pixelSize: 16
-                        color: "#eeeeef"
-                        Layout.fillWidth: true
-                    }
-
-                    Label {
-                        text: "Preview"
-                        color: "#a6a6ad"
-                        font.pixelSize: 12
-                    }
-
-                    Button {
-                        text: "×"
-                        font.pixelSize: 22
-                        flat: true
-                        implicitWidth: 36
-                        Accessible.name: "Close settings"
-                        onClicked: Qt.quit()
                     }
 
                 }
 
                 Rectangle {
-                    Layout.fillWidth: true
-                    height: 1
-                    color: "#404044"
+                    Layout.fillHeight: true
+                    width: 1
+                    color: Luna.Theme.muted
                 }
 
-                ScrollView {
-                    id: scroll
-
+                ColumnLayout {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
-                    clip: true
-                    contentWidth: availableWidth
-                    contentHeight: pageContent.implicitHeight
-                    ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+                    spacing: 0
 
-                    ColumnLayout {
-                        id: pageContent
+                    // The header stays fixed while long settings pages scroll beneath it.
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 68
+                        Layout.leftMargin: 28
+                        Layout.rightMargin: 16
 
-                        width: scroll.availableWidth
-                        height: implicitHeight
-                        spacing: 0
+                        Label {
+                            text: shell.sections[shell.page]
+                            font.bold: true
+                            font.pixelSize: 16
+                            color: Luna.Theme.brightForeground
+                            Layout.fillWidth: true
+                        }
+
+                        Label {
+                            text: "Preview"
+                            color: Luna.Theme.foreground
+                            font.pixelSize: 12
+                        }
+
+                        Button {
+                            text: "×"
+                            font.pixelSize: 22
+                            flat: true
+                            implicitWidth: 36
+                            Accessible.name: "Close settings"
+                            onClicked: Qt.quit()
+                        }
+
+                    }
+
+                    Rectangle {
+                        Layout.fillWidth: true
+                        height: 1
+                        color: Luna.Theme.muted
+                    }
+
+                    ScrollView {
+                        id: scroll
+
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        clip: true
+                        contentWidth: availableWidth
+                        contentHeight: pageContent.implicitHeight
+                        ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
 
                         ColumnLayout {
-                            Layout.fillWidth: true
-                            Layout.fillHeight: false
-                            Layout.maximumWidth: 660
-                            Layout.alignment: Qt.AlignHCenter
-                            Layout.margins: 28
-                            spacing: 12
+                            id: pageContent
 
-                            Label {
-                                text: shell.sections[shell.page]
-                                font.pixelSize: 27
-                                font.bold: true
-                                Layout.fillWidth: true
-                            }
+                            width: scroll.availableWidth
+                            height: implicitHeight
+                            spacing: 0
 
-                            Label {
-                                text: shell.descriptions[shell.page]
-                                color: "#a6a6ad"
-                                Layout.fillWidth: true
-                                wrapMode: Text.WordWrap
-                                Layout.bottomMargin: 12
-                            }
-                            // Keep pages alive so sample selections survive navigation this session.
-
-                            StackLayout {
-                                id: pages
-
+                            ColumnLayout {
                                 Layout.fillWidth: true
                                 Layout.fillHeight: false
-                                implicitHeight: children[currentIndex] ? children[currentIndex].implicitHeight : 0
-                                currentIndex: shell.page
+                                Layout.maximumWidth: 660
+                                Layout.alignment: Qt.AlignHCenter
+                                Layout.margins: 28
+                                spacing: 12
 
-                                Repeater {
-                                    id: pageLoaders
+                                Label {
+                                    text: shell.sections[shell.page]
+                                    font.pixelSize: 27
+                                    font.bold: true
+                                    Layout.fillWidth: true
+                                }
 
-                                    model: shell.sources
+                                Label {
+                                    text: shell.descriptions[shell.page]
+                                    color: Luna.Theme.foreground
+                                    Layout.fillWidth: true
+                                    wrapMode: Text.WordWrap
+                                    Layout.bottomMargin: 12
+                                }
+                                // Keep pages alive so sample selections survive navigation this session.
 
-                                    Loader {
-                                        required property string modelData
+                                StackLayout {
+                                    id: pages
 
-                                        Layout.fillHeight: false
-                                        Layout.alignment: Qt.AlignTop
-                                        source: modelData
+                                    Layout.fillWidth: true
+                                    Layout.fillHeight: false
+                                    implicitHeight: children[currentIndex] ? children[currentIndex].implicitHeight : 0
+                                    currentIndex: shell.page
+
+                                    Repeater {
+                                        id: pageLoaders
+
+                                        model: shell.sources
+
+                                        Loader {
+                                            required property string modelData
+
+                                            Layout.fillHeight: false
+                                            Layout.alignment: Qt.AlignTop
+                                            source: modelData
+                                        }
+
                                     }
 
                                 }
@@ -355,24 +391,23 @@ ShellRoot {
 
                     }
 
-                }
+                    Rectangle {
+                        Layout.fillWidth: true
+                        height: 1
+                        color: Luna.Theme.muted
+                    }
 
-                Rectangle {
-                    Layout.fillWidth: true
-                    height: 1
-                    color: "#404044"
-                }
+                    Label {
+                        text: "Mockup · changes stay in this window"
+                        color: Luna.Theme.foreground
+                        font.pixelSize: 12
+                        Layout.margins: 12
+                        Layout.alignment: Qt.AlignHCenter
+                    }
 
-                Label {
-                    text: "Mockup · changes stay in this window"
-                    color: "#a6a6ad"
-                    font.pixelSize: 12
-                    Layout.margins: 12
-                    Layout.alignment: Qt.AlignHCenter
                 }
 
             }
-
         }
 
     }

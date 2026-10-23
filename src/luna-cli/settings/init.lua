@@ -1,15 +1,19 @@
--- Launch the standalone settings preview without changing desktop configuration.
+-- Launch settings with the same resolved theme and lifecycle as the desktop shells.
 return function(common, directory)
+    local root = directory .. "/../../.."
+    local shell = dofile(root .. "/lib/quickshell.lua")(common, root,
+        directory .. "/../../settings", "settings", "Luna Settings")
     local M = {}
 
     function M.register(parser)
-        return parser:command("settings", "Open the Luna Settings mockup.")
+        local command = parser:command("settings", "Open the Luna Settings mockup.")
+        command:argument("settings_action", "Action"):args("?"):default("open")
+            :choices({ "open", "start", "reload", "stop" })
+        return command
     end
 
-    function M.run()
-        assert(common.available("qs"), "Quickshell is missing; install core dependencies")
-        assert(os.getenv("WAYLAND_DISPLAY"), "Luna Settings requires a Wayland session")
-        common.run({ "qs", "-p", directory .. "/../../settings", "--daemonize", "--no-duplicate" })
+    function M.run(options)
+        shell.run(options.settings_action or "open")
     end
 
     return M
