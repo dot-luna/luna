@@ -56,6 +56,10 @@ Default app choices live in `default/apps.lua`, using desktop entry IDs as value
 return {
     terminal = "kitty.desktop",
     ["inode/directory"] = "org.gnome.Nautilus.desktop",
+    ["x-scheme-handler/http"] = "zen.desktop",
+    ["x-scheme-handler/https"] = "zen.desktop",
+    ["text/html"] = "zen.desktop",
+    ["application/xhtml+xml"] = "zen.desktop",
 }
 ```
 
@@ -63,9 +67,9 @@ The `terminal` key selects the preferred terminal for [xdg-terminal-exec](https:
 
 The terminal preference is written to `$XDG_CONFIG_HOME/xdg-terminals.list` and `hyprland-xdg-terminals.list`, plus any existing user lists for desktops in `XDG_CURRENT_DESKTOP`. The config directory defaults to `~/.config`; it is independent of `LUNA_CONFIG_DIR`. Other list contents, permissions, and symlinks are preserved. Reruns restore the selected terminal's priority without repeatedly adding entries.
 
-MIME preferences are written to `mimeapps.list`, `hyprland-mimeapps.list`, and existing current-desktop lists under `$XDG_CONFIG_HOME`, preserving unrelated associations. The bundled manifest selects Nautilus for folders. Check it with `xdg-mime query default inode/directory`.
+MIME preferences are written to `mimeapps.list`, `hyprland-mimeapps.list`, and existing current-desktop lists under `$XDG_CONFIG_HOME`, preserving unrelated associations. The bundled manifest selects Nautilus for folders and Zen for HTTP/HTTPS links and HTML/XHTML files. Check them with `xdg-mime query default inode/directory` and `xdg-mime query default x-scheme-handler/https`.
 
-Use `--skip=defaults` to keep your terminal and file-manager preferences, or run `bash /path/to/luna/scripts/setup/defaults.sh` to apply them separately. Check the selected terminal with `xdg-terminal-exec --print-id`; launch it with `xdg-terminal-exec`. This preference applies to callers using that mechanism. Luna's existing Kitty-specific launcher dialogs still launch Kitty directly.
+Use `--skip=defaults` to keep your terminal, browser, and file-manager preferences, or run `bash /path/to/luna/scripts/setup/defaults.sh` to apply them separately. Check the selected terminal with `xdg-terminal-exec --print-id`; launch it with `xdg-terminal-exec`. This preference applies to callers using that mechanism. Luna's existing Kitty-specific launcher dialogs still launch Kitty directly.
 
 `LUNA_CONFIG_DIR` sets the absolute directory for installed app configs. It defaults to `$XDG_CONFIG_HOME/luna`, or `~/.config/luna` when `XDG_CONFIG_HOME` is unset or empty. An unset or empty `LUNA_CONFIG_DIR` uses this default. Setup installs Kitty under `kitty/`, Starship under `starship/`, Zsh under `zsh/`, and Zen styles under `zen/` inside that directory.
 
