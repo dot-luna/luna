@@ -34,11 +34,7 @@ class SetupMiseShellTests(unittest.TestCase):
         self.mise.write_text("""#!/bin/sh
 printf '%s\\n' "$*" >> "$MISE_TEST_LOG"
 if [ "$1" != activate ]; then exit 1; fi
-if [ "$2" = fish ]; then
-    printf 'set -gx LUNA_MISE_TEST_ACTIVE fish\\n'
-else
-    printf 'export LUNA_MISE_TEST_ACTIVE=%s\\n' "$2"
-fi
+printf 'export LUNA_MISE_TEST_ACTIVE=%s\\n' "$2"
 """)
         self.mise.chmod(0o755)
         self.log = self.root / "mise.log"
@@ -116,17 +112,6 @@ fi
         self.check_shell_activation("zsh", ["-d", "-i", "-c"],
                                     'printf "%s\\n" "$LUNA_MISE_TEST_ACTIVE"')
 
-    @unittest.skipUnless(shutil.which("fish"), "fish is required")
-    def test_fish_activates_from_custom_xdg_config(self):
-        self.env["XDG_CONFIG_HOME"] = str(self.root / "fish config")
-        self.check_shell_activation("fish", ["-i", "-c"],
-                                    'printf "%s\\n" "$LUNA_MISE_TEST_ACTIVE"')
-        self.log.unlink()
-        result = subprocess.run([shutil.which("fish"), "-c", "true"], env=self.env,
-                                cwd=self.root, capture_output=True, text=True, timeout=10)
-        self.assert_success(result)
-        self.assertFalse(self.log.exists())
-
     def test_noninteractive_source_and_removed_mise_are_quiet(self):
         self.assert_success(self.setup())
         result = subprocess.run([shutil.which("bash"), "--noprofile", "--norc", "-c",
@@ -141,22 +126,6 @@ fi
         self.assert_success(result)
         self.assertNotIn("mise:", result.stderr)
         self.assertFalse(self.log.exists())
-
-    def test_fish_config_uses_xdg_home_and_preserves_personal_content(self):
-        self.env["SHELL"] = "/usr/bin/fish"
-        self.env["XDG_CONFIG_HOME"] = str(self.root / "fish config")
-        config = Path(self.env["XDG_CONFIG_HOME"]) / "fish/config.fish"
-        config.parent.mkdir(parents=True)
-        original = "set -gx PERSONAL_SETTING 'keep me'\n"
-        config.write_text(original)
-        self.assert_success(self.setup())
-        self.assert_success(self.setup())
-        self.assertTrue(config.read_text().startswith(original))
-        self.assertIn("if status is-interactive; and command -q mise", config.read_text())
-        self.assertIn("mise activate fish | source", config.read_text())
-        self.assertEqual(config.read_text().count(BLOCK_START), 1)
-        self.assertEqual(list(config.parent.glob("*.luna-backup*")), [])
-        self.assertFalse((self.home / ".config/fish/config.fish").exists())
 
     def test_unsupported_shell_and_nonfile_startup_warn_without_changes(self):
         self.env["SHELL"] = "/bin/unknown-shell"

@@ -20,9 +20,6 @@ case "$shell_name" in
     zsh)
         shell_config="${ZDOTDIR:-$HOME}/.zshrc"
         ;;
-    fish)
-        shell_config="${XDG_CONFIG_HOME:-$HOME/.config}/fish/config.fish"
-        ;;
     *)
         luna_warn "Shell '${shell_name:-unknown}' is not supported for automatic mise activation. Configure mise for your shell manually: https://mise.jdx.dev/shell-setup.html"
         exit 0
@@ -53,18 +50,9 @@ fi
 
 {
     printf '\n%s\n' "$block_start"
-    if [[ "$shell_name" == fish ]]; then
-        # fish also reads config.fish in scripts; hooks belong in terminals only.
-        cat <<'FISH_BLOCK'
-if status is-interactive; and command -q mise
-    mise activate fish | source
-end
-FISH_BLOCK
-    else
-        printf 'if [[ $- == *i* ]] && command -v mise >/dev/null 2>&1; then\n'
-        printf '    eval "$(mise activate %s)"\n' "$shell_name"
-        printf 'fi\n'
-    fi
+    printf 'if [[ $- == *i* ]] && command -v mise >/dev/null 2>&1; then\n'
+    printf '    eval "$(mise activate %s)"\n' "$shell_name"
+    printf 'fi\n'
     printf '%s\n' "$block_end"
 } >> "$temporary_config"
 

@@ -145,10 +145,7 @@ class SetupCommandTests(unittest.TestCase):
         old_launcher.chmod(0o755)
         self.env["SHELL"] = shutil.which(shell)
         config.parent.mkdir(parents=True, exist_ok=True)
-        if shell == "fish":
-            config.write_text('set -gx PATH "$HOME/coding/luna/bin" $PATH\n')
-        else:
-            config.write_text('export PATH="$HOME/coding/luna/bin:$PATH"\n')
+        config.write_text('export PATH="$HOME/coding/luna/bin:$PATH"\n')
         self.assert_success(self.setup())
         result = subprocess.run([shutil.which(shell), *arguments, command], env=self.env,
                                 cwd=self.root, input="", capture_output=True, text=True, timeout=10)
@@ -164,11 +161,6 @@ class SetupCommandTests(unittest.TestCase):
         custom = self.root / "zsh config"
         self.env["ZDOTDIR"] = str(custom)
         self.check_shell_lookup("zsh", custom / ".zshrc", ["-d", "-i", "-c"], "command -v luna")
-
-    @unittest.skipUnless(shutil.which("fish"), "fish is required")
-    def test_fish_prefers_installed_checkout_in_new_interactive_shell(self):
-        self.check_shell_lookup("fish", self.home / ".config/fish/config.fish",
-                                ["-i", "-c"], "command -s luna")
 
     def test_unsupported_shell_warns_after_installing_command(self):
         self.env["SHELL"] = "/bin/unknown-shell"

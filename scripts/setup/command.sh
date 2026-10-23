@@ -31,7 +31,7 @@ fi
 luna_success "Linked Luna command: $command_target"
 
 # Configure the login shell rather than the Bash interpreter running this step.
-# ZDOTDIR and XDG_CONFIG_HOME may place personal shell files outside HOME.
+# ZDOTDIR may place the Zsh startup file outside HOME.
 shell_path=${SHELL:-}
 shell_name=${shell_path##*/}
 case "$shell_name" in
@@ -40,9 +40,6 @@ case "$shell_name" in
         ;;
     zsh)
         shell_config="${ZDOTDIR:-$HOME}/.zshrc"
-        ;;
-    fish)
-        shell_config="${XDG_CONFIG_HOME:-$HOME/.config}/fish/config.fish"
         ;;
     *)
         luna_warn "Shell '${shell_name:-unknown}' is not supported for automatic PATH setup. Add ~/.local/bin to the start of PATH to use Luna."
@@ -74,16 +71,11 @@ fi
 
 {
     printf '\n%s\n' "$block_start"
-    if [[ "$shell_name" == fish ]]; then
-        # fish_add_path moves an existing entry and avoids duplicate PATH entries.
-        printf 'fish_add_path --move --prepend --path "$HOME/.local/bin"\n'
-    else
-        cat <<'PATH_BLOCK'
+    cat <<'PATH_BLOCK'
 if [ "${PATH%%:*}" != "$HOME/.local/bin" ]; then
     export PATH="$HOME/.local/bin:$PATH"
 fi
 PATH_BLOCK
-    fi
     printf '%s\n' "$block_end"
 } >> "$temporary_config"
 
