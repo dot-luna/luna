@@ -10,7 +10,7 @@ import unittest
 
 REPO = Path(__file__).resolve().parents[2]
 STEPS = ("lua", "core", "mise", "aur", "main", "fonts", "git-apps", "src",
-         "command", "postinstall", "apps", "defaults", "session")
+         "command", "postinstall", "apps", "defaults", "session", "cleanup")
 
 
 @unittest.skipUnless(Path("/usr/bin/lua").is_file(), "The runner requires /usr/bin/lua")
@@ -33,7 +33,7 @@ class SetupRunnerTests(unittest.TestCase):
         self.env.pop("TEST_FAIL_STEP", None)
 
         # No production child script runs: these fixtures only record arguments.
-        for name in ("lua", "aur", "src", "command", "postinstall", "apps", "defaults", "session"):
+        for name in ("lua", "aur", "src", "command", "postinstall", "apps", "defaults", "session", "cleanup"):
             (self.steps / f"{name}.sh").write_text('''#!/usr/bin/env bash
 set -euo pipefail
 step=${0##*/}
@@ -71,12 +71,13 @@ end
             return []
         return [line.split("\t") for line in self.calls.read_text().splitlines()]
 
-    def test_steps_run_in_order_then_reload_session(self):
+    def test_steps_run_in_order_with_cleanup_after_session_reload(self):
         result = self.setup()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(self.recorded_calls(), [[step] for step in STEPS])
         self.assertIn("Install application configurations", result.stdout)
         self.assertIn("Configure default applications", result.stdout)
+        self.assertIn("Clean up replaced applications", result.stdout)
         self.assertNotIn(["nvidia"], self.recorded_calls())
 
     def test_failed_critical_steps_stop_later_work_and_propagate_status(self):
@@ -97,6 +98,7 @@ end
             "git-apps": "Git app setup failed; continuing.",
             "postinstall": "Bundled theme setup failed; continuing.",
             "session": "Session reload failed; log out and back in to apply the configuration.",
+            "cleanup": "Application cleanup failed; continuing.",
         }
         for failed, warning in warnings.items():
             with self.subTest(failed=failed):
@@ -115,8 +117,8 @@ end
 
     def test_skip_lists_accumulate_without_reordering_or_forwarding_arguments(self):
         self.env["TEST_FAIL_STEP"] = "core"
-        skipped = {"lua", "core", "mise", "fonts", "git-apps", "apps", "defaults"}
-        result = self.setup("--skip=git-apps,fonts,mise,core,lua,git-apps", "--skip=apps,fonts,defaults")
+        skipped = {"lua", "core", "mise", "fonts", "git-apps", "apps", "defaults", "cleanup"}
+        result = self.setup("--skip=git-apps,fonts,mise,core,lua,git-apps", "--skip=apps,fonts,defaults,cleanup")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(self.recorded_calls(), [[step] for step in STEPS if step not in skipped])
         for step in skipped:

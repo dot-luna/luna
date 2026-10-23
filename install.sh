@@ -30,7 +30,7 @@ main() {
     local repo_url=https://github.com/dot-luna/luna.git
     local install_dir
     local skip_list skip_step normalized_skips=
-    local valid_steps='lua core mise aur main fonts git-apps src command postinstall apps defaults session'
+    local valid_steps='lua core mise aur main fonts git-apps src command postinstall apps defaults session cleanup'
     local -A skipped_steps=()
     local -a setup_arguments=()
 
@@ -51,7 +51,7 @@ main() {
                 while :; do
                     skip_step=${skip_list%%,*}
                     case "$skip_step" in
-                        lua|core|mise|aur|main|fonts|git-apps|src|command|postinstall|apps|defaults|session)
+                        lua|core|mise|aur|main|fonts|git-apps|src|command|postinstall|apps|defaults|session|cleanup)
                             ;;
                         *)
                             log ERROR "Invalid skip step '${skip_step:-<empty>}'. Valid steps: $valid_steps." >&2
@@ -266,7 +266,7 @@ Options:
     -h, --help             Show this help without changing anything.
 
 Setup steps:
-    lua core mise aur main fonts git-apps src command postinstall apps defaults session
+    lua core mise aur main fonts git-apps src command postinstall apps defaults session cleanup
     Skips do not skip dependencies automatically; provide what remaining steps need.
     System checks, Git bootstrap, and checkout preparation always run.
 

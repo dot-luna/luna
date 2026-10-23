@@ -32,7 +32,7 @@ Skip selected setup steps with one comma-separated option:
 bash install.sh --skip=git-apps,fonts,mise
 ```
 
-For the downloaded installer, pass the same option after `bash -s --`. It also works with `--ref`. Available step names are `lua`, `core`, `mise`, `aur`, `main`, `fonts`, `git-apps`, `src`, `command`, `postinstall`, `apps`, `defaults`, and `session`. `main` installs application packages; `apps` installs their configurations; `postinstall` selects the bundled Tokyo Night theme; `defaults` sets default applications. Empty or unknown names are rejected before installation starts.
+For the downloaded installer, pass the same option after `bash -s --`. It also works with `--ref`. Available step names are `lua`, `core`, `mise`, `aur`, `main`, `fonts`, `git-apps`, `src`, `command`, `postinstall`, `apps`, `defaults`, `session`, and `cleanup`. `main` installs application packages; `apps` installs app configurations; `postinstall` selects the bundled Tokyo Night theme; `defaults` sets default applications; `cleanup` removes replaced applications at the end. Empty or unknown names are rejected before installation starts.
 
 Only the named steps are skipped; the others keep their normal order and behavior. Dependencies needed by remaining steps must already be available when their installation step is skipped. System checks, Git bootstrap, and checkout preparation always run. The `mise` and `command` steps also configure shell startup, even if the final `apps` step is skipped.
 
@@ -46,11 +46,26 @@ Git apps are listed in `packages/packages.git.lua` and installed after fonts. Se
 
 Package installation may upgrade the system and runs without package-manager confirmations; `sudo` may still ask for your password. Setup does not enable Docker or run NVIDIA driver installation.
 
-After the installation steps, setup replaces the installed Tokyo Night theme with the bundled copy and selects it, including on reruns. Theme setup failures warn and continue. It then installs app configurations and sets default applications before reloading the configuration in an active Hyprland session.
+Core packages include Nautilus for graphical file browsing and Yazi for terminal file browsing. The final `cleanup` step removes Dolphin only when Nautilus is installed. It limits dependency cleanup to Dolphin's removal candidates, protects Luna's declared packages and other explicitly installed packages, and lets pacman enforce remaining dependency requirements. If safe dependency cleanup is unavailable, it removes only Dolphin. It keeps personal configuration files, the KDE authentication agent, shared Qt libraries needed by other apps, and the GTK portal that provides Open/Save dialogs. Missing tools or package-operation failures warn and continue. Use `--skip=cleanup` to keep the replaced packages.
 
-The `defaults` step sets Kitty as the preferred terminal for [xdg-terminal-exec](https://github.com/Vladimir-csp/xdg-terminal-exec), installed with the main packages. It puts `kitty.desktop` first in `$XDG_CONFIG_HOME/xdg-terminals.list` and `hyprland-xdg-terminals.list`, plus any existing user lists for desktops in `XDG_CURRENT_DESKTOP`. The config directory defaults to `~/.config`; it is independent of `LUNA_CONFIG_DIR`. Other list contents, permissions, and symlinks are preserved. Reruns restore Kitty's priority without repeatedly adding entries. Missing Kitty or `xdg-terminal-exec` warns and skips this step; required file updates must succeed.
+After the installation steps, setup replaces the installed Tokyo Night theme with the bundled copy and selects it, including on reruns. Theme setup failures warn and continue. It then installs app configurations, sets default applications, reloads the configuration in an active Hyprland session, and runs cleanup last.
 
-Use `--skip=defaults` to keep your terminal preference, or run `bash /path/to/luna/scripts/setup/defaults.sh` to apply it separately. Check the selected terminal with `xdg-terminal-exec --print-id`; launch it with `xdg-terminal-exec`. This preference applies to callers using that mechanism. Luna's existing Kitty-specific launcher dialogs still launch Kitty directly.
+Default app choices live in `default/apps.lua`, using desktop entry IDs as values:
+
+```lua
+return {
+    terminal = "kitty.desktop",
+    ["inode/directory"] = "org.gnome.Nautilus.desktop",
+}
+```
+
+The `terminal` key selects the preferred terminal for [xdg-terminal-exec](https://github.com/Vladimir-csp/xdg-terminal-exec). Other keys are MIME types or URL schemes such as `inode/directory` or `x-scheme-handler/https`. The `defaults` step reads this manifest; edit it to change the choices without editing setup scripts. Unavailable applications warn and skip independently; invalid manifests or required file update failures stop the step.
+
+The terminal preference is written to `$XDG_CONFIG_HOME/xdg-terminals.list` and `hyprland-xdg-terminals.list`, plus any existing user lists for desktops in `XDG_CURRENT_DESKTOP`. The config directory defaults to `~/.config`; it is independent of `LUNA_CONFIG_DIR`. Other list contents, permissions, and symlinks are preserved. Reruns restore the selected terminal's priority without repeatedly adding entries.
+
+MIME preferences are written to `mimeapps.list`, `hyprland-mimeapps.list`, and existing current-desktop lists under `$XDG_CONFIG_HOME`, preserving unrelated associations. The bundled manifest selects Nautilus for folders. Check it with `xdg-mime query default inode/directory`.
+
+Use `--skip=defaults` to keep your terminal and file-manager preferences, or run `bash /path/to/luna/scripts/setup/defaults.sh` to apply them separately. Check the selected terminal with `xdg-terminal-exec --print-id`; launch it with `xdg-terminal-exec`. This preference applies to callers using that mechanism. Luna's existing Kitty-specific launcher dialogs still launch Kitty directly.
 
 `LUNA_CONFIG_DIR` sets the absolute directory for installed app configs. It defaults to `$XDG_CONFIG_HOME/luna`, or `~/.config/luna` when `XDG_CONFIG_HOME` is unset or empty. An unset or empty `LUNA_CONFIG_DIR` uses this default. Setup installs Kitty under `kitty/`, Starship under `starship/`, and Zsh under `zsh/` inside that directory.
 
@@ -97,6 +112,13 @@ bash ~/.local/src/luna/scripts/setup.sh --skip=git-apps,fonts,mise
 ```
 
 Unrelated extra arguments are ignored by the setup runner and individual setup scripts. Enabled package steps install missing packages, upgrade installed packages, and skip reinstalling current versions. Optional steps warn and continue on failure; enabled core dependencies, required source/command links, and app configuration installation must succeed.
+
+To apply default applications and clean up replaced packages after installing dependencies:
+
+```sh
+bash /path/to/luna/scripts/setup/defaults.sh
+bash /path/to/luna/scripts/setup/cleanup.sh
+```
 
 To install only the development tools once core packages are available:
 

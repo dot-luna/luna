@@ -36,6 +36,7 @@ return {
 
         -- Core file management and media playback.
         { name = "yazi", source = "pacman", purpose = "Terminal file manager" },
+        { name = "nautilus", source = "pacman", purpose = "Graphical file manager" },
         { name = "mpv", source = "pacman", purpose = "Video and audio player" },
 
         -- Desktop compositor, app portals, and custom Quickshell UI.

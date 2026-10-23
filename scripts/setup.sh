@@ -14,7 +14,7 @@ steps_dir="$setup_dir/setup"
 # Validate skip requests before any step can install packages or change files.
 # Keep these names in sync with the standalone installer's --skip option.
 declare -A skipped_steps=()
-valid_steps='lua,core,mise,aur,main,fonts,git-apps,src,command,postinstall,apps,defaults,session'
+valid_steps='lua,core,mise,aur,main,fonts,git-apps,src,command,postinstall,apps,defaults,session,cleanup'
 for argument in "$@"; do
     case "$argument" in
         --skip=*)
@@ -22,7 +22,7 @@ for argument in "$@"; do
             while true; do
                 name=${remaining%%,*}
                 case "$name" in
-                    lua|core|mise|aur|main|fonts|git-apps|src|command|postinstall|apps|defaults|session)
+                    lua|core|mise|aur|main|fonts|git-apps|src|command|postinstall|apps|defaults|session|cleanup)
                         skipped_steps[$name]=1
                         ;;
                     *)
@@ -112,3 +112,7 @@ run_setup_step defaults 'Configure default applications' '' bash "$steps_dir/def
 # Apply the completed configuration to an active session without another prompt.
 run_setup_step session 'Apply Hyprland configuration' \
     'Session reload failed; log out and back in to apply the configuration.' bash "$steps_dir/session.sh"
+
+# Remove replaced applications only after all installation and configuration work.
+run_setup_step cleanup 'Clean up replaced applications' \
+    'Application cleanup failed; continuing.' bash "$steps_dir/cleanup.sh"
