@@ -36,7 +36,7 @@ Git apps are listed in `packages/packages.git.lua` and installed after fonts. Se
 
 Package installation may upgrade the system and runs without package-manager confirmations; `sudo` may still ask for your password. Setup does not enable Docker or run NVIDIA driver installation.
 
-When setup finishes, it automatically reloads the configuration in an active Hyprland session.
+After the installation steps, setup replaces the installed Tokyo Night theme with the bundled copy and selects it, including on reruns. Theme setup failures warn and continue. Setup then reloads the configuration in an active Hyprland session.
 
 Luna's terminal messages use colors and separated steps; external tool output is muted gray. Set `NO_COLOR=1` to disable colors. Plain-text logs are saved in `~/.local/state/luna/`, or `$XDG_STATE_HOME/luna/` when set.
 

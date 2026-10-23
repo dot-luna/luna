@@ -59,6 +59,12 @@ bash "$steps_dir/src.sh"
 luna_step '9/9 — Install the Luna command'
 bash "$steps_dir/command.sh"
 
+# Finish user defaults after installation and before the session reads them.
+luna_step 'Post-install — Set up Tokyo Night'
+if ! bash "$steps_dir/postinstall.sh"; then
+    luna_warn 'Bundled theme setup failed; continuing.'
+fi
+
 # Apply the completed configuration to an active session without another prompt.
 luna_step 'Apply Hyprland configuration'
 if ! bash "$steps_dir/session.sh"; then

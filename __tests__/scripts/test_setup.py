@@ -28,7 +28,7 @@ class SetupRunnerTests(unittest.TestCase):
         self.env.pop("TEST_FAIL_STEP", None)
 
         # No production child script runs: these fixtures only record arguments.
-        for name in ("lua", "aur", "src", "command", "session"):
+        for name in ("lua", "aur", "src", "command", "postinstall", "session"):
             (self.steps / f"{name}.sh").write_text('''#!/usr/bin/env bash
 set -euo pipefail
 step=${0##*/}
@@ -70,11 +70,11 @@ end
         result = self.setup()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(self.recorded_calls(), [[step] for step in
-                         ("lua", "core", "mise", "aur", "main", "fonts", "git-apps", "src", "command", "session")])
+                         ("lua", "core", "mise", "aur", "main", "fonts", "git-apps", "src", "command", "postinstall", "session")])
         self.assertNotIn(["nvidia"], self.recorded_calls())
 
     def test_failed_critical_steps_stop_later_work_and_propagate_status(self):
-        steps = ("lua", "core", "mise", "aur", "main", "fonts", "git-apps", "src", "command", "session")
+        steps = ("lua", "core", "mise", "aur", "main", "fonts", "git-apps", "src", "command", "postinstall", "session")
         for failed in ("lua", "core", "src", "command"):
             with self.subTest(failed=failed):
                 self.calls.unlink(missing_ok=True)
@@ -84,13 +84,14 @@ end
                 self.assertEqual(self.recorded_calls(), [[step] for step in steps[:steps.index(failed) + 1]])
 
     def test_failed_optional_steps_continue_to_desktop_deployment_and_reload(self):
-        steps = ("lua", "core", "mise", "aur", "main", "fonts", "git-apps", "src", "command", "session")
+        steps = ("lua", "core", "mise", "aur", "main", "fonts", "git-apps", "src", "command", "postinstall", "session")
         warnings = {
             "mise": "Development tools setup failed; continuing.",
             "aur": "AUR helper setup failed; continuing.",
             "main": "Application setup failed; continuing.",
             "fonts": "Font setup failed; continuing.",
             "git-apps": "Git app setup failed; continuing.",
+            "postinstall": "Bundled theme setup failed; continuing.",
             "session": "Session reload failed; log out and back in to apply the configuration.",
         }
         for failed, warning in warnings.items():
@@ -106,7 +107,7 @@ end
         result = self.setup("--help", "-h", "--force", "--unknown", "main")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(self.recorded_calls(), [[step] for step in
-                         ("lua", "core", "mise", "aur", "main", "fonts", "git-apps", "src", "command", "session")])
+                         ("lua", "core", "mise", "aur", "main", "fonts", "git-apps", "src", "command", "postinstall", "session")])
         self.assertNotIn(["nvidia"], self.recorded_calls())
 
 
