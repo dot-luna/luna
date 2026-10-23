@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install Luna's application configs and connect Kitty and Zsh startup files.
+# Install Luna's application configs and connect their personal entry points.
 # Extra arguments are ignored.
 set -euo pipefail
 
@@ -64,3 +64,4 @@ luna_success "Configured Kitty include: $active_kitty_dir/kitty.conf"
 
 bash "$setup_dir/starship.sh"
 bash "$setup_dir/zsh.sh"
+bash "$setup_dir/zen.sh"

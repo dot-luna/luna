@@ -67,13 +67,21 @@ MIME preferences are written to `mimeapps.list`, `hyprland-mimeapps.list`, and e
 
 Use `--skip=defaults` to keep your terminal and file-manager preferences, or run `bash /path/to/luna/scripts/setup/defaults.sh` to apply them separately. Check the selected terminal with `xdg-terminal-exec --print-id`; launch it with `xdg-terminal-exec`. This preference applies to callers using that mechanism. Luna's existing Kitty-specific launcher dialogs still launch Kitty directly.
 
-`LUNA_CONFIG_DIR` sets the absolute directory for installed app configs. It defaults to `$XDG_CONFIG_HOME/luna`, or `~/.config/luna` when `XDG_CONFIG_HOME` is unset or empty. An unset or empty `LUNA_CONFIG_DIR` uses this default. Setup installs Kitty under `kitty/`, Starship under `starship/`, and Zsh under `zsh/` inside that directory.
+`LUNA_CONFIG_DIR` sets the absolute directory for installed app configs. It defaults to `$XDG_CONFIG_HOME/luna`, or `~/.config/luna` when `XDG_CONFIG_HOME` is unset or empty. An unset or empty `LUNA_CONFIG_DIR` uses this default. Setup installs Kitty under `kitty/`, Starship under `starship/`, Zsh under `zsh/`, and Zen styles under `zen/` inside that directory.
 
 Setup copies `apps/kitty/kitty.conf` to `$LUNA_CONFIG_DIR/kitty/kitty.conf` and generates `theme.conf` beside it from Luna's selected theme and font preferences. Font size and window behavior stay in the static config.
 
 Setup prepends an `include` for the installed Luna config to `$XDG_CONFIG_HOME/kitty/kitty.conf` when it is missing, creating the file if needed. `KITTY_CONFIG_DIRECTORY` can select a different absolute Kitty config directory. Existing contents and symlinks are preserved; a matching include anywhere in the file is left as-is. Personal settings remain below a newly added include, so they can override Luna's defaults. Setup does not reload Kitty.
 
 Setup copies `apps/starship/starship.toml` to `$LUNA_CONFIG_DIR/starship/starship.toml`. It preserves the original prompt's bracketed modules, two-level directory display, cyan repository root, and 200 ms command timeout. Zsh selects the installed file through `STARSHIP_CONFIG`, preserving a nonempty override. The existing `~/.config/starship.toml` and its symlink are left intact. Refresh only this config with `bash /path/to/luna/scripts/setup/starship.sh`.
+
+Zen setup generates `$LUNA_CONFIG_DIR/zen/generated/userChrome.css` and `userContent.css` from Luna's selected theme. Browser colors and the UI font follow Luna's palette and font preferences. The browser stylesheet targets Zen's tabs, sidebar, toolbar, address bar, and menus; website colors remain their own. This uses local CSS and does not require a Zen Mod or extension.
+
+Square corners are conditional on the resolved theme's `hyprland.decoration.rounding`: exactly `0` adds zero-radius overrides to Zen's browser UI and ordinary CSS elements on HTTP(S) websites. Any positive value emits no corner overrides, leaving Zen and websites' own rounding intact. Rerunning setup after changing this value replaces the generated styles, removing earlier square-corner rules when appropriate. Shapes drawn within images, SVG, canvas, or clipping paths are not controlled by `border-radius`.
+
+Setup adds a managed import to each of the selected profile's `chrome/userChrome.css` and `chrome/userContent.css`, creating these files if needed. It preserves personal CSS, file permissions, and symlinks. It also adds a managed `user.js` preference to enable `toolkit.legacyUserProfileCustomizations.stylesheets`; other preferences remain intact. Back up files you want to keep before setup; no automatic backups are created.
+
+The profile is selected from Zen's existing profile registry. Native Linux installations use `~/.zen` when that directory exists, otherwise `$XDG_CONFIG_HOME/zen`. If there is no profile yet, open Zen once and rerun `bash /path/to/luna/scripts/setup/zen.sh`. Ambiguous profiles are skipped with a warning; use `ZEN_PROFILE_DIR=/absolute/path/to/profile bash /path/to/luna/scripts/setup/zen.sh` to select an existing profile explicitly, including one in a different installation. Setup never launches Zen or creates browser profile registries. Restart Zen to load the updated styles and preference.
 
 For Zsh, setup prepends a source line for `$LUNA_CONFIG_DIR/zsh/zshrc` to `${ZDOTDIR:-$HOME}/.zshrc`, preserving the existing contents, permissions, and symlinks. Repeated setup does not duplicate the source line. There are four maintained files:
 
@@ -95,7 +103,7 @@ Use Right Arrow to accept a history suggestion, Tab for fuzzy completion, `Ctrl-
 
 Mise activation runs from `tools.zsh` when a shell starts, so it uses the current environment. It is not saved as a snapshot of the installer's `PATH`. Personal settings after Luna's source line can override its defaults. Flutter and Dart remain managed by mise. To refresh only Zsh's files, run `bash /path/to/luna/scripts/setup/zsh.sh`; open a new terminal afterward.
 
-The config-directory override controls app output only; Luna's theme selection, resolved `theme.json`, and font preferences remain under `$XDG_CONFIG_HOME/luna`. The Kitty generator uses Luna's defaults when no theme is selected. After changing themes or font preferences, refresh app configs with `bash /path/to/luna/scripts/setup/apps.sh`, using the same `LUNA_CONFIG_DIR` override if you set one. This replaces installed app files from the checkout and refreshes the startup includes; it does not reload Kitty or the current shell.
+The config-directory override controls app output only; Luna's theme selection, resolved `theme.json`, and font preferences remain under `$XDG_CONFIG_HOME/luna`. The Kitty and Zen generators use Luna's defaults when no theme is selected. After changing themes, rounding, or font preferences, refresh app configs with `bash /path/to/luna/scripts/setup/apps.sh`, using the same `LUNA_CONFIG_DIR` override if you set one. This replaces installed app files from the checkout and refreshes their includes; it does not reload Kitty, Zen, or the current shell.
 
 Luna's terminal messages use colors and separated steps; external tool output is muted gray. Set `NO_COLOR=1` to disable colors. Plain-text logs are saved in `~/.local/state/luna/`, or `$XDG_STATE_HOME/luna/` when set.
 

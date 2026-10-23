@@ -30,6 +30,8 @@ class SetupAppsTests(unittest.TestCase):
             '#!/usr/bin/env bash\nprintf "configured\\n" > "$HOME/.starship-setup-ran"\n')
         (self.checkout / "scripts/setup/zsh.sh").write_text(
             '#!/usr/bin/env bash\nprintf "configured\\n" > "$HOME/.zsh-setup-ran"\n')
+        (self.checkout / "scripts/setup/zen.sh").write_text(
+            '#!/usr/bin/env bash\nprintf "configured\\n" > "$HOME/.zen-setup-ran"\n')
         self.source = self.checkout / "apps/kitty"
         (self.source / "scripts").mkdir(parents=True)
         (self.source / "kitty.conf").write_text("# Static fixture\ninclude theme.conf\n")
@@ -84,12 +86,20 @@ io.write("# Generated fixture\\nbackground ", os.getenv("TEST_THEME_COLOR"), "\\
         self.assertFalse((self.config_home / "luna/starship").exists())
         self.assertEqual((self.home / ".starship-setup-ran").read_text(), "configured\n")
         self.assertEqual((self.home / ".zsh-setup-ran").read_text(), "configured\n")
+        self.assertEqual((self.home / ".zen-setup-ran").read_text(), "configured\n")
         self.assertEqual(list(self.home.rglob("*.luna-backup*")), [])
 
     def test_required_zsh_child_failure_fails_app_setup(self):
         (self.checkout / "scripts/setup/zsh.sh").write_text("#!/usr/bin/env bash\nexit 23\n")
         result = self.setup()
         self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse((self.home / ".zen-setup-ran").exists())
+
+    def test_required_zen_child_failure_fails_app_setup(self):
+        (self.checkout / "scripts/setup/zen.sh").write_text("#!/usr/bin/env bash\nexit 23\n")
+        result = self.setup()
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertTrue((self.home / ".zsh-setup-ran").exists())
 
     def test_required_starship_child_failure_stops_before_zsh_setup(self):
         (self.checkout / "scripts/setup/starship.sh").write_text("#!/usr/bin/env bash\nexit 23\n")
