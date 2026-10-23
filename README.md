@@ -4,7 +4,7 @@ A Hyprland desktop setup for Arch Linux.
 
 ## Install
 
-Back up files you want to keep before installing. Setup replaces conflicting source/command paths and installed app configs, and updates shell startup files without automatic backups.
+Back up files you want to keep before installing. Setup replaces conflicting source/command paths and installed app configs, and updates shell startup files and default application preferences without automatic backups.
 
 Run from an interactive terminal as your regular user with `sudo` access and `curl` installed:
 
@@ -32,7 +32,7 @@ Skip selected setup steps with one comma-separated option:
 bash install.sh --skip=git-apps,fonts,mise
 ```
 
-For the downloaded installer, pass the same option after `bash -s --`. It also works with `--ref`. Available step names are `lua`, `core`, `mise`, `aur`, `main`, `fonts`, `git-apps`, `src`, `command`, `postinstall`, `apps`, and `session`. `main` installs application packages; `apps` installs their configurations; `postinstall` selects the bundled Tokyo Night theme. Empty or unknown names are rejected before installation starts.
+For the downloaded installer, pass the same option after `bash -s --`. It also works with `--ref`. Available step names are `lua`, `core`, `mise`, `aur`, `main`, `fonts`, `git-apps`, `src`, `command`, `postinstall`, `apps`, `defaults`, and `session`. `main` installs application packages; `apps` installs their configurations; `postinstall` selects the bundled Tokyo Night theme; `defaults` sets default applications. Empty or unknown names are rejected before installation starts.
 
 Only the named steps are skipped; the others keep their normal order and behavior. Dependencies needed by remaining steps must already be available when their installation step is skipped. System checks, Git bootstrap, and checkout preparation always run. The `mise` and `command` steps also configure shell startup, even if the final `apps` step is skipped.
 
@@ -46,7 +46,11 @@ Git apps are listed in `packages/packages.git.lua` and installed after fonts. Se
 
 Package installation may upgrade the system and runs without package-manager confirmations; `sudo` may still ask for your password. Setup does not enable Docker or run NVIDIA driver installation.
 
-After the installation steps, setup replaces the installed Tokyo Night theme with the bundled copy and selects it, including on reruns. Theme setup failures warn and continue. It then installs app configurations before reloading the configuration in an active Hyprland session.
+After the installation steps, setup replaces the installed Tokyo Night theme with the bundled copy and selects it, including on reruns. Theme setup failures warn and continue. It then installs app configurations and sets default applications before reloading the configuration in an active Hyprland session.
+
+The `defaults` step sets Kitty as the preferred terminal for [xdg-terminal-exec](https://github.com/Vladimir-csp/xdg-terminal-exec), installed with the main packages. It puts `kitty.desktop` first in `$XDG_CONFIG_HOME/xdg-terminals.list` and `hyprland-xdg-terminals.list`, plus any existing user lists for desktops in `XDG_CURRENT_DESKTOP`. The config directory defaults to `~/.config`; it is independent of `LUNA_CONFIG_DIR`. Other list contents, permissions, and symlinks are preserved. Reruns restore Kitty's priority without repeatedly adding entries. Missing Kitty or `xdg-terminal-exec` warns and skips this step; required file updates must succeed.
+
+Use `--skip=defaults` to keep your terminal preference, or run `bash /path/to/luna/scripts/setup/defaults.sh` to apply it separately. Check the selected terminal with `xdg-terminal-exec --print-id`; launch it with `xdg-terminal-exec`. This preference applies to callers using that mechanism. Luna's existing Kitty-specific launcher dialogs still launch Kitty directly.
 
 `LUNA_CONFIG_DIR` sets the absolute directory for installed app configs. It defaults to `$XDG_CONFIG_HOME/luna`, or `~/.config/luna` when `XDG_CONFIG_HOME` is unset or empty. An unset or empty `LUNA_CONFIG_DIR` uses this default. Setup installs Kitty under `kitty/`, Starship under `starship/`, and Zsh under `zsh/` inside that directory.
 

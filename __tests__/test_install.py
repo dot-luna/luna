@@ -18,7 +18,7 @@ REPO = Path(__file__).resolve().parents[1]
 INSTALLER = REPO / "install.sh"
 ORIGIN = "https://github.com/dot-luna/luna.git"
 SETUP_STEPS = ("lua", "core", "mise", "aur", "main", "fonts", "git-apps", "src",
-               "command", "postinstall", "apps", "session")
+               "command", "postinstall", "apps", "defaults", "session")
 
 
 @unittest.skipIf(os.geteuid() == 0, "The installer requires a real non-root user")
@@ -235,9 +235,9 @@ sys.exit(int(os.environ.get("TEST_SETUP_STATUS", "0")))
 
     def test_repeated_skip_lists_are_deduplicated_in_first_seen_order(self):
         result = self.run_installer("--skip=git-apps,fonts", "--ref", "feature/installer",
-                                    "--skip=fonts,mise,git-apps", "--skip=apps,mise")
+                                    "--skip=fonts,mise,git-apps", "--skip=apps,mise,defaults")
         self.assert_success(result)
-        self.assertEqual(self.setups()[0]["args"], ["--skip=git-apps,fonts,mise,apps"])
+        self.assertEqual(self.setups()[0]["args"], ["--skip=git-apps,fonts,mise,apps,defaults"])
         self.assertEqual(self.git_run("-C", str(self.destination), "branch", "--show-current"),
                          "feature/installer")
 

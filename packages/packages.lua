@@ -91,6 +91,7 @@ return {
     main = {
         -- Everyday applications and development tools.
         { name = "kitty", source = "pacman", purpose = "Terminal emulator" },
+        { name = "xdg-terminal-exec", source = "pacman", purpose = "Run commands in the preferred terminal" },
         { name = "starship", source = "pacman", purpose = "Customizable shell prompt" },
         { name = "zsh", source = "pacman", purpose = "Interactive shell" },
 

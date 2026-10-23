@@ -10,7 +10,7 @@ import unittest
 
 REPO = Path(__file__).resolve().parents[2]
 STEPS = ("lua", "core", "mise", "aur", "main", "fonts", "git-apps", "src",
-         "command", "postinstall", "apps", "session")
+         "command", "postinstall", "apps", "defaults", "session")
 
 
 @unittest.skipUnless(Path("/usr/bin/lua").is_file(), "The runner requires /usr/bin/lua")
@@ -33,7 +33,7 @@ class SetupRunnerTests(unittest.TestCase):
         self.env.pop("TEST_FAIL_STEP", None)
 
         # No production child script runs: these fixtures only record arguments.
-        for name in ("lua", "aur", "src", "command", "postinstall", "apps", "session"):
+        for name in ("lua", "aur", "src", "command", "postinstall", "apps", "defaults", "session"):
             (self.steps / f"{name}.sh").write_text('''#!/usr/bin/env bash
 set -euo pipefail
 step=${0##*/}
@@ -76,10 +76,11 @@ end
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(self.recorded_calls(), [[step] for step in STEPS])
         self.assertIn("Install application configurations", result.stdout)
+        self.assertIn("Configure default applications", result.stdout)
         self.assertNotIn(["nvidia"], self.recorded_calls())
 
     def test_failed_critical_steps_stop_later_work_and_propagate_status(self):
-        for failed in ("lua", "core", "src", "command", "apps"):
+        for failed in ("lua", "core", "src", "command", "apps", "defaults"):
             with self.subTest(failed=failed):
                 self.calls.unlink(missing_ok=True)
                 self.env["TEST_FAIL_STEP"] = failed
@@ -114,8 +115,8 @@ end
 
     def test_skip_lists_accumulate_without_reordering_or_forwarding_arguments(self):
         self.env["TEST_FAIL_STEP"] = "core"
-        skipped = {"lua", "core", "mise", "fonts", "git-apps", "apps"}
-        result = self.setup("--skip=git-apps,fonts,mise,core,lua,git-apps", "--skip=apps,fonts")
+        skipped = {"lua", "core", "mise", "fonts", "git-apps", "apps", "defaults"}
+        result = self.setup("--skip=git-apps,fonts,mise,core,lua,git-apps", "--skip=apps,fonts,defaults")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(self.recorded_calls(), [[step] for step in STEPS if step not in skipped])
         for step in skipped:

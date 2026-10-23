@@ -14,7 +14,7 @@ steps_dir="$setup_dir/setup"
 # Validate skip requests before any step can install packages or change files.
 # Keep these names in sync with the standalone installer's --skip option.
 declare -A skipped_steps=()
-valid_steps='lua,core,mise,aur,main,fonts,git-apps,src,command,postinstall,apps,session'
+valid_steps='lua,core,mise,aur,main,fonts,git-apps,src,command,postinstall,apps,defaults,session'
 for argument in "$@"; do
     case "$argument" in
         --skip=*)
@@ -22,7 +22,7 @@ for argument in "$@"; do
             while true; do
                 name=${remaining%%,*}
                 case "$name" in
-                    lua|core|mise|aur|main|fonts|git-apps|src|command|postinstall|apps|session)
+                    lua|core|mise|aur|main|fonts|git-apps|src|command|postinstall|apps|defaults|session)
                         skipped_steps[$name]=1
                         ;;
                     *)
@@ -105,6 +105,9 @@ run_setup_step postinstall 'Post-install — Set up Tokyo Night' \
 
 # Generate app colors and fonts only after the selected theme is available.
 run_setup_step apps 'Install application configurations' '' bash "$steps_dir/apps.sh"
+
+# Set default applications after their packages and configuration are installed.
+run_setup_step defaults 'Configure default applications' '' bash "$steps_dir/defaults.sh"
 
 # Apply the completed configuration to an active session without another prompt.
 run_setup_step session 'Apply Hyprland configuration' \
