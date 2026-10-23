@@ -91,10 +91,25 @@ return {
     main = {
         -- Everyday applications and development tools.
         { name = "kitty", source = "pacman", purpose = "Terminal emulator" },
+        { name = "starship", source = "pacman", purpose = "Customizable shell prompt" },
+        { name = "zsh", source = "pacman", purpose = "Interactive shell" },
+
+        -- Interactive suggestions, completion, navigation, and file previews.
+        { name = "zsh-autosuggestions", source = "pacman", purpose = "Suggest commands from shell history" },
+        { name = "zsh-syntax-highlighting", source = "pacman", purpose = "Highlight commands while typing" },
+        { name = "zsh-completions", source = "pacman", purpose = "Complete additional commands and options" },
+        { name = "fzf", source = "pacman", purpose = "Search shell history, files, and directories interactively" },
+        { name = "zoxide", source = "pacman", purpose = "Jump to frequently used directories with cd" },
+        { name = "bat", source = "pacman", purpose = "Preview files with syntax highlighting" },
+        { name = "eza", source = "pacman", purpose = "List files with colors, icons, and Git status" },
+        { name = "fd", source = "pacman", purpose = "Find files and directories for fuzzy selection" },
+
+        -- Editor and development workflows.
         { name = "zed", source = "pacman", purpose = "Code editor" },
         { name = "github-cli", source = "pacman", purpose = "GitHub repository workflows" },
 
         -- AUR packages require a separate build/helper installation step.
+        { name = "fzf-tab", source = "aur", purpose = "Select Zsh completions with a fuzzy menu" },
         { name = "zen-browser-bin", source = "aur", purpose = "Zen Browser prebuilt release" },
         { name = "t3code-nightly-bin", source = "aur", purpose = "T3 Code desktop app, prebuilt nightly release" },
     },

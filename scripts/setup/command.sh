@@ -39,7 +39,9 @@ case "$shell_name" in
         shell_config="$HOME/.bashrc"
         ;;
     zsh)
-        shell_config="${ZDOTDIR:-$HOME}/.zshrc"
+        # Keep Zsh startup edits in one place so personal contents and links survive.
+        bash "$repo_dir/scripts/setup/zsh.sh"
+        exit 0
         ;;
     *)
         luna_warn "Shell '${shell_name:-unknown}' is not supported for automatic PATH setup. Add ~/.local/bin to the start of PATH to use Luna."

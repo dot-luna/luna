@@ -2,7 +2,8 @@
 return function(root)
     local json = dofile(root .. "/lib/theme/json.lua")
     local validate = dofile(root .. "/lib/theme/validate.lua")()
-    local config = (os.getenv("XDG_CONFIG_HOME") or assert(os.getenv("HOME")) .. "/.config") .. "/luna"
+    local config_home = os.getenv("XDG_CONFIG_HOME")
+    local config = (config_home and config_home ~= "" and config_home or assert(os.getenv("HOME")) .. "/.config") .. "/luna"
     local M = { path = config .. "/fonts.json" }
 
     function M.read()

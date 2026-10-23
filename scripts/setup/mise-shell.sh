@@ -18,7 +18,9 @@ case "$shell_name" in
         shell_config="$HOME/.bashrc"
         ;;
     zsh)
-        shell_config="${ZDOTDIR:-$HOME}/.zshrc"
+        # Zsh keeps activation and generated completions in Luna's modular config.
+        bash "$(luna_script_dir "${BASH_SOURCE[0]}")/zsh.sh"
+        exit 0
         ;;
     *)
         luna_warn "Shell '${shell_name:-unknown}' is not supported for automatic mise activation. Configure mise for your shell manually: https://mise.jdx.dev/shell-setup.html"

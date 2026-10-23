@@ -20,28 +20,43 @@ class SetupMiseShellTests(unittest.TestCase):
         self.home = self.root / "home"
         self.home.mkdir()
         self.checkout = self.root / "checkout"
-        for name in ("scripts/setup/mise-shell.sh", "lib/common.sh"):
+        for name in ("scripts/setup/mise-shell.sh", "scripts/setup/zsh.sh",
+                     "scripts/setup/zsh-config.py", "lib/common.sh"):
             destination = self.checkout / name
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(REPO / name, destination)
+        shutil.copytree(REPO / "apps/zsh", self.checkout / "apps/zsh")
 
         # Isolate command lookup so a missing fake cannot activate the host mise.
         self.bin = self.root / "bin"
         self.bin.mkdir()
-        for name in ("readlink", "dirname", "mkdir", "mktemp", "cat", "chmod", "grep", "mv", "rm"):
+        for name in ("bash", "readlink", "realpath", "dirname", "mkdir", "mktemp",
+                     "cat", "chmod", "grep", "mv", "rm", "cp"):
             (self.bin / name).symlink_to(shutil.which(name))
         self.mise = self.bin / "mise"
         self.mise.write_text("""#!/bin/sh
 printf '%s\\n' "$*" >> "$MISE_TEST_LOG"
-if [ "$1" != activate ]; then exit 1; fi
-printf 'export LUNA_MISE_TEST_ACTIVE=%s\\n' "$2"
+if [ "$1" = --cd ]; then shift 2; fi
+case "$1" in
+    activate)
+        printf 'export LUNA_MISE_TEST_ACTIVE=%s\\n' "$2"
+        printf '_mise_hook() { return 0; }\\n'
+        ;;
+    completion) printf '# Generated completion fixture\\n' ;;
+    *) exit 1 ;;
+esac
 """)
         self.mise.chmod(0o755)
         self.log = self.root / "mise.log"
         self.env = dict(os.environ, HOME=str(self.home), SHELL="/bin/bash", PATH=str(self.bin),
                         XDG_CONFIG_HOME=str(self.home / ".config"), TERM="xterm",
+                        XDG_CACHE_HOME=str(self.home / ".cache"),
+                        XDG_DATA_HOME=str(self.home / ".local/share"),
+                        XDG_STATE_HOME=str(self.home / ".local/state"),
                         MISE_TEST_LOG=str(self.log))
-        for name in ("ZDOTDIR", "BASH_ENV", "ENV", "LUNA_MISE_TEST_ACTIVE"):
+        for name in ("ZDOTDIR", "BASH_ENV", "ENV", "LUNA_MISE_TEST_ACTIVE",
+                     "LUNA_INSTALL_DIR", "LUNA_CONFIG_DIR", "ANDROID_HOME", "PNPM_HOME",
+                     "HISTFILE", "HISTSIZE", "SAVEHIST"):
             self.env.pop(name, None)
 
     def setup(self, *arguments):
@@ -85,12 +100,13 @@ printf 'export LUNA_MISE_TEST_ACTIVE=%s\\n' "$2"
         old_backup.write_text("Earlier backup\n")
 
         self.assert_success(self.setup())
-        self.assertFalse(config.is_symlink())
+        self.assertTrue(config.is_symlink())
         self.assertEqual(config.stat().st_mode & 0o777, 0o600)
-        self.assertTrue(config.read_text().startswith(original))
+        self.assertTrue(config.read_text().endswith(original))
+        self.assertIn("source ", config.read_text().splitlines()[0])
         self.assertEqual(list(custom.glob("*.luna-backup*")), [old_backup])
         self.assertEqual(old_backup.read_text(), "Earlier backup\n")
-        self.assertEqual(foreign.read_text(), original)
+        self.assertEqual(foreign.read_bytes(), config.read_bytes())
         self.assertFalse((self.home / ".zshrc").exists())
 
     def check_shell_activation(self, shell, arguments, command):
@@ -100,7 +116,11 @@ printf 'export LUNA_MISE_TEST_ACTIVE=%s\\n' "$2"
                                 cwd=self.root, input="", capture_output=True, text=True, timeout=10)
         self.assert_success(result)
         self.assertEqual(result.stdout.strip(), shell)
-        self.assertEqual(self.log.read_text(), f"activate {shell}\n")
+        if shell == "zsh":
+            self.assertEqual(self.log.read_text(), f"--cd {self.home} completion zsh\n"
+                             "activate zsh\n")
+        else:
+            self.assertEqual(self.log.read_text(), f"activate {shell}\n")
 
     def test_bash_activates_in_new_interactive_shell(self):
         self.check_shell_activation("bash", ["--noprofile", "-i", "-c"],

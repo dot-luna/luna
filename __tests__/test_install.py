@@ -17,6 +17,8 @@ import unittest
 REPO = Path(__file__).resolve().parents[1]
 INSTALLER = REPO / "install.sh"
 ORIGIN = "https://github.com/dot-luna/luna.git"
+SETUP_STEPS = ("lua", "core", "mise", "aur", "main", "fonts", "git-apps", "src",
+               "command", "postinstall", "apps", "session")
 
 
 @unittest.skipIf(os.geteuid() == 0, "The installer requires a real non-root user")
@@ -223,6 +225,32 @@ sys.exit(int(os.environ.get("TEST_SETUP_STATUS", "0")))
         self.assertTrue((self.destination / ".git").is_dir())
         self.assertEqual(self.setups()[0]["cwd"], str(self.destination))
         self.assertEqual(self.setups()[0]["luna_install_dir"], str(self.destination))
+
+    def test_single_skip_is_forwarded_without_adding_dependency_skips(self):
+        result = self.run_installer("--skip=git-apps")
+        self.assert_success(result)
+        self.assertEqual(self.setups()[0]["args"], ["--skip=git-apps"])
+        self.assertIn("Open a new terminal and run luna --version.", result.stdout)
+        self.assertTrue(any("clone" in call for call in self.calls("git")))
+
+    def test_repeated_skip_lists_are_deduplicated_in_first_seen_order(self):
+        result = self.run_installer("--skip=git-apps,fonts", "--ref", "feature/installer",
+                                    "--skip=fonts,mise,git-apps", "--skip=apps,mise")
+        self.assert_success(result)
+        self.assertEqual(self.setups()[0]["args"], ["--skip=git-apps,fonts,mise,apps"])
+        self.assertEqual(self.git_run("-C", str(self.destination), "branch", "--show-current"),
+                         "feature/installer")
+
+    def test_skipping_every_setup_step_keeps_bootstrap_and_avoids_command_advice(self):
+        self.env["TEST_BOOTSTRAP_GIT"] = "1"
+        selected = "--skip=" + ",".join(SETUP_STEPS)
+        result = self.run_installer(selected)
+        self.assert_success(result)
+        self.assertEqual(self.setups()[0]["args"], [selected])
+        self.assertEqual(self.calls("pacman"), [["pacman", "-Syu", "--needed", "--noconfirm", "--", "git"]])
+        self.assertIn(["sudo", "-v"], self.calls("sudo"))
+        self.assertTrue(any("clone" in call for call in self.calls("git")))
+        self.assertNotIn("Open a new terminal and run luna --version.", result.stdout)
 
     def test_custom_luna_install_dir_creates_parents_and_preserves_default_checkout(self):
         self.assert_success(self.run_installer())
@@ -752,13 +780,43 @@ mv() {
                 result = self.run_installer(*args, terminal=False)
                 self.assertEqual(result.returncode, 0, result.stdout)
                 self.assertIn("--ref", result.stdout)
+                self.assertIn("--skip=git-apps,fonts,mise", result.stdout)
+                for step in SETUP_STEPS:
+                    self.assertIn(step, result.stdout)
         for args in (("--ref",), ("--unknown",), ("--ref", ""),
-                     ("--ref", "-bad"), ("--ref", "bad..ref"), ("--ref", "refs/heads/master")):
+                     ("--ref", "-bad"), ("--ref", "bad..ref"), ("--ref", "refs/heads/master"),
+                     ("--skip-git-apps",), ("--skip-fonts",)):
             with self.subTest(args=args):
-                self.assert_refused(self.run_installer(*args, terminal=False))
+                result = self.run_installer(*args, terminal=False)
+                self.assert_refused(result)
+                self.assertEqual(result.returncode, 2, result.stdout)
         self.assertEqual(list(self.home.iterdir()), [])
         self.assertEqual(self.calls("sudo"), [])
         self.assertEqual(self.calls("git"), [])
+
+    def test_invalid_skip_values_fail_before_system_checks_or_authentication(self):
+        # A valid call would fail HOME validation; invalid flags must fail earlier.
+        self.env["HOME"] = "relative home"
+        self.env["TEST_BOOTSTRAP_GIT"] = "1"
+        for args in (("--skip",), ("--skip", "git-apps"), ("--skip=",),
+                     ("--skip=,fonts",), ("--skip=fonts,",), ("--skip=fonts,,mise",),
+                     ("--skip=fonts,unknown",), ("--skip=fonts mise",),
+                     ("--skip=fonts\nmise",), ("--skip=FONTS",), ("--skip=../main",),
+                     ("--skip=git",), ("--skip=all",), ("--skip=git-apps=1",)):
+            with self.subTest(args=args):
+                result = self.run_installer(*args, terminal=False)
+                self.assert_refused(result)
+                self.assertEqual(result.returncode, 2, result.stdout)
+                self.assertIn("Valid steps:", result.stdout)
+                self.assertNotIn("HOME must", result.stdout)
+                if args[0] == "--skip":
+                    self.assertIn("Use --skip=", result.stdout)
+        self.assertEqual(list(self.home.iterdir()), [])
+        self.assertFalse((self.root / "relative home").exists())
+        self.assertEqual(self.calls("sudo"), [])
+        self.assertEqual(self.calls("pacman"), [])
+        self.assertEqual(self.calls("git"), [])
+        self.assertEqual(self.setups(), [])
 
 
 if __name__ == "__main__":

@@ -6,7 +6,8 @@ return function(root)
     local defaults = dofile(root .. "/lib/theme/defaults.lua")
     local fonts = dofile(root .. "/lib/theme/fonts.lua")(root)
     local home = assert(os.getenv("HOME"), "HOME is required")
-    local config = (os.getenv("XDG_CONFIG_HOME") or home .. "/.config") .. "/luna"
+    local config_home = os.getenv("XDG_CONFIG_HOME")
+    local config = (config_home and config_home ~= "" and config_home or home .. "/.config") .. "/luna"
     M.path = config .. "/theme.json"
 
     local function merge(base, overrides)

@@ -20,21 +20,49 @@ class SetupCommandTests(unittest.TestCase):
         self.home = self.root / "home"
         self.home.mkdir()
         self.checkout = self.root / "checkout"
-        for name in ("scripts/setup/command.sh", "lib/common.sh"):
+        for name in ("scripts/setup/command.sh", "scripts/setup/mise-shell.sh",
+                     "scripts/setup/zsh.sh", "scripts/setup/zsh-config.py", "lib/common.sh"):
             destination = self.checkout / name
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(REPO / name, destination)
+        shutil.copytree(REPO / "apps/zsh", self.checkout / "apps/zsh")
         self.launcher = self.checkout / "bin/luna"
         self.launcher.parent.mkdir()
         self.launcher.write_text("#!/bin/sh\nprintf 'Installed checkout\\n'\n")
         self.launcher.chmod(0o755)
         self.target = self.home / ".local/bin/luna"
-        self.env = dict(os.environ, HOME=str(self.home), SHELL="/bin/bash",
-                        XDG_CONFIG_HOME=str(self.home / ".config"), TERM="xterm")
-        self.env.pop("ZDOTDIR", None)
 
-    def setup(self, *arguments):
-        return subprocess.run(["bash", str(self.checkout / "scripts/setup/command.sh"), *arguments],
+        # Resolve only fixture commands so Zsh setup cannot run the host's mise.
+        self.bin = self.root / "bin"
+        self.bin.mkdir()
+        for name in ("bash", "readlink", "realpath", "dirname", "mkdir", "mktemp",
+                     "cat", "chmod", "grep", "mv", "rm", "cp", "ln"):
+            (self.bin / name).symlink_to(shutil.which(name))
+        self.mise = self.bin / "mise"
+        self.mise.write_text('''#!/bin/sh
+printf '%s\\n' "$*" >> "$MISE_TEST_LOG"
+if [ "$1" = --cd ]; then shift 2; fi
+case "$1" in
+    completion) printf '# Fixture completion\\n' ;;
+    activate) printf '_mise_hook() { return 0; }\\n' ;;
+    *) exit 1 ;;
+esac
+''')
+        self.mise.chmod(0o755)
+        self.log = self.root / "mise.log"
+        self.env = dict(os.environ, HOME=str(self.home), SHELL="/bin/bash", PATH=str(self.bin),
+                        XDG_CONFIG_HOME=str(self.home / ".config"), TERM="xterm",
+                        XDG_CACHE_HOME=str(self.home / ".cache"),
+                        XDG_DATA_HOME=str(self.home / ".local/share"),
+                        XDG_STATE_HOME=str(self.home / ".local/state"),
+                        MISE_TEST_LOG=str(self.log))
+        for name in ("ZDOTDIR", "BASH_ENV", "ENV", "LUNA_INSTALL_DIR", "LUNA_CONFIG_DIR",
+                     "ANDROID_HOME", "PNPM_HOME", "HISTFILE", "HISTSIZE", "SAVEHIST"):
+            self.env.pop(name, None)
+
+    def setup(self, *arguments, script="command.sh"):
+        return subprocess.run([shutil.which("bash"), str(self.checkout / "scripts/setup" / script),
+                               *arguments],
                               env=self.env, cwd=self.root, input="", capture_output=True,
                               text=True, timeout=10)
 
@@ -119,25 +147,30 @@ class SetupCommandTests(unittest.TestCase):
         self.assertEqual(self.launcher.read_bytes(), original)
         self.assertFalse((self.home / ".bashrc").exists())
 
-    def test_zdotdir_symlink_config_keeps_original_target_unchanged(self):
+    def test_zdotdir_symlink_is_preserved_and_target_receives_source_prefix(self):
         self.env["SHELL"] = "/usr/bin/zsh"
         custom = self.root / "zsh config"
         custom.mkdir()
         self.env["ZDOTDIR"] = str(custom)
         foreign = self.root / "personal.zshrc"
         foreign.write_text("# Personal Zsh configuration\n")
+        foreign.chmod(0o640)
         config = custom / ".zshrc"
         config.symlink_to(os.path.relpath(foreign, custom))
+        original_link = config.readlink()
         self.assert_success(self.setup())
-        self.assertFalse(config.is_symlink())
-        self.assertIn(BLOCK_START, config.read_text())
-        self.assertTrue(config.read_text().startswith("# Personal Zsh configuration\n"))
+        self.assertTrue(config.is_symlink())
+        self.assertEqual(config.readlink(), original_link)
+        self.assertEqual(foreign.stat().st_mode & 0o777, 0o640)
+        self.assertTrue(config.read_text().startswith("source "))
+        self.assertNotIn(BLOCK_START, config.read_text())
+        self.assertTrue(config.read_text().endswith("# Personal Zsh configuration\n"))
         self.assertEqual(list(custom.glob("*.luna-backup*")), [])
-        self.assertEqual(foreign.read_text(), "# Personal Zsh configuration\n")
+        self.assertEqual(foreign.read_bytes(), config.read_bytes())
         self.assertFalse((self.home / ".zshrc").exists())
 
     def check_shell_lookup(self, shell, config, arguments, command):
-        # A pre-existing checkout used to win PATH resolution in every new shell.
+        # Exercise an explicit personal PATH preference in the existing startup file.
         old_bin = self.home / "coding/luna/bin"
         old_bin.mkdir(parents=True)
         old_launcher = old_bin / "luna"
@@ -150,17 +183,54 @@ class SetupCommandTests(unittest.TestCase):
         result = subprocess.run([shutil.which(shell), *arguments, command], env=self.env,
                                 cwd=self.root, input="", capture_output=True, text=True, timeout=10)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(result.stdout.strip(), str(self.target))
+        return result.stdout.strip(), old_launcher
 
     def test_bash_prefers_installed_checkout_in_new_interactive_shell(self):
-        self.check_shell_lookup("bash", self.home / ".bashrc",
-                                ["--noprofile", "-i", "-c"], "command -v luna")
+        output, _ = self.check_shell_lookup("bash", self.home / ".bashrc",
+                                            ["--noprofile", "-i", "-c"], "command -v luna")
+        self.assertEqual(output, str(self.target))
 
     @unittest.skipUnless(shutil.which("zsh"), "Zsh is required")
-    def test_zsh_prefers_installed_checkout_in_new_interactive_shell(self):
+    def test_zsh_preserves_personal_path_preference_and_exports_installed_checkout(self):
         custom = self.root / "zsh config"
         self.env["ZDOTDIR"] = str(custom)
-        self.check_shell_lookup("zsh", custom / ".zshrc", ["-d", "-i", "-c"], "command -v luna")
+        output, personal_launcher = self.check_shell_lookup(
+            "zsh", custom / ".zshrc", ["-d", "-i", "-c"],
+            'printf "%s\\n" "$(command -v luna)" "$LUNA_INSTALL_DIR" "$LUNA_CONFIG_DIR"')
+        self.assertEqual(output.splitlines(), [str(personal_launcher), str(self.checkout),
+                                               str(self.home / ".config/luna")])
+
+    def test_zsh_setup_helpers_preserve_symlink_and_add_source_only_once(self):
+        self.env["SHELL"] = "/usr/bin/zsh"
+        custom = self.root / "zsh config"
+        custom.mkdir()
+        self.env["ZDOTDIR"] = str(custom)
+        foreign = self.root / "personal.zshrc"
+        original = b"# Personal caf\xc3\xa9\r\n# Preserve bytes without a final newline"
+        foreign.write_bytes(original)
+        foreign.chmod(0o640)
+        config = custom / ".zshrc"
+        config.symlink_to(os.path.relpath(foreign, custom))
+        original_link = config.readlink()
+        installed = None
+
+        # Full setup reaches the same include through command, tools and app steps.
+        for script in ("command.sh", "mise-shell.sh", "zsh.sh") * 2:
+            with self.subTest(script=script):
+                self.assert_success(self.setup(script=script))
+                if installed is None:
+                    installed = config.read_bytes()
+                self.assertTrue(config.is_symlink())
+                self.assertEqual(config.readlink(), original_link)
+                self.assertEqual(foreign.read_bytes(), installed)
+                self.assertTrue(installed.endswith(original))
+                self.assertEqual(installed[:-len(original)].count(b"\n"), 1)
+                self.assertTrue(installed.startswith(b"source "))
+                self.assertEqual(foreign.stat().st_mode & 0o777, 0o640)
+                self.assertNotIn(BLOCK_START.encode(), installed)
+                self.assertNotIn(b"# >>> Luna mise activation >>>", installed)
+        self.assertFalse((self.home / ".zshrc").exists())
+        self.assertEqual(list(self.home.rglob("*.luna-backup*")), [])
 
     def test_unsupported_shell_warns_after_installing_command(self):
         self.env["SHELL"] = "/bin/unknown-shell"

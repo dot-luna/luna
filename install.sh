@@ -7,6 +7,7 @@
 #   curl -fsSL https://raw.githubusercontent.com/dot-luna/luna/master/install.sh | bash -s -- --ref v1.0.0
 #
 # LUNA_INSTALL_DIR selects the checkout; it defaults to ~/.local/src/luna.
+# LUNA_CONFIG_DIR selects the generated app configuration destination.
 # Keep the checkout in place after setup because deployed configs refer to it.
 # Run as your normal user in a terminal; sudo is used for system setup.
 # Existing Luna checkouts are updated in place to the requested branch or tag.
@@ -28,6 +29,10 @@ main() {
     local ref=master
     local repo_url=https://github.com/dot-luna/luna.git
     local install_dir
+    local skip_list skip_step normalized_skips=
+    local valid_steps='lua core mise aur main fonts git-apps src command postinstall apps session'
+    local -A skipped_steps=()
+    local -a setup_arguments=()
 
     while (( $# > 0 )); do
         case "$1" in
@@ -38,6 +43,35 @@ main() {
                 fi
                 ref=$2
                 shift 2
+                ;;
+            --skip=*)
+                # Validate before OS checks or checkout changes. Parse each field
+                # explicitly so empty fields and embedded newlines are rejected.
+                skip_list=${1#--skip=}
+                while :; do
+                    skip_step=${skip_list%%,*}
+                    case "$skip_step" in
+                        lua|core|mise|aur|main|fonts|git-apps|src|command|postinstall|apps|session)
+                            ;;
+                        *)
+                            log ERROR "Invalid skip step '${skip_step:-<empty>}'. Valid steps: $valid_steps." >&2
+                            exit 2
+                            ;;
+                    esac
+                    if [[ -z "${skipped_steps[$skip_step]+set}" ]]; then
+                        skipped_steps[$skip_step]=1
+                        normalized_skips+="${normalized_skips:+,}$skip_step"
+                    fi
+                    if [[ "$skip_list" != *,* ]]; then
+                        break
+                    fi
+                    skip_list=${skip_list#*,}
+                done
+                shift
+                ;;
+            --skip)
+                log ERROR "Use --skip=<step[,step...]> (for example --skip=git-apps,fonts). Valid steps: $valid_steps." >&2
+                exit 2
                 ;;
             -h|--help)
                 usage
@@ -55,6 +89,9 @@ main() {
     if [[ "$ref" == refs/* || "$ref" == *[[:space:]]* || "$ref" == *..* || "$ref" == *'@{'* ]]; then
         log ERROR "Invalid branch or tag name: $ref" >&2
         exit 2
+    fi
+    if [[ -n "$normalized_skips" ]]; then
+        setup_arguments=("--skip=$normalized_skips")
     fi
 
     log_file=
@@ -97,11 +134,13 @@ main() {
     # Setup replaces source-link conflicts without backups.
     # Run from the checkout for a predictable cwd.
     cd -- "$install_dir"
-    bash "$install_dir/scripts/setup.sh"
+    bash "$install_dir/scripts/setup.sh" "${setup_arguments[@]}"
 
     printf '\n'
     log OK 'Luna setup completed.'
-    log INFO 'Open a new terminal and run luna --version.'
+    if [[ -z "${skipped_steps[command]+set}" ]]; then
+        log INFO 'Open a new terminal and run luna --version.'
+    fi
     log INFO 'Keep the install folder; Luna uses its files.'
 }
 
@@ -218,19 +257,28 @@ resolve_install_dir() {
 
 usage() {
     cat <<'HELP'
-Usage: bash install.sh [--ref <branch-or-tag>]
-       curl -fsSL <installer-url> | bash -s -- [--ref <branch-or-tag>]
+Usage: bash install.sh [--ref <branch-or-tag>] [--skip=<step[,step...]>]
+       curl -fsSL <installer-url> | bash -s -- [options]
 
 Options:
-    --ref <name>    Install a branch or tag (default: master).
-    -h, --help      Show this help without changing anything.
+    --ref <name>           Install a branch or tag (default: master).
+    --skip=<step,...>      Skip selected setup steps.
+    -h, --help             Show this help without changing anything.
+
+Setup steps:
+    lua core mise aur main fonts git-apps src command postinstall apps session
+    Skips do not skip dependencies automatically; provide what remaining steps need.
+    System checks, Git bootstrap, and checkout preparation always run.
 
 Environment:
     LUNA_INSTALL_DIR    Absolute checkout path (default: ~/.local/src/luna).
+    LUNA_CONFIG_DIR     App config directory (default: $XDG_CONFIG_HOME/luna,
+                        or ~/.config/luna when XDG_CONFIG_HOME is unset or empty).
 
 Examples:
     bash install.sh --ref master
     bash install.sh --ref v1.0.0
+    bash install.sh --skip=git-apps,fonts,mise
     LUNA_INSTALL_DIR="$HOME/coding/luna" bash install.sh --ref dev
 
 Logs:     $XDG_STATE_HOME/luna/ (defaults to ~/.local/state/luna/)

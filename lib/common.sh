@@ -116,6 +116,29 @@ luna_script_dir() {
     dirname -- "$script_path"
 }
 
+# Generated app configurations have their own destination; theme state continues
+# to use XDG_CONFIG_HOME/luna. Export defaults for child setup processes.
+luna_resolve_config_dir() {
+    local config_home=${XDG_CONFIG_HOME:-"$HOME/.config"}
+    local directory=${LUNA_CONFIG_DIR:-"$config_home/luna"}
+    local resolved_dir resolved_home
+
+    if [[ "$config_home" != /* || "$directory" != /* ]]; then
+        luna_error 'LUNA_CONFIG_DIR and XDG_CONFIG_HOME must be absolute paths.'
+        return 1
+    fi
+
+    resolved_dir=$(realpath -m -- "$directory") || return
+    resolved_home=$(realpath -m -- "$HOME") || return
+    if [[ "$resolved_dir" == / || "$resolved_dir" == "$resolved_home" || "$resolved_home" == "$resolved_dir/"* ]]; then
+        luna_error 'LUNA_CONFIG_DIR must not be /, your home directory, or a parent of your home directory.'
+        return 1
+    fi
+
+    export XDG_CONFIG_HOME="$config_home"
+    export LUNA_CONFIG_DIR="$directory"
+}
+
 # Read an explicit choice; EOF declines so unattended runs cannot approve work.
 luna_confirm() {
     local question=$1
