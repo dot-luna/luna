@@ -1,5 +1,6 @@
 """Connect Zen themes only inside temporary homes, without launching a browser."""
 
+import json
 import os
 from pathlib import Path
 import shutil
@@ -26,9 +27,16 @@ class SetupZenTests(unittest.TestCase):
             target = self.checkout / name
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(REPO / name, target)
+        self.mod_helper = self.checkout / "scripts/setup/zen_mods.py"
+        self.mod_helper.write_text("def prepare_mod(profile, read_personal):\n    return []\n"
+                                   "def release_lock():\n    pass\n")
+        (self.checkout / "scripts/setup/zen-extensions.sh").write_text(
+            '#!/usr/bin/env bash\nprintf configured > "$HOME/extensions-configured"\n')
         self.generator = self.checkout / "apps/zen/scripts/generate-theme.lua"
         self.generator.parent.mkdir(parents=True)
-        self.generator.write_text('print([[{"chrome":"/* chrome */\\n","content":"/* content */\\n"}]])\n')
+        self.styles = {"chrome": "/* chrome */\n", "content": "/* content */\n",
+                       "fonts": {"ui": "Luna UI", "mono": "Luna Mono"}}
+        self.generator.write_text("print([[" + json.dumps(self.styles) + "]])\n")
 
         # A closed PATH and fail-on-launch stub prevent host/browser interaction.
         self.bin = self.root / "bin"
@@ -81,6 +89,45 @@ class SetupZenTests(unittest.TestCase):
         self.assertEqual((self.generated / "userContent.css").read_bytes(), b"/* content */\n")
         self.assertFalse((self.config / "zen").exists())
         self.assertFalse((self.home / ".zen").exists())
+        self.assertTrue((self.home / "extensions-configured").exists())
+
+    def test_mod_preparation_is_included_in_profile_publication_and_lock_released(self):
+        profile = self.profile()
+        self.mod_helper.write_text(
+            'import os\nfrom pathlib import Path\n'
+            'def prepare_mod(profile, read_personal):\n'
+            '    path, content, mode = read_personal(profile / "zen-themes.json")\n'
+            '    return [(path, b"{}\\n", mode)]\n'
+            'def release_lock():\n'
+            '    (Path(os.environ["HOME"]) / "lock-released").touch()\n')
+        self.setup()
+        self.assertEqual((profile / "zen-themes.json").read_bytes(), b"{}\n")
+        self.assertTrue((self.home / "lock-released").exists())
+
+    def test_mod_alias_cannot_replace_personal_user_js(self):
+        profile = self.profile()
+        personal = profile / "user.js"
+        personal.write_text("// keep me\n")
+        self.mod_helper.write_text(
+            'import os\nfrom pathlib import Path\n'
+            'def prepare_mod(profile, read_personal):\n'
+            '    path, content, mode = read_personal(profile / "user.js")\n'
+            '    return [(path, b"bad", mode)]\n'
+            'def release_lock():\n'
+            '    (Path(os.environ["HOME"]) / "lock-released").touch()\n')
+        self.setup(ok=False)
+        self.assertEqual(personal.read_text(), "// keep me\n")
+        self.assertFalse(self.generated.exists())
+        self.assertTrue((self.home / "lock-released").exists())
+
+    def test_personal_file_alias_cannot_replace_browser_lock(self):
+        profile = self.profile()
+        lock = profile / ".parentlock"
+        lock.touch()
+        (profile / "user.js").symlink_to(lock)
+        self.setup(ok=False)
+        self.assertEqual(lock.read_bytes(), b"")
+        self.assertFalse(self.generated.exists())
 
     def test_missing_browser_skips_profile_integration_but_installs_css(self):
         profile = self.profile()
@@ -92,6 +139,13 @@ class SetupZenTests(unittest.TestCase):
 
         self.env["ZEN_PROFILE_DIR"] = str(profile)
         self.setup()
+        self.assert_connected(profile)
+
+    def test_optional_extension_failure_keeps_profile_configuration(self):
+        profile = self.profile()
+        (self.checkout / "scripts/setup/zen-extensions.sh").write_text("exit 23\n")
+        result = self.setup()
+        self.assertIn("extension setup failed", result.stderr)
         self.assert_connected(profile)
 
     def test_xdg_registry_and_empty_or_unset_xdg_fallback(self):
@@ -212,6 +266,56 @@ class SetupZenTests(unittest.TestCase):
                 self.generator.write_text(program)
                 self.setup(ok=False)
                 self.assertEqual(before, {path: path.read_bytes() for path in paths})
+
+    def test_font_defaults_follow_theme_without_disabling_site_fonts(self):
+        profile = self.profile()
+        personal = b'// Personal\nuser_pref("font.name.serif.x-western", "Old Font");\n'
+        (profile / "user.js").write_bytes(personal)
+        self.styles["fonts"] = {"ui": 'UI "face" \\ Ω', "mono": 'Mono "face" \\ Ω'}
+        self.generator.write_text("print([[" + json.dumps(self.styles) + "]])\n")
+        self.setup()
+        prefs = (profile / "user.js").read_text()
+        self.assertTrue(prefs.startswith(personal.decode()))
+        for group in ("x-western", "x-unicode", "x-devanagari", "ja"):
+            for family, role in (("serif", "ui"), ("sans-serif", "ui"), ("monospace", "mono")):
+                line = f'user_pref("font.name.{family}.{group}", {json.dumps(self.styles["fonts"][role])});'
+                self.assertIn(line, prefs)
+        self.assertIn('user_pref("browser.display.use_document_fonts", 1);', prefs)
+        self.assertNotIn('gfx.downloadable_fonts', prefs)
+        self.assertNotIn('font.name.serif.x-math', prefs)
+        self.assertNotIn('font.name-list.', prefs)
+        self.setup()
+        self.assertEqual((profile / "user.js").read_text(), prefs)
+        self.styles["fonts"] = {"ui": "New UI", "mono": "New Mono"}
+        self.generator.write_text("print([[" + json.dumps(self.styles) + "]])\n")
+        self.setup()
+        prefs = (profile / "user.js").read_text()
+        self.assertEqual(prefs.count("// >>> Luna fonts >>>"), 1)
+        self.assertIn('user_pref("font.name.monospace.x-western", "New Mono");', prefs)
+        self.assertTrue(prefs.startswith(personal.decode()))
+
+    def test_invalid_font_payload_preserves_installed_and_personal_files(self):
+        profile = self.profile()
+        self.setup()
+        paths = [*self.personal_files(profile), *self.generated.iterdir()]
+        before = {path: path.read_bytes() for path in paths}
+        for fonts in (None, {}, {"ui": "Missing Mono"}, {"ui": "Bad\nFont", "mono": "Mono"}):
+            with self.subTest(fonts=fonts):
+                self.styles["fonts"] = fonts
+                self.generator.write_text("print([[" + json.dumps(self.styles) + "]])\n")
+                self.setup(ok=False)
+                self.assertEqual(before, {path: path.read_bytes() for path in paths})
+
+    def test_bom_only_preferences_remain_idempotent(self):
+        profile = self.profile()
+        prefs = profile / "user.js"
+        prefs.write_bytes(b"\xef\xbb\xbf")
+        self.setup()
+        before = prefs.read_bytes()
+        self.setup()
+        self.assertEqual(prefs.read_bytes(), before)
+        self.assertEqual(before.count(b"\xef\xbb\xbf"), 1)
+        self.assertTrue(before.startswith(b"\xef\xbb\xbf// >>> Luna stylesheets >>>"))
 
     def test_relative_destinations_and_profile_overlaps_fail_before_writes(self):
         for name, value in (("XDG_CONFIG_HOME", "relative"), ("LUNA_CONFIG_DIR", "relative"),

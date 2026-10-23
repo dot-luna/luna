@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-"""Publish generated Zen CSS and manage imports in an existing browser profile."""
+"""Publish Zen styles and font defaults in an existing browser profile."""
 
 import configparser
 import json
@@ -10,12 +10,25 @@ import stat
 import sys
 import tempfile
 
+import zen_mods
+
 
 BOM = b"\xef\xbb\xbf"
 CSS_START = b"/* >>> Luna theme >>> */"
 CSS_END = b"/* <<< Luna theme <<< */"
 JS_START = b"// >>> Luna stylesheets >>>"
 JS_END = b"// <<< Luna stylesheets <<<"
+FONT_START = b"// >>> Luna fonts >>>"
+FONT_END = b"// <<< Luna fonts <<<"
+
+# Gecko's language groups from modules/libpref/init/all.js. Keep its dedicated
+# math fonts and fallback lists: UI fonts may not contain every script's glyphs.
+FONT_GROUPS = (
+    "ar", "el", "he", "ja", "ko", "th", "x-armn", "x-beng", "x-cans",
+    "x-cyrillic", "x-devanagari", "x-ethi", "x-geor", "x-gujr", "x-guru",
+    "x-khmr", "x-knda", "x-mlym", "x-orya", "x-sinh", "x-tamil", "x-telu",
+    "x-tibt", "x-unicode", "x-western", "zh-CN", "zh-HK", "zh-TW",
+)
 
 
 def warn(message):
@@ -141,6 +154,37 @@ def managed_content(content, installed=None):
     return bom + body + newline.join((start, preference, end, b""))
 
 
+def font_preferences(fonts):
+    if not isinstance(fonts, dict) or any(
+        not isinstance(fonts.get(role), str) or not fonts[role].strip()
+        or any(ord(character) < 32 or ord(character) == 127 for character in fonts[role])
+        for role in ("ui", "mono")
+    ):
+        raise ValueError("The Zen generator must provide valid UI and monospace fonts")
+
+    # Match the Fonts settings dialog: these are defaults for generic families,
+    # while the site's own font declarations and downloadable fonts still win.
+    preferences = {"browser.display.use_document_fonts": 1}
+    for group in FONT_GROUPS:
+        preferences[f"font.default.{group}"] = "sans-serif"
+        for family, role in (("serif", "ui"), ("sans-serif", "ui"), ("monospace", "mono")):
+            preferences[f"font.name.{family}.{group}"] = fonts[role]
+    return preferences
+
+
+def managed_preferences(content, preferences, start, end):
+    bom = BOM if content.startswith(BOM) else b""
+    content = content[len(bom):]
+    newline = b"\r\n" if b"\r\n" in content else b"\n"
+    body = remove_managed(content, start, end)
+    if body and not body.endswith(b"\n"):
+        body += newline
+    lines = [start]
+    for name, value in preferences.items():
+        lines.append(f"user_pref({json.dumps(name)}, {json.dumps(value)});".encode("ascii"))
+    return bom + body + newline.join((*lines, end, b""))
+
+
 def read_personal(path, repo, output):
     target = path.resolve()
     if target.is_relative_to(repo) or target.is_relative_to(output):
@@ -173,6 +217,7 @@ def configure(destination, available, styles):
     ):
         raise ValueError("The Zen generator must provide nonempty chrome and content styles")
     encoded = {key: styles[key].encode("utf-8") for key in ("chrome", "content")}
+    preferences = font_preferences(styles.get("fonts"))
     output = absolute_path(destination, "Zen configuration destination")
     generated = output / "generated"
     repo = Path(__file__).resolve().parents[2]
@@ -214,18 +259,32 @@ def configure(destination, available, styles):
             ("user.js", None),
         ):
             target, content, mode = read_personal(profile / relative, repo, output)
+            if target in (profile / ".parentlock", profile / "lock"):
+                raise ValueError("Zen profile styles and user.js must not point to browser lock files")
             if target in targets:
                 raise ValueError("Zen profile styles and user.js must be separate files")
             targets.add(target)
             updated = managed_content(content, installed)
+            if installed is None:
+                updated = managed_preferences(updated, preferences, FONT_START, FONT_END)
             if updated != content:
                 writes.append((target, updated, mode))
+
+        # Mod registry/cache updates need the browser profile lock. The module
+        # holds it through publication and skips gracefully when Zen is running.
+        for target, content, mode in zen_mods.prepare_mod(
+            profile, lambda path: read_personal(path, repo, output)
+        ):
+            if target in targets:
+                raise ValueError("Zen mod files, profile styles, and user.js must be separate files")
+            targets.add(target)
+            writes.append((target, content, mode))
 
     # Preflight every profile file before any generated or personal file changes.
     for path, content, mode in writes:
         write_file(path, content, mode)
     if profile is not None:
-        print("Connected Luna's Zen theme; restart Zen to apply it.")
+        print("Connected Luna's Zen styles and font defaults; restart Zen to apply them.")
 
 
 if __name__ == "__main__":
@@ -234,3 +293,5 @@ if __name__ == "__main__":
     except (OSError, ValueError, RuntimeError, KeyError, IndexError) as error:
         print(f"Cannot configure Zen: {error}", file=sys.stderr)
         sys.exit(1)
+    finally:
+        zen_mods.release_lock()

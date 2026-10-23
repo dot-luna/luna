@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Generate Zen's theme and connect an existing profile; extra arguments are ignored.
+# Configure Zen's theme, font defaults, and add-ons; extra arguments are ignored.
 set -euo pipefail
 
 script_path=$(readlink -f -- "${BASH_SOURCE[0]}")
@@ -16,6 +16,9 @@ if luna_available zen-browser || luna_available zen; then
     zen_available=1
 fi
 
-luna_warn 'Back up files you want to keep; Zen setup updates styles and user.js without backups.'
+luna_warn 'Back up files you want to keep; Zen setup updates profile configuration without backups.'
 /usr/bin/python3 "$setup_dir/zen-profile.py" "$LUNA_CONFIG_DIR/zen" "$zen_available" <<< "$styles"
-luna_success "Installed Zen theme: $LUNA_CONFIG_DIR/zen/generated"
+if ! bash "$setup_dir/zen-extensions.sh"; then
+    luna_warn 'Zen extension setup failed; rerun setup to retry.'
+fi
+luna_success "Installed Zen configuration: $LUNA_CONFIG_DIR/zen"

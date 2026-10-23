@@ -1,5 +1,5 @@
 #!/usr/bin/lua -E
--- Print complete browser/content styles as JSON for setup to stage. Extra arguments are ignored.
+-- Print browser/content styles and font defaults as JSON for setup. Extra arguments are ignored.
 local function generate()
     -- Resolve symlinks before loading the shared theme helpers from this checkout.
     local quoted_path = "'" .. arg[0]:gsub("'", "'\\''") .. "'"
@@ -154,7 +154,13 @@ local function generate()
 
     -- Emit only after both styles and JSON encoding succeed, so setup can reject
     -- invalid themes without replacing either installed stylesheet partially.
-    local output = json.encode({ chrome = table.concat(chrome, "\n") .. "\n", content = content })
+    -- Profile preferences use raw family names; CSS escaping applies only to the
+    -- browser stylesheet. Website font declarations remain under each site's control.
+    local output = json.encode({
+        chrome = table.concat(chrome, "\n") .. "\n",
+        content = content,
+        fonts = { ui = theme.fonts.ui, mono = theme.fonts.mono },
+    })
     assert(io.stdout:write(output, "\n"))
     assert(io.stdout:flush())
 end

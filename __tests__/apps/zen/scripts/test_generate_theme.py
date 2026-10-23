@@ -1,4 +1,4 @@
-"""Generate Zen CSS without accessing any browser profile or launching Zen."""
+"""Generate Zen CSS and font defaults without accessing profiles or launching Zen."""
 
 import copy
 import json
@@ -50,9 +50,12 @@ class GenerateThemeTests(unittest.TestCase):
             return result.stderr
         self.assertEqual(result.stderr, '')
         styles = json.loads(result.stdout)
-        self.assertEqual(set(styles), {'chrome', 'content'})
-        self.assertTrue(all(isinstance(css, str) for css in styles.values()))
-        self.assertTrue(all(css.startswith('@charset "UTF-8";\n') for css in styles.values()))
+        self.assertEqual(set(styles), {'chrome', 'content', 'fonts'})
+        css_values = [styles['chrome'], styles['content']]
+        self.assertTrue(all(isinstance(css, str) for css in css_values))
+        self.assertTrue(all(css.startswith('@charset "UTF-8";\n') for css in css_values))
+        self.assertEqual(set(styles['fonts']), {'ui', 'mono'})
+        self.assertTrue(all(isinstance(font, str) for font in styles['fonts'].values()))
         return styles
 
     def select(self, theme):
@@ -69,6 +72,7 @@ class GenerateThemeTests(unittest.TestCase):
         self.assertIn('--luna-ui-font: "Outfit", sans-serif !important;', chrome)
         self.assertIn('color-scheme: dark !important;', chrome)
         self.assertIn(':root, .zen-browser-generic-background {', chrome)
+        self.assertEqual(styles['fonts'], {'ui': 'Outfit', 'mono': 'Iosevka Nerd Font'})
         self.assertEqual(list(self.config.iterdir()), [])
         self.assertEqual(list(self.home.iterdir()), [])
 
@@ -77,7 +81,7 @@ class GenerateThemeTests(unittest.TestCase):
         for name in ('--zen-border-radius', '--zen-webview-border-radius',
                      '--zen-native-inner-radius', '--button-border-radius'):
             self.assertIn(f'{name}: 0px !important;', styles['chrome'])
-        for css in styles.values():
+        for css in (styles['chrome'], styles['content']):
             self.assertIn('*, *::before, *::after {\n        border-radius: 0 !important;', css)
             self.assertNotRegex(css, r'\b(?:clip-path|mask|display|visibility)\s*:')
         content = re.sub(r'/\*.*?\*/', '', styles['content'], flags=re.S).strip()
@@ -107,7 +111,7 @@ class GenerateThemeTests(unittest.TestCase):
         self.select(theme)
         self.assertEqual(self.generate(), square)
 
-    def test_selected_dark_and_light_snapshots_supply_palette_and_ui_font(self):
+    def test_selected_dark_and_light_snapshots_supply_palette_and_font_defaults(self):
         for mode in ('dark', 'light'):
             with self.subTest(mode=mode):
                 theme = copy.deepcopy(self.defaults)
@@ -116,7 +120,7 @@ class GenerateThemeTests(unittest.TestCase):
                     if role != 'mode':
                         theme['colors'][role] = f'#{index:02x}1234'
                 theme['fonts']['ui'] = 'Selected UI'
-                theme['fonts']['mono'] = 'Unused Monospace'
+                theme['fonts']['mono'] = 'Selected Monospace'
                 self.select(theme)
                 styles = self.generate()
                 chrome = styles['chrome']
@@ -131,12 +135,14 @@ class GenerateThemeTests(unittest.TestCase):
                     self.assertIn(f'{name}: {theme["colors"][role]} !important;', chrome)
                 self.assertIn(f'color-scheme: {mode} !important;', chrome)
                 self.assertIn('--luna-ui-font: "Selected UI", sans-serif !important;', chrome)
-                self.assertNotIn('Unused Monospace', chrome)
+                self.assertEqual(styles['fonts'], {'ui': 'Selected UI', 'mono': 'Selected Monospace'})
+                self.assertNotIn('Selected Monospace', chrome)
                 self.assertNotRegex(styles['content'], r'(?:color|font|#[0-9a-f]{6})')
 
     def test_font_preference_is_escaped_as_one_css_string(self):
         font = 'My "UI" \\ face; } /* harmless */ Ω'
-        (self.config / 'fonts.json').write_text(json.dumps({'ui': font}))
+        mono = 'My "Mono" \\ font Ω'
+        (self.config / 'fonts.json').write_text(json.dumps({'ui': font, 'mono': mono}))
         theme = copy.deepcopy(self.defaults)
         theme['fonts']['ui'] = 'Replaced UI'
         self.select(theme)
@@ -145,6 +151,27 @@ class GenerateThemeTests(unittest.TestCase):
         self.assertIn(f'--luna-ui-font: "{escaped}", sans-serif !important;', styles['chrome'])
         self.assertNotIn('Replaced UI', styles['chrome'])
         self.assertNotIn(font, styles['content'])
+        self.assertEqual(styles['fonts'], {'ui': font, 'mono': mono})
+        self.assertNotIn(mono, styles['content'])
+
+    def test_changed_personal_fonts_refresh_payload_and_keep_sites_in_control(self):
+        theme = copy.deepcopy(self.defaults)
+        theme['fonts'] = {'ui': 'Theme UI', 'mono': 'Theme Mono'}
+        self.select(theme)
+        preferences = self.config / 'fonts.json'
+        preferences.write_text(json.dumps({'ui': 'Personal UI', 'mono': 'Personal Mono'}))
+        first = self.generate()
+        self.assertEqual(first['fonts'], {'ui': 'Personal UI', 'mono': 'Personal Mono'})
+
+        # Removing an override restores the selected theme's family on the next
+        # generation; a monospace-only change must not add website font rules.
+        preferences.write_text(json.dumps({'mono': 'Next Mono'}))
+        second = self.generate()
+        self.assertEqual(second['fonts'], {'ui': 'Theme UI', 'mono': 'Next Mono'})
+        self.assertIn('--luna-ui-font: "Theme UI", sans-serif !important;', second['chrome'])
+        self.assertNotIn('Personal UI', second['chrome'])
+        self.assertEqual(first['content'], second['content'])
+        self.assertNotIn('font', second['content'])
 
     def test_checkout_and_script_symlink_paths_are_shell_quoted(self):
         checkout = self.root / "checkout ' $(touch injected)"
@@ -160,7 +187,7 @@ class GenerateThemeTests(unittest.TestCase):
     def test_empty_and_unset_xdg_config_use_home(self):
         config = self.home / '.config/luna'
         config.mkdir(parents=True)
-        (config / 'fonts.json').write_text(json.dumps({'ui': 'Home UI'}))
+        (config / 'fonts.json').write_text(json.dumps({'ui': 'Home UI', 'mono': 'Home Mono'}))
         for value in ('', None):
             with self.subTest(XDG_CONFIG_HOME=value):
                 env = self.env.copy()
@@ -168,8 +195,9 @@ class GenerateThemeTests(unittest.TestCase):
                     env.pop('XDG_CONFIG_HOME')
                 else:
                     env['XDG_CONFIG_HOME'] = value
-                self.assertIn('--luna-ui-font: "Home UI", sans-serif !important;',
-                              self.generate(env=env)['chrome'])
+                styles = self.generate(env=env)
+                self.assertIn('--luna-ui-font: "Home UI", sans-serif !important;', styles['chrome'])
+                self.assertEqual(styles['fonts'], {'ui': 'Home UI', 'mono': 'Home Mono'})
 
     def test_missing_malformed_or_incomplete_selection_emits_no_partial_json(self):
         for contents in (None, '{bad json', '{"version":1,"name":"custom"}'):
@@ -185,6 +213,7 @@ class GenerateThemeTests(unittest.TestCase):
         for section, key, value in (
             ('colors', 'background', '#fff; color:red'),
             ('fonts', 'ui', 'Invalid\nFont'),
+            ('fonts', 'mono', 'Invalid\nMonospace'),
         ):
             with self.subTest(section=section):
                 theme = copy.deepcopy(self.defaults)
@@ -196,8 +225,10 @@ class GenerateThemeTests(unittest.TestCase):
         self.select(theme)
         self.assertIn('Invalid decoration.rounding', self.generate(ok=False))
         self.select(self.defaults)
-        (self.config / 'fonts.json').write_text(json.dumps({'ui': 'Invalid\nFont'}))
-        self.assertIn('Invalid font family', self.generate(ok=False))
+        for role in ('ui', 'mono'):
+            with self.subTest(font_preference=role):
+                (self.config / 'fonts.json').write_text(json.dumps({role: 'Invalid\nFont'}))
+                self.assertIn('Invalid font family', self.generate(ok=False))
 
 
 if __name__ == '__main__':
