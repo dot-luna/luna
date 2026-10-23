@@ -1,8 +1,26 @@
 #!/usr/bin/env bash
-# Launch the checkout CLI through the system runtime, including through symlinks.
+# Launch the selected checkout CLI through the system Lua runtime.
 set -euo pipefail
 
-launcher_path=$(readlink -f -- "${BASH_SOURCE[0]}")
-repo_dir=$(cd -- "$(dirname -- "$launcher_path")/.." && pwd)
+# An explicit checkout supports development through the installed command.
+# Otherwise, resolve this launcher's checkout, including through symlinks.
+repo_dir=${LUNA_INSTALL_DIR:-}
+if [[ -z "$repo_dir" ]]; then
+    launcher_path=$(readlink -f -- "${BASH_SOURCE[0]}")
+    repo_dir=$(cd -- "$(dirname -- "$launcher_path")/.." && pwd)
+fi
+
+if [[ "$repo_dir" != /* ]]; then
+    printf 'LUNA_INSTALL_DIR must be an absolute path to the Luna checkout.\n' >&2
+    exit 1
+fi
+
+if [[ ! -f "$repo_dir/src/luna-cli/main.lua" ]]; then
+    printf 'Luna CLI not found: %s/src/luna-cli/main.lua\n' "$repo_dir" >&2
+    exit 1
+fi
+
+# Keep child commands on the same checkout without changing the caller's cwd.
+export LUNA_INSTALL_DIR="$repo_dir"
 
 exec /usr/bin/lua -E "$repo_dir/src/luna-cli/main.lua" "$@"
