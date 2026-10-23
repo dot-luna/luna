@@ -158,27 +158,3 @@ luna_confirm() {
         esac
     done
 }
-
-# Move conflicts beside their old location so relative symlinks still resolve.
-# Numbered backups preserve earlier runs without copying large source trees.
-luna_backup_path() {
-    local original=$1
-    local backup="$original.luna-backup"
-    local suffix=1
-
-    if [[ ! -e "$original" && ! -L "$original" ]]; then
-        return 0
-    fi
-
-    while [[ -e "$backup" || -L "$backup" ]]; do
-        backup="$original.luna-backup.$suffix"
-        suffix=$((suffix + 1))
-    done
-
-    mv --no-clobber --no-target-directory -- "$original" "$backup" || return
-    if [[ -e "$original" || -L "$original" ]]; then
-        luna_error "Could not back up existing path: $original"
-        return 1
-    fi
-    luna_info "Backed up $original to $backup"
-}

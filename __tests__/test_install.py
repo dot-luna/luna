@@ -291,6 +291,26 @@ sys.exit(int(os.environ.get("TEST_SETUP_STATUS", "0")))
         self.assertEqual([path.name for path in external.iterdir()], ["personal-file"])
         self.assertFalse(self.destination.exists())
 
+    def test_custom_linked_worktree_updates_without_changing_the_main_checkout(self):
+        self.assert_success(self.run_installer())
+        original = self.git_run("-C", str(self.destination), "rev-parse", "HEAD")
+        worktree = self.root / "coding worktree"
+        self.git_run("-C", str(self.destination), "worktree", "add", "-b", "feature/installer", str(worktree))
+        metadata = (worktree / ".git").read_text()
+        (worktree / "personal-file").write_text("Keep worktree edits\n")
+        self.git_run("-C", str(self.remote), "switch", "feature/installer")
+        updated = self.commit_file(self.remote, "remote-update", "Updated feature branch\n")
+        self.env["LUNA_INSTALL_DIR"] = str(worktree)
+
+        self.assert_success(self.run_installer("--ref", "feature/installer"))
+        self.assertEqual((worktree / ".git").read_text(), metadata)
+        self.assertEqual((worktree / "personal-file").read_text(), "Keep worktree edits\n")
+        self.assertEqual(self.git_run("-C", str(worktree), "rev-parse", "HEAD"), updated)
+        self.assertEqual(self.git_run("-C", str(self.destination), "rev-parse", "HEAD"), original)
+        self.assertEqual(self.git_run("-C", str(self.destination), "branch", "--show-current"), "master")
+        self.assertEqual(self.setups()[-1]["cwd"], str(worktree))
+        self.assertEqual(len([call for call in self.calls("git") if "clone" in call]), 1)
+
     def test_invalid_luna_install_dir_stops_before_authentication_or_writes(self):
         # Block filesystem mutations as well as asserting their absence: a broken
         # path validator must never let this test remove a real root directory.
@@ -435,6 +455,56 @@ mv() {
         self.assert_refused(self.run_installer())
         self.assertEqual((self.destination / "collision").read_text(), "Keep local file\n")
         self.assertEqual(self.git_run("-C", str(self.destination), "rev-parse", "HEAD"), head)
+        self.assertEqual(len(self.setups()), 1)
+
+    def test_ignored_collision_refuses_fast_forward_without_removing_local_file(self):
+        self.assert_success(self.run_installer())
+        head = self.git_run("-C", str(self.destination), "rev-parse", "HEAD")
+        with (self.destination / ".git/info/exclude").open("a") as excludes:
+            excludes.write("\nignored-settings\n")
+        (self.destination / "ignored-settings").write_text("Keep ignored local settings\n")
+        self.commit_file(self.remote, "ignored-settings", "Upstream settings\n")
+
+        self.assert_refused(self.run_installer())
+        self.assertEqual((self.destination / "ignored-settings").read_text(), "Keep ignored local settings\n")
+        self.assertEqual(self.git_run("-C", str(self.destination), "rev-parse", "HEAD"), head)
+        self.assertEqual(len(self.setups()), 1)
+
+    def test_ignored_collision_refuses_branch_and_tag_switches(self):
+        self.git_run("-C", str(self.remote), "switch", "feature/installer")
+        self.commit_file(self.remote, "ignored-settings", "Upstream settings\n")
+        self.git_run("-C", str(self.remote), "branch", "existing-feature")
+        self.git_run("-C", str(self.remote), "tag", "release-with-settings")
+        self.assert_success(self.run_installer())
+        self.git_run("-C", str(self.destination), "fetch", "--no-tags", "origin",
+                     "refs/heads/existing-feature:refs/heads/existing-feature")
+        head = self.git_run("-C", str(self.destination), "rev-parse", "HEAD")
+        with (self.destination / ".git/info/exclude").open("a") as excludes:
+            excludes.write("\nignored-settings\n")
+        (self.destination / "ignored-settings").write_text("Keep ignored local settings\n")
+
+        for ref in ("feature/installer", "existing-feature", "release-with-settings"):
+            with self.subTest(ref=ref):
+                self.assert_refused(self.run_installer("--ref", ref))
+                self.assertEqual((self.destination / "ignored-settings").read_text(), "Keep ignored local settings\n")
+                self.assertEqual(self.git_run("-C", str(self.destination), "rev-parse", "HEAD"), head)
+                self.assertEqual(self.git_run("-C", str(self.destination), "branch", "--show-current"), "master")
+                self.assertEqual(len(self.setups()), 1)
+
+    def test_branch_autostash_config_does_not_hide_conflicting_edits(self):
+        self.commit_file(self.remote, "settings", "Original\n")
+        self.assert_success(self.run_installer())
+        head = self.git_run("-C", str(self.destination), "rev-parse", "HEAD")
+        self.git_run("-C", str(self.destination), "config", "branch.master.mergeoptions", "--autostash")
+        (self.destination / "settings").write_text("Keep local changes\n")
+        before = self.git_run("-C", str(self.destination), "status", "--porcelain")
+        self.commit_file(self.remote, "settings", "Upstream changes\n")
+
+        self.assert_refused(self.run_installer())
+        self.assertEqual((self.destination / "settings").read_text(), "Keep local changes\n")
+        self.assertEqual(self.git_run("-C", str(self.destination), "rev-parse", "HEAD"), head)
+        self.assertEqual(self.git_run("-C", str(self.destination), "status", "--porcelain"), before)
+        self.assertEqual(self.git_run("-C", str(self.destination), "stash", "list"), "")
         self.assertEqual(len(self.setups()), 1)
 
     def test_local_commits_are_preserved_when_already_ahead_of_remote(self):

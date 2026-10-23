@@ -10,7 +10,7 @@ import tempfile
 import unittest
 
 
-REPO = Path(__file__).resolve().parents[1]
+REPO = Path(__file__).resolve().parents[3]
 
 
 class SetupSessionTests(unittest.TestCase):
@@ -112,10 +112,13 @@ sys.exit(int(os.environ.get("TEST_RELOAD_STATUS", "0")))
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.calls(), [["hyprctl", "reload"]])
 
-    def test_help_and_unknown_arguments_do_not_reload(self):
-        self.assertEqual(self.setup("--help").returncode, 0)
-        self.assertEqual(self.setup("--unknown").returncode, 2)
-        self.assertEqual(self.calls(), [])
+    def test_arguments_are_ignored_and_not_forwarded_to_compositor(self):
+        result = self.setup("--help", "-h", "--force", "--unknown", "main")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.calls(), [
+            ["timeout", "--kill-after=2s", "10s", "hyprctl", "reload"],
+            ["hyprctl", "reload"],
+        ])
 
 
 if __name__ == "__main__":

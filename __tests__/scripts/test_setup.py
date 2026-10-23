@@ -8,7 +8,7 @@ import tempfile
 import unittest
 
 
-REPO = Path(__file__).resolve().parents[1]
+REPO = Path(__file__).resolve().parents[2]
 
 
 @unittest.skipUnless(Path("/usr/bin/lua").is_file(), "The runner requires /usr/bin/lua")
@@ -28,7 +28,7 @@ class SetupRunnerTests(unittest.TestCase):
         self.env.pop("TEST_FAIL_STEP", None)
 
         # No production child script runs: these fixtures only record arguments.
-        for name in ("lua", "aur", "services", "config", "src", "command", "nvidia", "session"):
+        for name in ("lua", "aur", "src", "command", "session"):
             (self.steps / f"{name}.sh").write_text('''#!/usr/bin/env bash
 set -euo pipefail
 step=${0##*/}
@@ -70,35 +70,44 @@ end
         result = self.setup()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(self.recorded_calls(), [[step] for step in
-                         ("lua", "core", "mise", "aur", "main", "fonts", "git-apps", "services", "config", "src", "command", "nvidia", "session")])
+                         ("lua", "core", "mise", "aur", "main", "fonts", "git-apps", "src", "command", "session")])
+        self.assertNotIn(["nvidia"], self.recorded_calls())
 
-    def test_force_is_forwarded_only_to_steps_accepting_it(self):
-        result = self.setup("--force")
+    def test_failed_critical_steps_stop_later_work_and_propagate_status(self):
+        steps = ("lua", "core", "mise", "aur", "main", "fonts", "git-apps", "src", "command", "session")
+        for failed in ("lua", "core", "src", "command"):
+            with self.subTest(failed=failed):
+                self.calls.unlink(missing_ok=True)
+                self.env["TEST_FAIL_STEP"] = failed
+                result = self.setup()
+                self.assertEqual(result.returncode, 29, result.stdout + result.stderr)
+                self.assertEqual(self.recorded_calls(), [[step] for step in steps[:steps.index(failed) + 1]])
+
+    def test_failed_optional_steps_continue_to_desktop_deployment_and_reload(self):
+        steps = ("lua", "core", "mise", "aur", "main", "fonts", "git-apps", "src", "command", "session")
+        warnings = {
+            "mise": "Development tools setup failed; continuing.",
+            "aur": "AUR helper setup failed; continuing.",
+            "main": "Application setup failed; continuing.",
+            "fonts": "Font setup failed; continuing.",
+            "git-apps": "Git app setup failed; continuing.",
+            "session": "Session reload failed; log out and back in to apply the configuration.",
+        }
+        for failed, warning in warnings.items():
+            with self.subTest(failed=failed):
+                self.calls.unlink(missing_ok=True)
+                self.env["TEST_FAIL_STEP"] = failed
+                result = self.setup()
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(self.recorded_calls(), [[step] for step in steps])
+                self.assertIn("[WARN] " + warning, result.stderr)
+
+    def test_arguments_are_ignored_and_not_forwarded_to_steps(self):
+        result = self.setup("--help", "-h", "--force", "--unknown", "main")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(self.recorded_calls(), [
-            ["lua", "--force"], ["core", "--force"], ["mise", "--force"], ["aur"], ["main", "--force"],
-            ["fonts", "--force"], ["git-apps", "--force"], ["services"], ["config", "--force"], ["src", "--force"],
-            ["command", "--force"], ["nvidia"], ["session"],
-        ])
-
-    def test_failed_step_stops_later_work_and_propagates_status(self):
-        self.env["TEST_FAIL_STEP"] = "main"
-        result = self.setup()
-        self.assertEqual(result.returncode, 29, result.stdout + result.stderr)
-        self.assertEqual(self.recorded_calls(), [[step] for step in ("lua", "core", "mise", "aur", "main")])
-
-    def test_failed_mise_setup_stops_before_application_installation(self):
-        self.env["TEST_FAIL_STEP"] = "mise"
-        result = self.setup()
-        self.assertEqual(result.returncode, 29, result.stdout + result.stderr)
-        self.assertEqual(self.recorded_calls(), [[step] for step in ("lua", "core", "mise")])
-
-    def test_help_and_unknown_options_do_not_run_steps(self):
-        result = self.setup("--help")
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("NVIDIA", result.stdout)
-        self.assertEqual(self.setup("--unknown").returncode, 2)
-        self.assertEqual(self.recorded_calls(), [])
+        self.assertEqual(self.recorded_calls(), [[step] for step in
+                         ("lua", "core", "mise", "aur", "main", "fonts", "git-apps", "src", "command", "session")])
+        self.assertNotIn(["nvidia"], self.recorded_calls())
 
 
 if __name__ == "__main__":

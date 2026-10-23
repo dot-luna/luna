@@ -10,7 +10,7 @@ import tempfile
 import unittest
 
 
-REPO = Path(__file__).resolve().parents[1]
+REPO = Path(__file__).resolve().parents[3]
 ORIGIN = "https://github.com/dot-luna/whatly.git"
 
 
@@ -34,7 +34,7 @@ class GitAppSetupTests(unittest.TestCase):
                         GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=str(self.root / "gitconfig"),
                         GIT_TERMINAL_PROMPT="0", TEST_GIT=self.git, TEST_ROOT=str(self.root),
                         TEST_PYTHON=sys.executable, NO_COLOR="1")
-        for name in ("BASH_ENV", "ENV", "TEST_INSTALL_STATUS", "TEST_SKIP_EXECUTABLE",
+        for name in ("BASH_ENV", "ENV", "TEST_INSTALL_STATUS", "TEST_FAIL_APP", "TEST_SKIP_EXECUTABLE",
                      "TEST_NONEXECUTABLE", "TEST_ROOT_USER"):
             self.env.pop(name, None)
 
@@ -74,7 +74,7 @@ with (root / "installs.jsonl").open("a") as output:
 assert len(sys.argv) == 4 and sys.argv[1] == "--prefix" and sys.argv[3] == "--non-interactive"
 print("Fixture app installer output", flush=True)
 status = int(os.environ.get("TEST_INSTALL_STATUS", "0"))
-if status:
+if status and os.environ.get("TEST_FAIL_APP", pathlib.Path.cwd().name) == pathlib.Path.cwd().name:
     sys.exit(status)
 if os.environ.get("TEST_SKIP_EXECUTABLE") != "1":
     binary = pathlib.Path(sys.argv[2]) / "bin" / pathlib.Path.cwd().name
@@ -144,7 +144,7 @@ if os.environ.get("TEST_SKIP_EXECUTABLE") != "1":
         self.git_run("-C", str(self.remote), "add", ".")
         self.git_run("-C", str(self.remote), "commit", "--quiet", "-m", "Feature app")
         self.write_manifest(dict(self.entry, ref="feature/app"))
-        self.assert_success(self.setup("--force"))
+        self.assert_success(self.setup())
         self.assertEqual(self.git_run("-C", str(self.destination), "branch", "--show-current"), "feature/app")
         self.assertFalse((self.destination / "personal-file").exists())
         self.assertEqual((self.destination / "version").read_text(), "feature\n")
@@ -283,15 +283,29 @@ if os.environ.get("TEST_SKIP_EXECUTABLE") != "1":
         self.assertIn("inside its checkout", result.stderr)
         self.assertFalse((self.root / "escaped-installer").exists())
 
-    def test_failed_app_installation_stops_later_apps(self):
+    def test_failed_app_installation_warns_and_continues_later_apps(self):
         self.write_manifest(self.entry, dict(self.entry, name="second-app", executable="second-app"))
         self.env["TEST_INSTALL_STATUS"] = "37"
+        self.env["TEST_FAIL_APP"] = "whatly"
         result = self.setup()
         self.assert_failed(result)
         self.assertIn("37", result.stderr)
+        self.assertIn("[WARN]", result.stderr)
+        self.assertEqual(len(self.records("installs.jsonl")), 2)
+        self.assertEqual(len(self.clones()), 2)
+        self.assertTrue(os.access(self.home / ".local/bin/second-app", os.X_OK))
+        self.assertIn("Git app ready: second-app", result.stdout)
+        self.assertNotIn("Git app ready: whatly", result.stdout)
+
+    def test_failed_clone_does_not_block_later_apps(self):
+        self.write_manifest(dict(self.entry, ref="missing-branch"),
+                            dict(self.entry, name="second-app", executable="second-app"))
+        result = self.setup()
+        self.assert_failed(result)
+        self.assertIn("[WARN]", result.stderr)
+        self.assertEqual(len(self.clones()), 2)
         self.assertEqual(len(self.records("installs.jsonl")), 1)
-        self.assertEqual(len(self.clones()), 1)
-        self.assertFalse((self.home / ".local/src/second-app").exists())
+        self.assertTrue(os.access(self.home / ".local/bin/second-app", os.X_OK))
 
     def test_missing_or_nonexecutable_result_is_failure(self):
         for setting in ("TEST_SKIP_EXECUTABLE", "TEST_NONEXECUTABLE"):
@@ -302,13 +316,14 @@ if os.environ.get("TEST_SKIP_EXECUTABLE") != "1":
                 self.assertIn("did not install its executable", result.stderr)
                 self.env.pop(setting)
 
-    def test_help_and_bad_options_do_not_touch_installation(self):
-        result = self.setup("--help")
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("--force", result.stdout)
-        self.assertNotEqual(self.setup("--unknown").returncode, 0)
-        self.assertFalse(self.destination.exists())
-        self.assertEqual(self.clones(), [])
+    def test_arguments_are_ignored_and_not_forwarded_to_app_installers(self):
+        result = self.setup("--help", "-h", "--force", "--unknown", "main")
+        self.assert_success(result)
+        self.assertEqual(len(self.clones()), 1)
+        self.assertEqual(self.records("installs.jsonl"), [{
+            "cwd": str(self.destination),
+            "args": ["--prefix", str(self.home / ".local"), "--non-interactive"],
+        }])
 
 
 if __name__ == "__main__":

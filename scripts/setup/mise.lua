@@ -4,10 +4,6 @@ local script_dir = assert(arg[0]:match("^(.*)/"), "Run this script using its pat
 local common = dofile(script_dir .. "/../../lib/common.lua")
 local json = dofile(script_dir .. "/../../lib/theme/json.lua")
 common.setup_logging()
-local argparse = require("argparse")
-local parser = argparse("mise.lua", "Install Luna's mise development tools as global defaults.")
-parser:flag("--force", "Reinstall tools even when the requested versions are already installed")
-local options = parser:parse()
 
 local function install()
     assert(not common.is_root(), "Run mise setup as a normal user, without sudo")
@@ -49,11 +45,7 @@ local function install()
     -- Global use preserves unrelated mise settings and tools. Running from HOME
     -- avoids the caller's project configuration; fuzzy keeps the chosen requests
     -- even if the user has enabled mise's default version pinning.
-    local command = { "mise", "--cd", home, "use", "--global", "--yes", "--fuzzy" }
-    if options.force then
-        command[#command + 1] = "--force"
-    end
-    command[#command + 1] = "--"
+    local command = { "mise", "--cd", home, "use", "--global", "--yes", "--fuzzy", "--" }
     for _, entry in ipairs(manifest) do
         command[#command + 1] = entry.name .. "@" .. entry.version
     end

@@ -5,25 +5,9 @@ set -euo pipefail
 script_path=$(readlink -f -- "${BASH_SOURCE[0]}")
 source "$(dirname -- "$script_path")/../../lib/common.sh"
 
-for option in "$@"; do
-    case "$option" in
-        --force)
-            # Setup forwards this flag; personal shell files are always backed up.
-            ;;
-        -h|--help)
-            printf 'Usage: %s [--force]\n\nActivate mise in new Bash, Zsh, or fish terminals.\nChanged shell startup files receive adjacent .luna-backup backups.\n--force is accepted for compatibility; backups are always made.\n' "${0##*/}"
-            exit 0
-            ;;
-        *)
-            luna_error "Unknown option: $option"
-            exit 2
-            ;;
-    esac
-done
-
 if ! luna_available mise; then
-    luna_error 'mise is required before configuring shell activation. Run the packages setup step first.'
-    exit 1
+    luna_warn 'Shell activation skipped: mise is unavailable.'
+    exit 0
 fi
 
 # SHELL identifies the user's login shell, not the Bash running this helper.
@@ -57,8 +41,8 @@ if [[ -f "$shell_config" ]] && grep -Fxq -- "$block_start" "$shell_config"; then
     exit 0
 fi
 
-# Stage the complete file before backing up the original. Symlinks are moved
-# intact into the backup, leaving the user's original target untouched.
+# Stage existing content and mode before replacing the startup file atomically.
+# Replace a final symlink itself so its external target remains unchanged.
 mkdir -p -- "${shell_config%/*}"
 temporary_config=$(mktemp "${shell_config}.luna.XXXXXX")
 trap 'if [[ -n "${temporary_config:-}" ]]; then rm -f -- "$temporary_config"; fi' EXIT
@@ -84,8 +68,7 @@ FISH_BLOCK
     printf '%s\n' "$block_end"
 } >> "$temporary_config"
 
-luna_backup_path "$shell_config"
-mv -- "$temporary_config" "$shell_config"
+mv -fT -- "$temporary_config" "$shell_config"
 temporary_config=
 luna_success "Configured mise activation: $shell_config"
 luna_info 'Open a new terminal to use your mise tools.'

@@ -7,25 +7,6 @@ set -euo pipefail
 script_path=$(readlink -f -- "${BASH_SOURCE[0]}")
 source "$(dirname -- "$script_path")/../../lib/common.sh"
 
-# Read options before checking dependencies so help works on a fresh system.
-force=false
-
-for option in "$@"; do
-    case "$option" in
-        --force)
-            force=true
-            ;;
-        -h|--help)
-            printf 'Usage: %s [--force]\n\nInstall Lua and argparse on Arch Linux.\nSkip a working installation unless --force is supplied.\n' "${0##*/}"
-            exit 0
-            ;;
-        *)
-            luna_error "Unknown option: $option"
-            exit 2
-            ;;
-    esac
-done
-
 if ! luna_available pacman; then
     luna_error "This script requires Arch Linux with pacman."
     exit 1
@@ -37,7 +18,7 @@ lua_ready() {
     [[ -x /usr/bin/lua ]] && /usr/bin/lua -E -e 'require("argparse")' >/dev/null 2>&1
 }
 
-if [[ "$force" == false ]] && lua_ready; then
+if lua_ready; then
     luna_info "Lua and argparse are already available; skipping setup."
     exit 0
 fi
@@ -55,15 +36,9 @@ if (( EUID != 0 )); then
 fi
 
 # Refresh packages with a full upgrade, keeping Arch dependencies consistent.
-# Force omits --needed so even installed targets are reinstalled.
-options=(-Syu --noconfirm)
-
-if [[ "$force" == false ]]; then
-    options+=(--needed)
-fi
-
+# Keep current versions without reinstalling them.
 luna_info "Setting up Lua and argparse (includes a system upgrade)."
-luna_run "${installer[@]}" "${options[@]}" -- lua lua-argparse
+luna_run "${installer[@]}" -Syu --noconfirm --needed -- lua lua-argparse
 
 # Verify the runtime rather than assuming a successful transaction is enough.
 if ! lua_ready; then

@@ -1,80 +1,66 @@
 #!/usr/bin/env bash
-# Run Luna setup from this checkout, regardless of the working directory.
+# Run the installer's setup steps from this checkout, regardless of the working directory.
+# Extra arguments are ignored; setup always uses its defaults.
 set -euo pipefail
 
 # Load repository-wide helpers, including when reached via a symlink.
 script_path=$(readlink -f -- "${BASH_SOURCE[0]}")
 source "$(dirname -- "$script_path")/../lib/common.sh"
 
-# Validate entry options before starting any system changes.
-for option in "$@"; do
-    case "$option" in
-        --force)
-            ;;
-        -h|--help)
-            printf 'Usage: %s [--force]\n\nSet up packages, mise tools, fonts, Git apps, Docker, config/source links, and the Luna command.\nPackages install without confirmation; sudo may ask for authentication.\nMise tools become global defaults with activation in Bash, Zsh, or fish.\nGit apps are cloned afresh and installed by their own scripts.\nConfig and source conflicts are backed up and replaced automatically.\nThe final installation step asks whether to install NVIDIA drivers and tools.\nAn active Hyprland session is reloaded when setup finishes.\n--force reinstalls packages and mise tools. Extra packages are excluded.\n' "${0##*/}"
-            exit 0
-            ;;
-        *)
-            luna_error "Unknown option: $option"
-            exit 2
-            ;;
-    esac
-done
-
 # Keep individual steps together, independently of the caller's directory.
 setup_dir=$(luna_script_dir "${BASH_SOURCE[0]}")
 steps_dir="$setup_dir/setup"
 
+luna_warn 'Back up files you want to keep; setup replaces conflicts without backups.'
+
 # Step 1: prepare Lua and argparse before running any Lua setup logic.
-# Forward --force consistently to bootstrap and package installation.
-luna_step '1/12 — Prepare Lua'
-bash "$steps_dir/lua.sh" "$@"
+luna_step '1/9 — Prepare Lua'
+bash "$steps_dir/lua.sh"
 
 # Step 2: install official setup tools and desktop dependencies.
-luna_step '2/12 — Install core packages'
-/usr/bin/lua -E "$steps_dir/install-deps.lua" core "$@"
+luna_step '2/9 — Install core packages'
+/usr/bin/lua -E "$steps_dir/install-deps.lua" core
 
-# Step 3: core packages provide mise; tools are installed for the regular user.
-luna_step '3/12 — Install development tools with mise'
-/usr/bin/lua -E "$steps_dir/mise.lua" "$@"
+# Step 3: development tools are optional and must not block desktop setup.
+luna_step '3/9 — Install development tools with mise'
+if ! /usr/bin/lua -E "$steps_dir/mise.lua"; then
+    luna_warn 'Development tools setup failed; continuing.'
+fi
 
 # Step 4: prepare an AUR helper for main packages and fonts.
-luna_step '4/12 — Prepare the AUR helper'
-bash "$steps_dir/aur.sh"
+luna_step '4/9 — Prepare the AUR helper'
+if ! bash "$steps_dir/aur.sh"; then
+    luna_warn 'AUR helper setup failed; continuing.'
+fi
 
 # Step 5: install everyday apps and AUR packages. Extra remains opt-in.
-luna_step '5/12 — Install applications'
-/usr/bin/lua -E "$steps_dir/install-deps.lua" main "$@"
+luna_step '5/9 — Install applications'
+if ! /usr/bin/lua -E "$steps_dir/install-deps.lua" main; then
+    luna_warn 'Application setup failed; continuing.'
+fi
 
 # Step 6: install desktop fonts from official repositories and the AUR.
-luna_step '6/12 — Install fonts'
-/usr/bin/lua -E "$steps_dir/install-deps.lua" fonts "$@"
+luna_step '6/9 — Install fonts'
+if ! /usr/bin/lua -E "$steps_dir/install-deps.lua" fonts; then
+    luna_warn 'Font setup failed; continuing.'
+fi
 
 # Step 7: each Git app owns its dependencies, native build, and installation.
-luna_step '7/12 — Build and install Git apps'
-/usr/bin/lua -E "$steps_dir/git-apps.lua" "$@"
+luna_step '7/9 — Build and install Git apps'
+if ! /usr/bin/lua -E "$steps_dir/git-apps.lua"; then
+    luna_warn 'Git app setup failed; continuing.'
+fi
 
-# Step 8: service setup is best effort on systems where systemd is unavailable.
-luna_step '8/12 — Enable Docker'
-bash "$steps_dir/services.sh"
+# Step 8: expose source packages through whole-directory links.
+luna_step '8/9 — Link source directories'
+bash "$steps_dir/src.sh"
 
-# Step 9: deploy configuration, backing up existing conflicting paths.
-luna_step '9/12 — Link Hyprland configuration'
-bash "$steps_dir/config.sh" "$@"
-
-# Step 10: expose source packages through whole-directory links.
-luna_step '10/12 — Link source directories'
-bash "$steps_dir/src.sh" "$@"
-
-# Step 11: give shells a stable entry point independent of the checkout location.
-luna_step '11/12 — Install the Luna command'
-bash "$steps_dir/command.sh" "$@"
-
-# Step 12: keep optional hardware setup last among installation steps and ask for consent.
-luna_step '12/12 — Optional NVIDIA setup'
-bash "$steps_dir/nvidia.sh"
+# Step 9: give shells a stable entry point independent of the checkout location.
+luna_step '9/9 — Install the Luna command'
+bash "$steps_dir/command.sh"
 
 # Apply the completed configuration to an active session without another prompt.
 luna_step 'Apply Hyprland configuration'
-bash "$steps_dir/session.sh"
+if ! bash "$steps_dir/session.sh"; then
+    luna_warn 'Session reload failed; log out and back in to apply the configuration.'
+fi

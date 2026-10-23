@@ -4,10 +4,6 @@
 local script_dir = assert(arg[0]:match("^(.*)/"), "Run this script using its path")
 local common = dofile(script_dir .. "/../../lib/common.lua")
 common.setup_logging()
-local argparse = require("argparse")
-local parser = argparse("git-apps.lua", "Clone and install Luna's Git applications.")
-parser:flag("--force", "Accepted for setup compatibility; Git apps are always reinstalled")
-parser:parse()
 
 local function resolve(path, mode)
     local output, ok = common.capture({ "realpath", mode, "--", path }, true)
@@ -34,6 +30,29 @@ local function relative_script(value)
         end
     end
     return true
+end
+
+local function install_app(entry, source_dir, prefix)
+    local destination = source_dir .. "/" .. entry.name
+    common.step("Install Git app: " .. entry.name .. " (" .. entry.ref .. ")")
+    common.run({ "mkdir", "-p", "--", source_dir })
+    common.info("Replacing checkout: " .. destination)
+    common.run({ "rm", "-rf", "--", destination })
+    common.run({ "git", "clone", "--recurse-submodules", "--branch", entry.ref,
+        "--single-branch", "--", entry.url, destination })
+
+    local installer = resolve(destination .. "/" .. entry.script, "-e")
+    assert(inside(installer, resolve(destination, "-e")) and common.succeeds({ "test", "-f", installer }),
+        "App installer must be a file inside its checkout: " .. entry.name)
+
+    -- Positional arguments preserve spaces and shell metacharacters. Only
+    -- the app's installer decides which dependencies and build tools to use.
+    common.run({ "bash", "-c", 'cd -- "$1" && exec bash "$2" --prefix "$3" --non-interactive',
+        "luna-git-app", destination, installer, prefix })
+    local executable = prefix .. "/bin/" .. entry.executable
+    assert(common.succeeds({ "test", "-f", executable }) and common.succeeds({ "test", "-x", executable }),
+        "Git app did not install its executable: " .. executable)
+    common.success("Git app ready: " .. entry.name)
 end
 
 local function install()
@@ -96,28 +115,19 @@ local function install()
         executables[entry.executable] = true
     end
 
+    -- Apps are independent: finish the remaining installs before reporting an
+    -- incomplete group to setup.sh, which can still deploy the desktop.
+    local failures = 0
     for _, entry in ipairs(manifest) do
-        local destination = source_dir .. "/" .. entry.name
-        common.step("Install Git app: " .. entry.name .. " (" .. entry.ref .. ")")
-        common.run({ "mkdir", "-p", "--", source_dir })
-        common.info("Replacing checkout: " .. destination)
-        common.run({ "rm", "-rf", "--", destination })
-        common.run({ "git", "clone", "--recurse-submodules", "--branch", entry.ref,
-            "--single-branch", "--", entry.url, destination })
-
-        local installer = resolve(destination .. "/" .. entry.script, "-e")
-        assert(inside(installer, resolve(destination, "-e")) and common.succeeds({ "test", "-f", installer }),
-            "App installer must be a file inside its checkout: " .. entry.name)
-
-        -- Positional arguments preserve spaces and shell metacharacters. Only
-        -- the app's installer decides which dependencies and build tools to use.
-        common.run({ "bash", "-c", 'cd -- "$1" && exec bash "$2" --prefix "$3" --non-interactive',
-            "luna-git-app", destination, installer, prefix })
-        local executable = prefix .. "/bin/" .. entry.executable
-        assert(common.succeeds({ "test", "-f", executable }) and common.succeeds({ "test", "-x", executable }),
-            "Git app did not install its executable: " .. executable)
-        common.success("Git app ready: " .. entry.name)
+        local ok, error_message = pcall(install_app, entry, source_dir, prefix)
+        if not ok then
+            failures = failures + 1
+            local detail = tostring(error_message):gsub("^.-:%d+: ", "")
+            detail = detail:gsub("^(Command failed %b()):.*$", "%1")
+            common.warn("Git app failed: " .. entry.name .. ": " .. detail)
+        end
     end
+    assert(failures == 0, string.format("%d Git app%s failed", failures, failures == 1 and "" or "s"))
 end
 
 local ok, error_message = pcall(install)

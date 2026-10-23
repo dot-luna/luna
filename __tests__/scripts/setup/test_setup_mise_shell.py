@@ -8,7 +8,7 @@ import tempfile
 import unittest
 
 
-REPO = Path(__file__).resolve().parents[1]
+REPO = Path(__file__).resolve().parents[3]
 BLOCK_START = "# >>> Luna mise activation >>>"
 
 
@@ -56,23 +56,25 @@ fi
     def assert_success(self, result):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
-    def test_preserves_contents_permissions_and_backups_on_rerun(self):
+    def test_preserves_contents_permissions_and_old_backups_on_rerun(self):
         config = self.home / ".bashrc"
         original = "# Personal settings\nexport PERSONAL_SETTING='keep me'"
         config.write_text(original)
         config.chmod(0o640)
+        prior_backup = config.with_name(".bashrc.luna-backup")
+        prior_backup.write_text("User-created backup\n")
         self.assert_success(self.setup())
         self.assertTrue(config.read_text().startswith(original + "\n"))
         self.assertEqual(config.stat().st_mode & 0o777, 0o640)
-        self.assertEqual(config.with_name(".bashrc.luna-backup").read_text(), original)
+        self.assertEqual(prior_backup.read_text(), "User-created backup\n")
         installed = config.read_bytes()
-        self.assert_success(self.setup("--force"))
+        self.assert_success(self.setup())
         self.assertEqual(config.read_bytes(), installed)
         self.assertEqual(config.read_text().count(BLOCK_START), 1)
-        self.assertFalse(config.with_name(".bashrc.luna-backup.1").exists())
+        self.assertEqual(list(self.home.rglob("*.luna-backup*")), [prior_backup])
         self.assertFalse(self.log.exists())
 
-    def test_zdotdir_symlink_keeps_target_and_numbered_backup(self):
+    def test_zdotdir_symlink_keeps_target_without_creating_backups(self):
         self.env["SHELL"] = "/usr/bin/zsh"
         custom = self.root / "zsh config"
         custom.mkdir()
@@ -83,14 +85,14 @@ fi
         foreign.chmod(0o600)
         config = custom / ".zshrc"
         config.symlink_to(os.path.relpath(foreign, custom))
-        original_link = config.readlink()
         old_backup = config.with_name(".zshrc.luna-backup")
         old_backup.write_text("Earlier backup\n")
 
         self.assert_success(self.setup())
         self.assertFalse(config.is_symlink())
         self.assertEqual(config.stat().st_mode & 0o777, 0o600)
-        self.assertEqual(config.with_name(".zshrc.luna-backup.1").readlink(), original_link)
+        self.assertTrue(config.read_text().startswith(original))
+        self.assertEqual(list(custom.glob("*.luna-backup*")), [old_backup])
         self.assertEqual(old_backup.read_text(), "Earlier backup\n")
         self.assertEqual(foreign.read_text(), original)
         self.assertFalse((self.home / ".zshrc").exists())
@@ -153,7 +155,7 @@ fi
         self.assertIn("if status is-interactive; and command -q mise", config.read_text())
         self.assertIn("mise activate fish | source", config.read_text())
         self.assertEqual(config.read_text().count(BLOCK_START), 1)
-        self.assertEqual(config.with_name("config.fish.luna-backup").read_text(), original)
+        self.assertEqual(list(config.parent.glob("*.luna-backup*")), [])
         self.assertFalse((self.home / ".config/fish/config.fish").exists())
 
     def test_unsupported_shell_and_nonfile_startup_warn_without_changes(self):
@@ -172,13 +174,19 @@ fi
         self.assertIn("non-file startup path", result.stderr)
         self.assertEqual(personal.read_text(), "Keep me\n")
 
-    def test_missing_mise_and_help_do_not_modify_home(self):
+    def test_arguments_are_ignored_during_normal_shell_setup(self):
+        result = self.setup("--help", "-h", "--force", "--unknown", "main")
+        self.assert_success(result)
+        self.assertEqual((self.home / ".bashrc").read_text().count(BLOCK_START), 1)
+        self.assertFalse(self.log.exists())
+
+    def test_missing_mise_warns_and_skips_without_modifying_home(self):
         self.mise.unlink()
-        for arguments, expected in (((), 1), (("--help",), 0), (("--unknown",), 2)):
-            with self.subTest(arguments=arguments):
-                result = self.setup(*arguments)
-                self.assertEqual(result.returncode, expected, result.stdout + result.stderr)
-                self.assertEqual(list(self.home.iterdir()), [])
+        result = self.setup("--help", "-h", "--force", "--unknown", "main")
+        self.assert_success(result)
+        self.assertIn("mise", result.stderr)
+        self.assertIn("[WARN]", result.stderr)
+        self.assertEqual(list(self.home.iterdir()), [])
 
 
 if __name__ == "__main__":

@@ -5,22 +5,6 @@ set -euo pipefail
 script_path=$(readlink -f -- "${BASH_SOURCE[0]}")
 source "$(dirname -- "$script_path")/../../lib/common.sh"
 
-for option in "$@"; do
-    case "$option" in
-        --force)
-            # Setup forwards this flag; command conflicts are always backed up.
-            ;;
-        -h|--help)
-            printf 'Usage: %s [--force]\n\nLink Luna into ~/.local/bin and configure PATH for Bash, Zsh, or fish.\nExisting conflicts and changed shell startup files receive adjacent .luna-backup backups.\n--force is accepted for compatibility; backups are always made.\n' "${0##*/}"
-            exit 0
-            ;;
-        *)
-            luna_error "Unknown option: $option"
-            exit 2
-            ;;
-    esac
-done
-
 setup_dir=$(luna_script_dir "${BASH_SOURCE[0]}")
 repo_dir=$(dirname -- "$(dirname -- "$setup_dir")")
 command_source="$repo_dir/bin/luna"
@@ -33,7 +17,15 @@ fi
 
 mkdir -p -- "${command_target%/*}"
 if [[ ! -L "$command_target" || ! "$command_target" -ef "$command_source" ]]; then
-    luna_backup_path "$command_target"
+    # Resolve parent aliases without following the final link we will replace.
+    resolved_target="$(readlink -f -- "${command_target%/*}")/${command_target##*/}"
+    if [[ "$resolved_target" == "$repo_dir" || "$resolved_target" == "$repo_dir/"* \
+        || "$repo_dir" == "$resolved_target/"* ]]; then
+        luna_error "Command link would replace part of the checkout: $command_target. Choose a different install location."
+        exit 1
+    fi
+
+    rm -rf -- "$command_target"
     ln -s -- "$command_source" "$command_target"
 fi
 luna_success "Linked Luna command: $command_target"
@@ -70,8 +62,8 @@ if [[ -f "$shell_config" ]] && grep -Fxq -- "$block_start" "$shell_config"; then
     exit 0
 fi
 
-# Stage the complete replacement before moving the original to its backup. When
-# the startup file is a symlink, preserve that link without editing its target.
+# Stage existing content and mode before replacing the startup file atomically.
+# Replace a final symlink itself so its external target remains unchanged.
 mkdir -p -- "${shell_config%/*}"
 temporary_config=$(mktemp "${shell_config}.luna.XXXXXX")
 trap 'if [[ -n "${temporary_config:-}" ]]; then rm -f -- "$temporary_config"; fi' EXIT
@@ -95,8 +87,7 @@ PATH_BLOCK
     printf '%s\n' "$block_end"
 } >> "$temporary_config"
 
-luna_backup_path "$shell_config"
-mv -- "$temporary_config" "$shell_config"
+mv -fT -- "$temporary_config" "$shell_config"
 temporary_config=
 luna_success "Configured Luna PATH: $shell_config"
 luna_info 'Open a new terminal to use Luna, or run ~/.local/bin/luna now.'

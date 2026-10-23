@@ -94,8 +94,8 @@ main() {
     fi
 
     step '4/4 — Install Luna'
-    # Setup backs up and replaces config/source conflicts, then asks separately
-    # about NVIDIA drivers. Run from the checkout for a predictable cwd.
+    # Setup replaces source-link conflicts without backups.
+    # Run from the checkout for a predictable cwd.
     cd -- "$install_dir"
     bash "$install_dir/scripts/setup.sh"
 
@@ -171,20 +171,22 @@ update_checkout() {
         # Fetch explicitly so checkouts cloned with --single-branch can switch
         # to another branch. Only the remote-tracking ref may move backwards.
         run_tool git -C "$directory" fetch --quiet --no-tags origin "+refs/heads/$ref:refs/remotes/origin/$ref"
+
+        # Git otherwise overwrites ignored local files when a new ref tracks them.
         if git -C "$directory" show-ref --verify --quiet "refs/heads/$ref"; then
-            run_tool git -C "$directory" switch --quiet --no-guess "$ref" || fail 'Could not switch branches. Commit or stash conflicting changes and retry.'
+            run_tool git -C "$directory" switch --quiet --no-overwrite-ignore --no-guess "$ref" || fail 'Could not switch branches. Commit or stash conflicting changes and retry.'
         else
-            run_tool git -C "$directory" switch --quiet --no-track -c "$ref" "refs/remotes/origin/$ref" || fail 'Could not switch branches. Commit or stash conflicting changes and retry.'
+            run_tool git -C "$directory" switch --quiet --no-overwrite-ignore --no-track -c "$ref" "refs/remotes/origin/$ref" || fail 'Could not switch branches. Commit or stash conflicting changes and retry.'
         fi
 
-        # This is the merge half of a fast-forward-only pull. Disable automatic
-        # stashing so an install never hides edits or creates a conflicted stash.
-        run_tool git -C "$directory" -c merge.autoStash=false merge --quiet --ff-only "refs/remotes/origin/$ref" || fail 'Could not update the branch. Resolve conflicting edits or diverged commits and retry.'
+        # Explicit flags override branch merge options as well as global config,
+        # preserving ignored files and leaving conflicting edits in place.
+        run_tool git -C "$directory" merge --quiet --ff-only --no-autostash --no-overwrite-ignore "refs/remotes/origin/$ref" || fail 'Could not update the branch. Resolve conflicting edits or diverged commits and retry.'
     elif (( has_tag )); then
         # Refresh this tag even if its remote target changed; tags are checked
         # out detached and do not merge into or reset any local branch.
         run_tool git -C "$directory" fetch --quiet --no-tags origin "+refs/tags/$ref:refs/tags/$ref"
-        run_tool git -C "$directory" switch --quiet --detach "refs/tags/$ref" || fail 'Could not switch to the tag. Commit or stash conflicting changes and retry.'
+        run_tool git -C "$directory" switch --quiet --no-overwrite-ignore --detach "refs/tags/$ref" || fail 'Could not switch to the tag. Commit or stash conflicting changes and retry.'
     else
         fail "Branch or tag does not exist on origin: $ref"
     fi
@@ -425,10 +427,10 @@ check_system() {
         fi
     done
 
-    # curl owns stdin while streaming the script. Sudo and the NVIDIA question
-    # must read the user's terminal instead of consuming script text or EOF.
+    # curl owns stdin while streaming the script. Sudo must read the user's
+    # terminal instead of consuming script text or EOF.
     if ! { exec </dev/tty; } 2>/dev/null; then
-        fail 'Run this installer in an interactive terminal for sudo and NVIDIA confirmation.'
+        fail 'Run this installer in an interactive terminal for sudo authentication.'
     fi
 }
 

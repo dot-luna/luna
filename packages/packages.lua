@@ -24,8 +24,8 @@ return {
         { name = "mise", source = "pacman", purpose = "Manage development tools and runtime versions" },
         { name = "ripgrep", source = "pacman", purpose = "Search files from the terminal" },
 
-        -- Deploy configuration from this checkout into the user's home.
-        { name = "stow", source = "pacman", purpose = "Link repository configs into the home directory" },
+        -- Expose whole source directories while retaining checkout-relative paths.
+        { name = "stow", source = "pacman", purpose = "Link Luna source directories into ~/.local/src" },
 
         -- Font discovery, validation, and cache updates for the Luna font CLI.
         { name = "fontconfig", source = "pacman", purpose = "Provide fc-list, fc-scan, and fc-cache" },
@@ -65,7 +65,7 @@ return {
         { name = "upower", source = "pacman", purpose = "Battery and power information" },
         { name = "power-profiles-daemon", source = "pacman", purpose = "Provide powerprofilesctl and desktop power mode switching" },
 
-        -- Container runtime and Windows VM client; Docker is enabled separately.
+        -- Container runtime and Windows VM client.
         { name = "docker", source = "pacman", purpose = "Run containers and the Dockur Windows VM" },
         { name = "docker-compose", source = "pacman", purpose = "Manage container stacks with Docker Compose" },
         { name = "freerdp", source = "pacman", purpose = "Connect to the Windows VM over RDP" },

@@ -10,7 +10,7 @@ import tempfile
 import unittest
 
 
-REPO = Path(__file__).resolve().parents[1]
+REPO = Path(__file__).resolve().parents[3]
 LUA = Path("/usr/bin/lua")
 TOOLS = {"node": "lts", "bun": "latest", "pnpm": "latest", "python": "latest", "uv": "latest"}
 
@@ -18,8 +18,6 @@ TOOLS = {"node": "lts", "bun": "latest", "pnpm": "latest", "python": "latest", "
 @unittest.skipUnless(LUA.is_file(), "The system Lua runtime is required")
 class MiseSetupTests(unittest.TestCase):
     def setUp(self):
-        if subprocess.run([str(LUA), "-E", "-e", 'require("argparse")'], capture_output=True).returncode:
-            self.skipTest("Lua argparse is required")
         self.temporary = tempfile.TemporaryDirectory(prefix="luna mise '")
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
@@ -134,15 +132,6 @@ else:
         self.assertEqual(self.config.read_text(), original_config)
         self.assertIn("Fixture mise install output", result.stdout)
 
-    def test_force_is_forwarded_only_to_installation(self):
-        result = self.setup("--force")
-        self.assert_success(result)
-        records = self.records()
-        self.assertEqual(records[0]["args"], ["--cd", str(self.home), "use", "--global", "--yes", "--fuzzy",
-                                              "--force", "--", *[f"{name}@{version}" for name, version in TOOLS.items()]])
-        self.assertNotIn("--force", records[1]["args"])
-        self.assertEqual(records[2]["args"], [])
-
     def test_manifest_can_pin_selected_tool_versions(self):
         self.write_manifest(dict(name="node", source="mise", version="22.3.0"),
                             dict(name="python", source="mise", version="3.13"))
@@ -248,12 +237,14 @@ else:
                 finally:
                     hidden.rename(tool)
 
-    def test_help_and_bad_options_do_not_install(self):
-        result = self.setup("--help")
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("--force", result.stdout)
-        self.assert_failed(self.setup("--unknown"))
-        self.assertEqual(self.records(), [])
+    def test_arguments_are_ignored_without_forcing_mise_installation(self):
+        original = self.config.read_bytes()
+        result = self.setup("--help", "-h", "--force", "--unknown", "main")
+        self.assert_success(result)
+        self.assertEqual(self.records()[0]["args"], ["--cd", str(self.home), "use", "--global", "--yes", "--fuzzy",
+                                                     "--", *[f"{name}@{version}" for name, version in TOOLS.items()]])
+        self.assertEqual(self.records()[-1], {"tool": "activation.py", "args": []})
+        self.assertEqual(self.config.read_bytes(), original)
 
 
 if __name__ == "__main__":

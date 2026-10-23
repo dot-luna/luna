@@ -10,7 +10,7 @@ import tempfile
 import unittest
 
 
-REPO = Path(__file__).resolve().parents[1]
+REPO = Path(__file__).resolve().parents[3]
 
 
 class SetupNvidiaTests(unittest.TestCase):
@@ -108,24 +108,32 @@ elif tool == "mkinitcpio":
         self.assertIn("NVIDIA setup skipped", result.stdout)
         self.assertEqual(self.calls(), [])
 
-    def test_help_describes_gpu_and_kernel_scope_without_prompting(self):
-        result = self.setup("--help")
-        self.assertEqual(result.returncode, 0, result.stderr)
-        for expected in ("Turing", "standard Arch linux kernel", "nvidia-smi", "nvidia-settings"):
-            self.assertIn(expected, result.stdout)
-        self.assertNotIn("[y/N]", result.stdout)
+    def test_ignored_arguments_do_not_bypass_nvidia_consent(self):
+        result = self.setup("--help", "-h", "--force", "--yes", "main")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("[y/N]", result.stdout)
+        self.assertIn("NVIDIA setup skipped", result.stdout)
         self.assertEqual(self.calls(), [])
 
-    def test_unknown_arguments_fail_without_prompting(self):
-        result = self.setup("--yes")
-        self.assertNotEqual(result.returncode, 0)
-        self.assertEqual(self.calls(), [])
-
-    def test_unsupported_kernel_stops_before_privileged_operations(self):
+    def test_unsupported_kernel_warns_and_skips_before_privileged_operations(self):
         self.env["TEST_NVIDIA_KERNEL_STATUS"] = "1"
         result = self.setup(answer="yes\n")
-        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("standard Arch linux kernel", result.stderr)
+        self.assertIn("[WARN]", result.stderr)
+        self.assertEqual(self.calls(), [["pacman", "-Q", "linux"]])
+
+    @unittest.skipIf(os.geteuid() == 0, "Root does not require sudo")
+    def test_missing_sudo_warns_and_skips_before_privileged_operations(self):
+        # A closed PATH prevents this missing-helper case from finding the host sudo.
+        for name in ("bash", "readlink", "dirname"):
+            (self.bin / name).symlink_to(shutil.which(name))
+        (self.bin / "sudo").unlink()
+        self.env["PATH"] = str(self.bin)
+        result = self.setup(answer="yes\n")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("sudo is unavailable", result.stderr)
+        self.assertIn("[WARN]", result.stderr)
         self.assertEqual(self.calls(), [["pacman", "-Q", "linux"]])
 
     def test_package_failure_does_not_write_config_or_rebuild(self):

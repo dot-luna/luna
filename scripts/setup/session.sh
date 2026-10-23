@@ -5,15 +5,6 @@ set -euo pipefail
 script_path=$(readlink -f -- "${BASH_SOURCE[0]}")
 source "$(dirname -- "$script_path")/../../lib/common.sh"
 
-if [[ $# -gt 0 ]]; then
-    if [[ $# -eq 1 && ( "$1" == -h || "$1" == --help ) ]]; then
-        printf 'Usage: bash scripts/setup/session.sh\n\nReload configuration in the active Hyprland session when available.\nUnavailable sessions and reload failures do not stop installation.\n'
-        exit 0
-    fi
-    luna_error "Unknown option: $1"
-    exit 2
-fi
-
 if [[ -z "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]]; then
     luna_info 'No active Hyprland session; configuration reload skipped.'
     exit 0

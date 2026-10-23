@@ -9,3 +9,10 @@ layout; keep the rest of the existing `tests/` files in place.
 
 Keep user-facing logs concise: useful progress, actionable errors, and next steps.
 Omit routine implementation metadata and long explanatory paragraphs.
+
+Internal setup scripts ignore extra arguments and continue past noncritical
+failures. Optional steps should warn and skip; essential dependencies and required
+file operations must succeed.
+
+Setup does not create automatic backups. Tell users to back up files they want
+to keep before installation.

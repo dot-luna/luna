@@ -1,18 +1,10 @@
 #!/usr/bin/env bash
 # Install NVIDIA's open driver for a supported GPU on Arch's standard linux kernel.
-# Offered last by setup.sh or run directly; installation always requires consent.
+# Run directly when needed; installation always requires consent.
 set -euo pipefail
 
 script_path=$(readlink -f -- "${BASH_SOURCE[0]}")
 source "$(dirname -- "$script_path")/../../lib/common.sh"
-
-if [[ $# -gt 0 ]]; then
-    printf 'Usage: bash scripts/setup/nvidia.sh\n\nOptionally install nvidia-open, nvidia-utils (including nvidia-smi), and nvidia-settings,\nthen rebuild initramfs. Requires the standard Arch linux kernel and a Turing or newer\nNVIDIA GPU. Prompts before changing the system; reboot after installation.\n'
-    if [[ $# -eq 1 && ( "$1" == -h || "$1" == --help ) ]]; then
-        exit 0
-    fi
-    exit 1
-fi
 
 luna_info 'Optional NVIDIA setup: nvidia-open, nvidia-smi, and nvidia-settings.'
 luna_info 'Supported hardware: Turing or newer NVIDIA GPUs using the standard Arch linux kernel.'
@@ -25,16 +17,16 @@ if ! luna_confirm 'Install NVIDIA drivers and tools now?' 'n'; then
 fi
 
 pacman -Q linux >/dev/null 2>&1 || {
-    luna_error 'This script requires the standard Arch linux kernel. Other kernels need a matching NVIDIA package.'
-    exit 1
+    luna_warn 'NVIDIA setup skipped: the standard Arch linux kernel is required.'
+    exit 0
 }
 
 # Terminal sudo works during bootstrap before a graphical polkit agent is running.
 privilege=()
 if [[ $EUID -ne 0 ]]; then
     if ! luna_available sudo; then
-        luna_error 'NVIDIA setup requires sudo. Install it or run this script as root.'
-        exit 1
+        luna_warn 'NVIDIA setup skipped: sudo is unavailable.'
+        exit 0
     fi
     privilege=(sudo)
 fi

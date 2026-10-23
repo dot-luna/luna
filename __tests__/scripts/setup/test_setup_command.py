@@ -8,7 +8,7 @@ import tempfile
 import unittest
 
 
-REPO = Path(__file__).resolve().parents[1]
+REPO = Path(__file__).resolve().parents[3]
 BLOCK_START = "# >>> Luna command PATH >>>"
 
 
@@ -44,33 +44,35 @@ class SetupCommandTests(unittest.TestCase):
         self.assertEqual(self.target.resolve(), self.launcher)
 
     def test_fresh_setup_and_rerun_do_not_duplicate_config_or_backups(self):
-        for arguments in ((), ("--force",)):
-            self.assert_success(self.setup(*arguments))
+        for _ in range(2):
+            self.assert_success(self.setup())
         config = self.home / ".bashrc"
         self.assertEqual(config.read_text().count(BLOCK_START), 1)
         self.assertEqual(list(self.home.rglob("*.luna-backup*")), [])
 
-    def test_existing_shell_config_is_preserved_and_backed_up_once(self):
+    def test_existing_shell_config_is_preserved_without_new_backups(self):
         config = self.home / ".bashrc"
         original = "# Personal settings\nexport PERSONAL_SETTING='keep me'"
         config.write_text(original)
         config.chmod(0o640)
+        prior_backup = config.with_name(".bashrc.luna-backup")
+        prior_backup.write_text("User-created backup\n")
         self.assert_success(self.setup())
         self.assertTrue(config.read_text().startswith(original + "\n"))
-        self.assertEqual(config.with_name(".bashrc.luna-backup").read_text(), original)
+        self.assertEqual(prior_backup.read_text(), "User-created backup\n")
         self.assertEqual(config.stat().st_mode & 0o777, 0o640)
         installed = config.read_bytes()
         self.assert_success(self.setup())
         self.assertEqual(config.read_bytes(), installed)
-        self.assertFalse(config.with_name(".bashrc.luna-backup.1").exists())
+        self.assertEqual(list(self.home.rglob("*.luna-backup*")), [prior_backup])
 
-    def test_command_conflicts_receive_numbered_backups(self):
+    def test_command_conflicts_are_replaced_without_new_backups(self):
         self.target.parent.mkdir(parents=True)
         first_backup = self.target.with_name("luna.luna-backup")
         first_backup.symlink_to("previous-missing-target")
         foreign = self.root / "foreign"
         foreign.write_text("Foreign launcher\n")
-        for index, kind in enumerate(("file", "directory", "symlink", "dangling"), start=1):
+        for kind in ("file", "directory", "symlink", "dangling"):
             with self.subTest(kind=kind):
                 if self.target.is_symlink():
                     self.target.unlink()
@@ -82,18 +84,40 @@ class SetupCommandTests(unittest.TestCase):
                 else:
                     destination = foreign if kind == "symlink" else self.root / "missing"
                     self.target.symlink_to(os.path.relpath(destination, self.target.parent))
-                    original_link = self.target.readlink()
 
                 self.assert_success(self.setup())
-                backup = self.target.with_name(f"luna.luna-backup.{index}")
-                if kind == "file":
-                    self.assertEqual(backup.read_text(), "Personal launcher\n")
-                elif kind == "directory":
-                    self.assertEqual((backup / "keep").read_text(), "Personal directory\n")
-                else:
-                    self.assertEqual(backup.readlink(), original_link)
+                self.assertEqual(list(self.home.rglob("*.luna-backup*")), [first_backup])
         self.assertEqual(first_backup.readlink(), Path("previous-missing-target"))
         self.assertEqual(foreign.read_text(), "Foreign launcher\n")
+
+    def test_checkout_inside_command_target_is_preserved(self):
+        self.target.parent.mkdir(parents=True)
+        destination = self.target / "checkout"
+        destination.parent.mkdir()
+        self.checkout.rename(destination)
+        self.checkout = destination
+        self.launcher = self.checkout / "bin/luna"
+
+        result = self.setup()
+
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("checkout", result.stderr)
+        self.assertTrue(self.launcher.is_file())
+        self.assertTrue((self.checkout / "scripts/setup/command.sh").is_file())
+        self.assertFalse((self.home / ".bashrc").exists())
+
+    def test_command_target_aliasing_checkout_bin_is_preserved(self):
+        self.target.parent.parent.mkdir(parents=True)
+        self.target.parent.symlink_to(self.checkout / "bin")
+        original = self.launcher.read_bytes()
+
+        result = self.setup()
+
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("checkout", result.stderr)
+        self.assertFalse(self.launcher.is_symlink())
+        self.assertEqual(self.launcher.read_bytes(), original)
+        self.assertFalse((self.home / ".bashrc").exists())
 
     def test_zdotdir_symlink_config_keeps_original_target_unchanged(self):
         self.env["SHELL"] = "/usr/bin/zsh"
@@ -104,11 +128,11 @@ class SetupCommandTests(unittest.TestCase):
         foreign.write_text("# Personal Zsh configuration\n")
         config = custom / ".zshrc"
         config.symlink_to(os.path.relpath(foreign, custom))
-        original_link = config.readlink()
         self.assert_success(self.setup())
         self.assertFalse(config.is_symlink())
         self.assertIn(BLOCK_START, config.read_text())
-        self.assertEqual(config.with_name(".zshrc.luna-backup").readlink(), original_link)
+        self.assertTrue(config.read_text().startswith("# Personal Zsh configuration\n"))
+        self.assertEqual(list(custom.glob("*.luna-backup*")), [])
         self.assertEqual(foreign.read_text(), "# Personal Zsh configuration\n")
         self.assertFalse((self.home / ".zshrc").exists())
 
@@ -163,12 +187,11 @@ class SetupCommandTests(unittest.TestCase):
         self.assertIn("non-file startup path", result.stdout + result.stderr)
         self.assertEqual(personal.read_text(), "Keep me\n")
 
-    def test_help_and_invalid_options_do_not_modify_home(self):
-        for arguments, expected in ((("--help",), 0), (("--unknown",), 2)):
-            with self.subTest(arguments=arguments):
-                result = self.setup(*arguments)
-                self.assertEqual(result.returncode, expected, result.stdout + result.stderr)
-                self.assertEqual(list(self.home.iterdir()), [])
+    def test_arguments_are_ignored_during_normal_command_setup(self):
+        result = self.setup("--help", "-h", "--force", "--unknown", "main")
+        self.assert_success(result)
+        self.assertEqual((self.home / ".bashrc").read_text().count(BLOCK_START), 1)
+        self.assertEqual(list(self.home.rglob("*.luna-backup*")), [])
 
 
 if __name__ == "__main__":
