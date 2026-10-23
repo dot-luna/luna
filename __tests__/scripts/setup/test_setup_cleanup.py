@@ -57,11 +57,18 @@ elif args == ["-Qqe"]:
         sys.exit(23)
     print(os.environ.get("TEST_EXPLICIT", "dolphin\\npersonal-editor"))
 elif args[:3] == ["-R", "--noconfirm", "--"]:
-    assert "nautilus" in state, "Removal ran without Nautilus installed"
     selected = args[3:]
-    assert selected and selected[0] == "dolphin", args
-    if os.environ.get("TEST_REMOVE_FAIL") or (len(selected) > 1 and os.environ.get("TEST_SHARED_DEPENDENCY")):
-        sys.exit(24)
+    assert selected, args
+    if selected[0] == "dolphin":
+        assert "nautilus" in state, "Removal ran without Nautilus installed"
+        if os.environ.get("TEST_REMOVE_FAIL") or (len(selected) > 1 and os.environ.get("TEST_SHARED_DEPENDENCY")):
+            sys.exit(24)
+    else:
+        assert "gnome-keyring" in state, "Wallet removal ran without GNOME Keyring installed"
+        assert set(selected) <= {"kwallet", "kwallet-pam", "kwalletmanager"}, args
+        assert set(selected) <= set(state), "Removal included an absent package"
+        if os.environ.get("TEST_WALLET_FAIL") or os.environ.get("TEST_WALLET_DEPENDENCY"):
+            sys.exit(25)
     state_file.write_text(json.dumps([name for name in state if name not in selected]))
 else:
     sys.exit("Unexpected package operation: " + repr(args))
@@ -76,7 +83,7 @@ else:
         self.env = dict(os.environ, HOME=str(self.home), PATH=str(self.bin),
                         TEST_PACKAGE_ROOT=str(self.root), BASH_ENV="", NO_COLOR="1")
         for name in ("TEST_PLAN_FAIL", "TEST_CANDIDATES", "TEST_EXPLICIT", "TEST_EXPLICIT_FAIL",
-                     "TEST_REMOVE_FAIL", "TEST_SHARED_DEPENDENCY"):
+                     "TEST_REMOVE_FAIL", "TEST_SHARED_DEPENDENCY", "TEST_WALLET_FAIL", "TEST_WALLET_DEPENDENCY"):
             self.env.pop(name, None)
 
     def setup(self, *arguments, entry=None):
@@ -100,7 +107,8 @@ else:
         self.state.write_text(json.dumps(["nautilus"]))
         self.assert_success(self.setup())
         self.assertEqual(self.calls("sudo"), [])
-        self.assertEqual(self.calls(), [["-Qq", "--", "nautilus"], ["-Qq", "--", "dolphin"]])
+        self.assertEqual(self.calls(), [["-Qq", "--", "nautilus"], ["-Qq", "--", "dolphin"],
+                                       ["-Qq", "--", "gnome-keyring"]])
 
     def test_cleanup_protects_manifest_explicit_packages_and_personal_data(self):
         packages = ["dolphin", "unused-kde-library", "ripgrep", "polkit-kde-agent", "qt6-svg", "personal-editor"]
@@ -134,7 +142,7 @@ else:
         result = self.setup()
         self.assert_success(result)
         self.assertIn("Nautilus is not installed; keeping Dolphin", result.stderr)
-        self.assertEqual(self.calls(), [["-Qq", "--", "nautilus"]])
+        self.assertEqual(self.calls(), [["-Qq", "--", "nautilus"], ["-Qq", "--", "gnome-keyring"]])
         self.assertEqual(self.calls("sudo"), [])
         self.assertEqual(json.loads(self.state.read_text()), ["dolphin"])
 
@@ -203,6 +211,87 @@ else:
         entry.symlink_to(self.checkout / "scripts/setup/cleanup.sh")
         self.assert_success(self.setup(entry=entry))
         self.assertEqual(self.removals(), [["-R", "--noconfirm", "--", "dolphin"]])
+
+    def test_wallet_removal_is_independent_and_preserves_data_and_other_packages(self):
+        wallets = ["kwallet", "kwallet-pam", "kwalletmanager"]
+        preserved = ["gnome-keyring", "dolphin", "qtkeychain-qt6", "qt6-base", "personal-editor"]
+        self.state.write_text(json.dumps([*preserved, *wallets]))
+        config = self.home / ".config/kwalletrc"
+        config.parent.mkdir()
+        config.write_bytes(b"[Wallet]\nEnabled=true\n")
+        data = self.home / ".local/share/kwalletd/kdewallet.kwl"
+        data.parent.mkdir(parents=True)
+        data.write_bytes(b"personal encrypted wallet")
+
+        result = self.setup()
+        self.assert_success(result)
+        self.assertIn("Nautilus is not installed", result.stderr)
+        self.assertIn("KDE Wallet packages removed", result.stdout)
+        self.assertEqual(self.removals(), [["-R", "--noconfirm", "--", *wallets]])
+        self.assertEqual(json.loads(self.state.read_text()), preserved)
+        self.assertEqual(config.read_bytes(), b"[Wallet]\nEnabled=true\n")
+        self.assertEqual(data.read_bytes(), b"personal encrypted wallet")
+        self.assertFalse(any(call[0] in ("-Rs", "-Qqe") for call in self.calls()))
+        previous = self.calls("sudo")
+        self.assert_success(self.setup())
+        self.assertEqual(self.calls("sudo"), previous)
+
+    def test_missing_keyring_keeps_wallets_even_in_dolphin_dependency_plan(self):
+        self.state.write_text(json.dumps(["nautilus", "dolphin", "kwallet", "kwallet-pam", "kwalletmanager"]))
+        self.env["TEST_CANDIDATES"] = "dolphin\nkwallet\nkwallet-pam\nkwalletmanager"
+        result = self.setup()
+        self.assert_success(result)
+        self.assertIn("GNOME Keyring is not installed", result.stderr)
+        self.assertEqual(self.removals(), [["-R", "--noconfirm", "--", "dolphin"]])
+        self.assertEqual(set(json.loads(self.state.read_text())),
+                         {"nautilus", "kwallet", "kwallet-pam", "kwalletmanager"})
+
+    def test_wallet_cleanup_protects_manifest_targets_and_ignores_absent_packages(self):
+        self.state.write_text(json.dumps(["gnome-keyring", "kwallet", "kwalletmanager"]))
+        manifest = self.checkout / "packages/packages.lua"
+        manifest.write_text('return { core = { {name="gnome-keyring"}, {name="kwallet"} } }\n')
+        result = self.setup()
+        self.assert_success(result)
+        self.assertIn("Keeping kwallet: it is declared", result.stderr)
+        self.assertEqual(self.removals(), [["-R", "--noconfirm", "--", "kwalletmanager"]])
+        self.assertEqual(json.loads(self.state.read_text()), ["gnome-keyring", "kwallet"])
+
+    def test_wallet_failures_keep_packages_without_force_and_do_not_abort_dolphin_cleanup(self):
+        for failure in ("TEST_WALLET_FAIL", "TEST_WALLET_DEPENDENCY"):
+            with self.subTest(failure=failure):
+                self.log.unlink(missing_ok=True)
+                self.state.write_text(json.dumps(["nautilus", "dolphin", "gnome-keyring", "kwallet", "kwallet-pam"]))
+                self.env["TEST_CANDIDATES"] = "dolphin"
+                self.env[failure] = "1"
+                result = self.setup()
+                self.assert_success(result)
+                self.assertIn("Dolphin removed", result.stdout)
+                self.assertIn("KDE Wallet removal failed", result.stderr)
+                self.assertNotIn("KDE Wallet packages removed", result.stdout)
+                self.assertEqual(self.removals(), [["-R", "--noconfirm", "--", "dolphin"],
+                                                  ["-R", "--noconfirm", "--", "kwallet", "kwallet-pam"]])
+                self.assertEqual(set(json.loads(self.state.read_text())),
+                                 {"nautilus", "gnome-keyring", "kwallet", "kwallet-pam"})
+                self.env.pop(failure)
+
+    def test_dolphin_failure_does_not_prevent_wallet_cleanup(self):
+        self.state.write_text(json.dumps(["nautilus", "dolphin", "gnome-keyring", "kwallet"]))
+        self.env["TEST_CANDIDATES"] = "dolphin"
+        self.env["TEST_REMOVE_FAIL"] = "1"
+        result = self.setup()
+        self.assert_success(result)
+        self.assertIn("Dolphin removal failed", result.stderr)
+        self.assertIn("KDE Wallet packages removed", result.stdout)
+        self.assertEqual(set(json.loads(self.state.read_text())), {"nautilus", "dolphin", "gnome-keyring"})
+
+    def test_missing_manifest_keeps_wallet_targets(self):
+        self.state.write_text(json.dumps(["gnome-keyring", "kwallet"]))
+        (self.checkout / "packages/packages.lua").unlink()
+        result = self.setup()
+        self.assert_success(result)
+        self.assertIn("Could not verify Luna package requirements", result.stderr)
+        self.assertEqual(self.removals(), [])
+        self.assertEqual(json.loads(self.state.read_text()), ["gnome-keyring", "kwallet"])
 
 
 if __name__ == "__main__":

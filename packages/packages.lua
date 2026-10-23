@@ -52,6 +52,10 @@ return {
         { name = "polkit", source = "pacman", purpose = "Desktop authorization backend; also needs an authentication agent" },
         { name = "polkit-kde-agent", source = "pacman", purpose = "Administrator password dialogs" },
 
+        -- Store application credentials through the desktop Secret Service.
+        { name = "gnome-keyring", source = "pacman", purpose = "Store application passwords and provide Secret Service" },
+        { name = "libsecret", source = "pacman", purpose = "Access stored secrets from applications and secret-tool" },
+
         -- Audio service, compatibility layers, and device session management.
         { name = "pipewire", source = "pacman", purpose = "Audio and video service" },
         { name = "pipewire-audio", source = "pacman", purpose = "PipeWire audio support" },
@@ -95,6 +99,7 @@ return {
         { name = "xdg-terminal-exec", source = "pacman", purpose = "Run commands in the preferred terminal" },
         { name = "starship", source = "pacman", purpose = "Customizable shell prompt" },
         { name = "zsh", source = "pacman", purpose = "Interactive shell" },
+        { name = "seahorse", source = "pacman", purpose = "Manage stored passwords and keyrings graphically" },
 
         -- Interactive suggestions, completion, navigation, and file previews.
         { name = "zsh-autosuggestions", source = "pacman", purpose = "Suggest commands from shell history" },

@@ -16,28 +16,9 @@ for dependency in pacman sudo; do
     fi
 done
 
-# Package installation belongs to the manifest. Keep a usable file manager when
-# an earlier package step was skipped or failed; plan against the current graph.
-if ! pacman -Qq -- nautilus >/dev/null 2>&1; then
-    luna_warn 'Application cleanup skipped: Nautilus is not installed; keeping Dolphin.'
-    exit 0
-fi
-if ! pacman -Qq -- dolphin >/dev/null 2>&1; then
-    luna_success 'No replaced applications need cleanup.'
-    exit 0
-fi
-
-luna_warn 'Back up files you want to keep before package removals; Luna does not create backups.'
-
-# Build a bounded removal list. Recursive planning may include Luna requirements
-# installed as dependencies, so protect manifest entries and explicit installs.
-plan_dolphin_removal() {
-    local candidates explicit_packages manifest_packages package
-    local -A protected=() selected=([dolphin]=1)
-
-    candidates=$(pacman -Rs --print --print-format '%n' -- dolphin 2>/dev/null) || return 1
-    explicit_packages=$(pacman -Qqe 2>/dev/null) || return 1
-    manifest_packages=$(/usr/bin/lua -E - "$repo_dir/packages/packages.lua" 2>/dev/null <<'LUA'
+# Both cleanup passes protect packages still declared by Luna's manifest.
+manifest_packages() {
+    /usr/bin/lua -E - "$repo_dir/packages/packages.lua" 2>/dev/null <<'LUA'
 local manifest = dofile(arg[1])
 assert(type(manifest) == "table" and type(manifest.core) == "table")
 local count = 0
@@ -51,13 +32,26 @@ for _, group in pairs(manifest) do
 end
 assert(count > 0)
 LUA
-    ) || return 1
+}
+
+# Build a bounded removal list. Recursive planning may include Luna requirements
+# installed as dependencies, so protect manifest entries and explicit installs.
+plan_dolphin_removal() {
+    local candidates explicit_packages declared_packages package
+
+    # Wallet replacement has its own readiness gate, even when Dolphin's
+    # recursive plan happens to include one of these dependency packages.
+    local -A protected=([kwallet]=1 [kwallet-pam]=1 [kwalletmanager]=1) selected=([dolphin]=1)
+
+    candidates=$(pacman -Rs --print --print-format '%n' -- dolphin 2>/dev/null) || return 1
+    explicit_packages=$(pacman -Qqe 2>/dev/null) || return 1
+    declared_packages=$(manifest_packages) || return 1
 
     while IFS= read -r package; do
         [[ -n "$package" ]] || continue
         [[ "$package" =~ ^[a-zA-Z0-9@_+][a-zA-Z0-9@._+-]*$ ]] || return 1
         protected[$package]=1
-    done <<< "$manifest_packages"$'\n'"$explicit_packages"
+    done <<< "$declared_packages"$'\n'"$explicit_packages"
 
     while IFS= read -r package; do
         [[ -n "$package" ]] || continue
@@ -69,23 +63,81 @@ LUA
     done <<< "$candidates"
 }
 
-removal=(dolphin)
-if ! plan_dolphin_removal; then
-    removal=(dolphin)
-    luna_warn 'Could not verify unused dependencies; removing Dolphin only.'
-fi
+cleanup_dolphin() {
+    # Each replacement is independent: a skipped package step must leave that
+    # application's previous provider available without blocking other cleanup.
+    if ! pacman -Qq -- nautilus >/dev/null 2>&1; then
+        luna_warn 'Nautilus is not installed; keeping Dolphin.'
+        return
+    fi
+    if ! pacman -Qq -- dolphin >/dev/null 2>&1; then
+        return
+    fi
 
-# Plain -R checks remaining reverse dependencies. Never cascade or remove orphans
-# globally; a protected package's dependency can make the larger list unsuitable.
-if ! luna_run sudo pacman -R --noconfirm -- "${removal[@]}"; then
-    if (( ${#removal[@]} <= 1 )); then
-        luna_warn 'Dolphin removal failed; Nautilus is installed. Remove Dolphin manually if desired.'
-        exit 0
+    luna_warn 'Back up files you want to keep before package removals; Luna does not create backups.'
+    local -a removal=(dolphin)
+    if ! plan_dolphin_removal; then
+        removal=(dolphin)
+        luna_warn 'Could not verify unused dependencies; removing Dolphin only.'
     fi
-    luna_warn 'Dependency cleanup failed; retrying Dolphin removal alone.'
-    if ! luna_run sudo pacman -R --noconfirm -- dolphin; then
-        luna_warn 'Dolphin removal failed; Nautilus is installed. Remove Dolphin manually if desired.'
-        exit 0
+
+    # Plain -R checks remaining reverse dependencies. Never cascade or remove
+    # orphans globally; a protected dependency can make the larger list unsuitable.
+    if ! luna_run sudo pacman -R --noconfirm -- "${removal[@]}"; then
+        if (( ${#removal[@]} <= 1 )); then
+            luna_warn 'Dolphin removal failed; Nautilus is installed. Remove Dolphin manually if desired.'
+            return
+        fi
+        luna_warn 'Dependency cleanup failed; retrying Dolphin removal alone.'
+        if ! luna_run sudo pacman -R --noconfirm -- dolphin; then
+            luna_warn 'Dolphin removal failed; Nautilus is installed. Remove Dolphin manually if desired.'
+            return
+        fi
     fi
-fi
-luna_success 'Dolphin removed; Nautilus is ready.'
+    luna_success 'Dolphin removed; Nautilus is ready.'
+}
+
+cleanup_wallets() {
+    if ! pacman -Qq -- gnome-keyring >/dev/null 2>&1; then
+        luna_warn 'GNOME Keyring is not installed; keeping KDE Wallet packages.'
+        return
+    fi
+
+    local package declared_packages
+    local -a installed=() removal=()
+    local -A protected=()
+    for package in kwallet kwallet-pam kwalletmanager; do
+        if pacman -Qq -- "$package" >/dev/null 2>&1; then
+            installed+=("$package")
+        fi
+    done
+    (( ${#installed[@]} > 0 )) || return 0
+    if ! declared_packages=$(manifest_packages); then
+        luna_warn 'Could not verify Luna package requirements; keeping KDE Wallet packages.'
+        return
+    fi
+    while IFS= read -r package; do
+        [[ -n "$package" ]] || continue
+        protected[$package]=1
+    done <<< "$declared_packages"
+    for package in "${installed[@]}"; do
+        if [[ -n "${protected[$package]+set}" ]]; then
+            luna_warn "Keeping $package: it is declared in Luna's package manifest."
+        else
+            removal+=("$package")
+        fi
+    done
+    (( ${#removal[@]} > 0 )) || return 0
+
+    # Remove only the named replacements. Pacman retains shared dependencies and
+    # rejects any remaining reverse dependency; personal wallets are never touched.
+    luna_warn 'Back up files you want to keep before package removals; Luna does not create backups.'
+    if ! luna_run sudo pacman -R --noconfirm -- "${removal[@]}"; then
+        luna_warn "KDE Wallet removal failed; keeping the packages. Check pacman's error before retrying."
+        return
+    fi
+    luna_success 'KDE Wallet packages removed; GNOME Keyring is installed.'
+}
+
+cleanup_dolphin
+cleanup_wallets
