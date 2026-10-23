@@ -237,6 +237,7 @@ ShellRoot {
         { name: "Remove", icon: "trash", route: "remove" },
         { name: "About", icon: "info" },
         { name: "System", icon: "power", route: "system" },
+        { name: "Stay awake", awakeToggle: true, icon: "coffee", parent: "system", parentLabel: "System", keywords: ["caffeine", "idle", "sleep", "keep awake"] },
         { name: "Screensaver", action: "screensaver", icon: "monitor", parent: "system", parentLabel: "System" },
         { name: "Lock", action: "lock", icon: "lock", parent: "system", parentLabel: "System" },
         { name: "Suspend", action: "suspend", icon: "moon", parent: "system", parentLabel: "System" },
@@ -356,6 +357,13 @@ ShellRoot {
         }
         if (!entry)
             return;
+        if (entry.awakeToggle) {
+            if (!Luna.StayAwake.ready || Luna.StayAwake.busy)
+                return;
+            systemMessage = "";
+            Luna.StayAwake.toggle();
+            return;
+        }
         if (entry.record) {
             if (recordingAction.running)
                 return;
@@ -433,8 +441,16 @@ ShellRoot {
         search.text = "";
         shell.selectionView.currentIndex = matches.length ? 0 : -1;
         clipboardTarget = "";
+        Luna.StayAwake.refresh();
         if (!clipboardTargetProcess.running)
             clipboardTargetProcess.running = true;
+    }
+
+    Timer {
+        interval: 2000
+        running: panel.visible
+        repeat: true
+        onTriggered: Luna.StayAwake.refresh()
     }
 
     // Serialize remote lookups and discard stale responses as the query or route changes.
@@ -962,8 +978,8 @@ ShellRoot {
 
                     Label {
                         Layout.fillWidth: true
-                        visible: shell.systemMessage.length > 0
-                        text: shell.systemMessage
+                        visible: text.length > 0
+                        text: shell.systemMessage || Luna.StayAwake.error
                         wrapMode: Text.Wrap
                         color: Luna.Theme.foreground
                         font.family: shell.uiFont
@@ -1181,9 +1197,13 @@ ShellRoot {
                             readonly property bool applicationEntry: typeof modelData.execute === "function"
 
                             Accessible.name: modelData.keybinding ? [modelData.name, modelData.shortcut, modelData.context].filter(Boolean).join(", ") : modelData.name
-                            ToolTip.visible: hovered && (!!modelData.targets || !!modelData.keybinding)
-                            ToolTip.text: modelData.keybinding ? [modelData.name, modelData.shortcut, modelData.context].filter(Boolean).join("\n") : modelData.description || ""
-                            Accessible.role: Accessible.ListItem
+                            ToolTip.visible: hovered && (!!modelData.targets || !!modelData.keybinding || !!modelData.awakeToggle)
+                            ToolTip.text: modelData.awakeToggle ? Luna.StayAwake.error || "Temporarily pause automatic screensaver and locking."
+                                : modelData.keybinding ? [modelData.name, modelData.shortcut, modelData.context].filter(Boolean).join("\n") : modelData.description || ""
+                            Accessible.role: modelData.awakeToggle ? Accessible.CheckBox : Accessible.ListItem
+                            Accessible.checkable: !!modelData.awakeToggle
+                            Accessible.checked: !!modelData.awakeToggle && Luna.StayAwake.enabled
+                            enabled: !modelData.awakeToggle || (Luna.StayAwake.ready && !Luna.StayAwake.busy)
                             focusPolicy: Qt.NoFocus
                             height: 48 * shell.textScale
                             // Overlay the slim scrollbar instead of reserving a right-only gutter.
@@ -1287,12 +1307,37 @@ ShellRoot {
                                     font.pointSize: Math.max(1, shell.textSize - 1)
                                     textFormat: Text.PlainText
                                 }
+                                Label {
+                                    visible: !!result.modelData.awakeToggle
+                                    text: Luna.StayAwake.busy ? "Updating…" : !Luna.StayAwake.ready ? "Unavailable" : Luna.StayAwake.enabled ? "On" : "Off"
+                                    color: result.selected ? Luna.Theme.selectionForeground : Luna.Theme.foreground
+                                    opacity: 0.65
+                                    font.family: shell.uiFont
+                                    font.pointSize: Math.max(1, shell.textSize - 1)
+                                }
+                                Rectangle {
+                                    visible: !!result.modelData.awakeToggle
+                                    Layout.preferredWidth: 30
+                                    Layout.preferredHeight: 18
+                                    radius: height / 2
+                                    color: Luna.StayAwake.enabled ? Luna.Theme.accent : Luna.Theme.muted
+                                    opacity: result.enabled ? 1 : 0.5
+
+                                    Rectangle {
+                                        width: 12
+                                        height: 12
+                                        radius: height / 2
+                                        x: Luna.StayAwake.enabled ? 15 : 3
+                                        y: 3
+                                        color: Luna.StayAwake.enabled ? Luna.Theme.accentForeground : Luna.Theme.foreground
+                                    }
+                                }
                                 Luna.Icon {
                                     Layout.preferredWidth: 14
                                     Layout.preferredHeight: 14
                                     name: "chevron-right"
                                     ink: Luna.Theme.selectionForeground
-                                    visible: !shell.insertView && !result.modelData.keybinding && result.selected && !result.applicationEntry && !result.modelData.repository && !result.modelData.family && !result.modelData.action && !result.modelData.capture && !result.modelData.idleSetting
+                                    visible: !shell.insertView && !result.modelData.keybinding && result.selected && !result.applicationEntry && !result.modelData.repository && !result.modelData.family && !result.modelData.action && !result.modelData.capture && !result.modelData.idleSetting && !result.modelData.awakeToggle
                                 }
                             }
                             onClicked: {

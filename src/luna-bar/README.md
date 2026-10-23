@@ -25,6 +25,7 @@ The 320px-wide control center uses a compact two-column tile grid with 44px-high
 - Bluetooth details support radio control, connecting/disconnecting paired devices, battery levels when reported, discovery, and pairing/canceling nearby devices. Luna's BlueZ agent presents PIN/passkey entry and confirmation dialogs. Requests require an explicit response and close on cancellation, timeout, or device disappearance. Scans started by the panel stop when leaving it.
 - Sound details select PipeWire output/input devices and control volume and microphone mute/level.
 - Power details show battery charge, charging state, remaining time when reported, and available power profiles. Profile controls require a working `powerprofilesctl` and power-profiles service.
+- Stay awake pauses automatic screensaver and locking without changing their timers. The coffee tile highlights while enabled and stays in sync with System → Stay awake in the Luna menu and `luna awake on|off|toggle`. Manual lock and sleep still work. Turning it off restores the configured timers; restarting the screensaver or logging out resets it.
 
 Detail screens share the same panel, support Back, and scroll to fit the monitor. Tab/Shift+Tab and Up/Down navigate available controls; Enter/Space activates buttons, and Left/Right adjusts sliders. Escape or Alt+Left returns from details (restoring focus to the original chevron); Escape on the main screen or any outside mouse press closes the panel. Hardware controls hide or disable as devices appear/disappear.
 

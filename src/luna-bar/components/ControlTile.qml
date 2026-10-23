@@ -11,6 +11,8 @@ Rectangle {
     property string symbol: ""
     property bool selected: false
     property bool actionEnabled: true
+    property bool hasDetails: true
+    property bool toggleAction: false
     signal activated()
     signal detailsRequested()
     implicitHeight: 44
@@ -28,6 +30,9 @@ Rectangle {
             enabled: tile.actionEnabled
             focusPolicy: Qt.StrongFocus
             Accessible.name: tile.title + (tile.description ? ", " + tile.description : "")
+            Accessible.role: tile.toggleAction ? Accessible.CheckBox : Accessible.Button
+            Accessible.checkable: tile.toggleAction
+            Accessible.checked: tile.toggleAction && tile.selected
             padding: 10
             background: Rectangle {
                 color: tile.selected ? Luna.Theme.accent : primary.hovered ? Luna.Theme.selection : Luna.Theme.lighterBackground
@@ -57,17 +62,25 @@ Rectangle {
                     color: tile.selected ? Luna.Theme.accentForeground : Luna.Theme.foreground
                     elide: Text.ElideRight
                 }
+                Label {
+                    visible: tile.toggleAction
+                    text: tile.selected ? "On" : "Off"
+                    font.family: Luna.Theme.uiFont
+                    font.pixelSize: 12
+                    color: tile.selected ? Luna.Theme.accentForeground : Luna.Theme.foreground
+                }
             }
             onClicked: tile.activated()
             Keys.onReturnPressed: click()
             Keys.onEnterPressed: click()
-            Keys.onRightPressed: detail.forceActiveFocus(Qt.TabFocusReason)
+            Keys.onRightPressed: if (tile.hasDetails) detail.forceActiveFocus(Qt.TabFocusReason)
             ToolTip.visible: hovered && tile.description !== ""
             ToolTip.text: tile.description
         }
         Button {
             id: detail
             objectName: tile.objectName + "Details"
+            visible: tile.hasDetails
             Layout.preferredWidth: 28
             Layout.fillHeight: true
             focusPolicy: Qt.StrongFocus

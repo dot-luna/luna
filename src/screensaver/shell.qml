@@ -11,11 +11,25 @@ ShellRoot {
     id: shell
     property bool showing: false
     property bool inputReady: false
+    property bool stayAwake: false
     property string focusedScreen: ""
     property var config: JSON.parse(Quickshell.env("LUNA_IDLE_CONFIG"))
     property string pendingAction: ""
     readonly property string lunaCli: Quickshell.shellDir + "/../../bin/luna"
 
+    function awakeStatus() {
+        return JSON.stringify({enabled: stayAwake});
+    }
+    function setAwake(action) {
+        if (!["on", "off", "toggle"].includes(action))
+            return JSON.stringify({error: "Unknown Stay awake action"});
+
+        const enabled = action === "toggle" ? !stayAwake : action === "on";
+        // Clear queued idle work before disabling the monitors, including an in-flight lock check.
+        if (enabled) hide();
+        stayAwake = enabled;
+        return awakeStatus();
+    }
     function hide() {
         pendingAction = "";
         showing = false;
@@ -23,6 +37,8 @@ ShellRoot {
         inputDelay.stop();
     }
     function request(action) {
+        if (stayAwake && (action === "auto" || action === "lock"))
+            return;
         if (locker.running)
             return;
         if (lockCheck.running) {
@@ -37,6 +53,8 @@ ShellRoot {
     IpcHandler {
         target: "screensaver"
         function ping(): string { return "ready"; }
+        function awakeStatus(): string { return shell.awakeStatus(); }
+        function setAwake(action: string): string { return shell.setAwake(action); }
         function status(): string {
             return JSON.stringify({showing: shell.showing, idle: saverIdle.isIdle, config: shell.config, pending: shell.pendingAction});
         }
@@ -48,7 +66,7 @@ ShellRoot {
     }
     IdleMonitor {
         id: saverIdle
-        enabled: shell.config.screensaver_seconds > 0
+        enabled: !shell.stayAwake && shell.config.screensaver_seconds > 0
         timeout: shell.config.screensaver_seconds
         respectInhibitors: true
         onIsIdleChanged: {
@@ -61,7 +79,8 @@ ShellRoot {
         }
     }
     IdleMonitor {
-        enabled: shell.config.lock_seconds > 0
+        id: lockIdle
+        enabled: !shell.stayAwake && shell.config.lock_seconds > 0
         timeout: shell.config.lock_seconds
         respectInhibitors: true
         onIsIdleChanged: if (isIdle) shell.request("lock")

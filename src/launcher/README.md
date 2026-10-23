@@ -100,7 +100,13 @@ The menu and bar update without restarting.
 
 ## System
 
-System lists Screensaver, Lock, Suspend, Hibernate, Logout, Reboot, and Shutdown.
+System lists Stay awake, Screensaver, Lock, Suspend, Hibernate, Logout, Reboot, and Shutdown.
+Stay awake temporarily pauses automatic screensaver and locking for the current
+session. Its switch shows On or Off and keeps the menu open when toggled. It shares
+state with the control center and `luna awake`; opening the menu refreshes its state.
+Root search also finds it with `stay awake`, `caffeine`, or `idle`. Configured idle
+delays remain unchanged, and manual lock and sleep actions remain available.
+
 Logout exits the current Hyprland session. Reboot and Shutdown request normal systemd reboot/poweroff, without forcing past inhibitors. Click or Enter executes the selected action; failures appear in the menu. Lock starts Hyprlock with theme colors, UI font, and rounding. Type your system password and press Enter to unlock; PAM handles authentication. Super + L and `luna lock` also lock the session. Suspend and Hibernate check logind support, wait for the compositor to confirm the screen is locked, then request normal systemd sleep. Hibernate is hidden from menus and root search when logind reports it unavailable; availability refreshes each time the menu opens. Hibernate requires disk-backed swap and resume setup; zram alone is insufficient. These also work as `luna suspend` and `luna hibernate`. Screensaver opens a themed clock/date across all monitors. Setup → Idle configures automatic screensaver and auto-lock independently, with Disabled and preset delays. Defaults are 5 and 10 minutes.
 
 ## Clipboard

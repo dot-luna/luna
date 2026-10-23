@@ -15,10 +15,46 @@ return function(common, directory)
         idle:argument("idle_action"):args("?"):default("status"):choices({ "status", "set" })
         idle:argument("idle_setting"):args("?"):choices({ "screensaver", "lock" })
         idle:argument("seconds"):args("?")
+        parser:command("awake", "Temporarily pause automatic screensaver and locking.")
+            :argument("awake_action"):args("?"):default("status")
+            :choices({ "status", "toggle", "on", "off" })
+    end
+
+    local function awake(action)
+        local method = action == "status" and "awakeStatus" or "setAwake"
+        local arguments = { "qs", "ipc", "-p", renderer, "call", "screensaver", method }
+        if action ~= "status" then
+            -- The idle shell owns the session state and applies toggles atomically.
+            local _, running = shell.ipc("ping")
+            if not running then
+                -- Quickshell prints startup logs to stdout; keep this command's JSON clean.
+                local startup, started = common.capture({ root .. "/bin/luna", "screensaver", "start" })
+                startup = startup:match("^%s*(.-)%s*$")
+                assert(started, "Could not start the idle monitor for Stay awake"
+                    .. (startup ~= "" and ":\n" .. startup or ""))
+            end
+            table.insert(arguments, action)
+        end
+
+        local output, ok = common.capture(arguments, true)
+        if not ok and action == "status" then
+            local _, running = shell.ipc("ping")
+            if not running then
+                return { enabled = false }
+            end
+        end
+        assert(ok, "Could not " .. (action == "status" and "read" or "update")
+            .. " Stay awake; run luna screensaver reload to refresh the idle monitor")
+        local valid, state = pcall(json.decode, output)
+        assert(valid and type(state) == "table" and type(state.enabled) == "boolean",
+            "Invalid Stay awake response from the idle monitor")
+        return state
     end
 
     function M.run(options)
-        if options.idle then
+        if options.awake then
+            common.info(json.encode(awake(options.awake_action or "status")))
+        elseif options.idle then
             local values
             if options.idle_action == "set" then
                 values = config.set(options.idle_setting, tonumber(options.seconds))

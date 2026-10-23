@@ -66,6 +66,7 @@ PanelWindow {
     function open() {
         Desktop.refreshBrightness();
         Desktop.refreshPowerProfiles();
+        Luna.StayAwake.refresh();
         returnControl = "";
         visible = true;
         navigate("main");
@@ -117,6 +118,12 @@ PanelWindow {
     visible: false
     anchors { bottom: true; left: true; right: true; top: true }
 
+    Timer {
+        interval: 2000
+        running: panel.visible
+        repeat: true
+        onTriggered: Luna.StayAwake.refresh()
+    }
     Timer {
         id: focusDelay
         interval: 50
@@ -213,6 +220,7 @@ PanelWindow {
                         : panel.page === "sound" ? soundPage : panel.page === "battery" ? batteryPage : mainPage
                 }
                 ControlLabel { text: Desktop.error; visible: text !== "" }
+                ControlLabel { text: Luna.StayAwake.error; visible: text !== "" }
             }
         }
     }
@@ -270,6 +278,21 @@ PanelWindow {
                     selected: Desktop.charging
                     onActivated: panel.navigate("battery")
                     onDetailsRequested: panel.navigate("battery")
+                }
+                ControlTile {
+                    objectName: "stayAwake"
+                    Layout.fillWidth: true
+                    Layout.columnSpan: 2
+                    title: "Stay awake"
+                    description: !Luna.StayAwake.ready ? (Luna.StayAwake.busy ? "Checking status…" : "Unavailable")
+                        : Luna.StayAwake.enabled ? "On — automatic screensaver and locking paused"
+                        : "Off — use automatic screensaver and locking"
+                    symbol: "coffee"
+                    selected: Luna.StayAwake.enabled
+                    actionEnabled: Luna.StayAwake.ready && !Luna.StayAwake.busy
+                    hasDetails: false
+                    toggleAction: true
+                    onActivated: Luna.StayAwake.toggle()
                 }
             }
             ColumnLayout {

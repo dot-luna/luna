@@ -1,4 +1,5 @@
 module Luna
 singleton Theme 1.0 Theme.qml
+singleton StayAwake 1.0 StayAwake.qml
 Icon 1.0 Icon.qml
 Emoji 1.0 Emoji.qml

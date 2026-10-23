@@ -106,7 +106,7 @@ elseif options.clipboard then
         common.error("Clipboard command failed: " .. tostring(message))
         os.exit(1)
     end
-elseif options.screensaver or options.idle then
+elseif options.screensaver or options.idle or options.awake then
     local ok, message = pcall(screensaver.run, options)
     if not ok then
         common.error("Screensaver command failed: " .. tostring(message))
