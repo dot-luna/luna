@@ -6,9 +6,10 @@
 #   curl -fsSL https://raw.githubusercontent.com/dot-luna/luna/master/install.sh | bash
 #   curl -fsSL https://raw.githubusercontent.com/dot-luna/luna/master/install.sh | bash -s -- --ref v1.0.0
 #
-# The checkout stays in ~/.local/src/luna because deployed configs refer to it.
+# LUNA_INSTALL_DIR selects the checkout; it defaults to ~/.local/src/luna.
+# Keep the checkout in place after setup because deployed configs refer to it.
 # Run as your normal user in a terminal; sudo is used for system setup.
-# Every run replaces the install checkout with a fresh copy of the requested ref.
+# Existing Luna checkouts are updated in place to the requested branch or tag.
 set -euo pipefail
 
 # Decide before tee replaces stdout, then share that choice with setup children.
@@ -23,6 +24,196 @@ elif [[ "${LUNA_COLOR:-auto}" == auto ]]; then
 fi
 export LUNA_COLOR
 
+main() {
+    local ref=master
+    local repo_url=https://github.com/dot-luna/luna.git
+    local install_dir
+
+    while (( $# > 0 )); do
+        case "$1" in
+            --ref)
+                if (( $# < 2 )) || [[ -z "$2" || "$2" == -* ]]; then
+                    log ERROR '--ref requires a branch or tag name.' >&2
+                    exit 2
+                fi
+                ref=$2
+                shift 2
+                ;;
+            -h|--help)
+                usage
+                return
+                ;;
+            *)
+                log ERROR "Unknown option: $1. Use --help for usage." >&2
+                exit 2
+                ;;
+        esac
+    done
+
+    # Reject obvious bad input before requesting authentication or installing
+    # Git. Git performs the full reference-name validation once available.
+    if [[ "$ref" == refs/* || "$ref" == *[[:space:]]* || "$ref" == *..* || "$ref" == *'@{'* ]]; then
+        log ERROR "Invalid branch or tag name: $ref" >&2
+        exit 2
+    fi
+
+    log_file=
+    log_pid=
+    current_step='system checks'
+    trap 'finish "$?"' EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+
+    check_system
+    resolve_install_dir
+    install_dir=$LUNA_INSTALL_DIR
+    start_log
+    welcome
+    log INFO "Install folder: $install_dir"
+    log WARN 'Packages may be installed or upgraded automatically.'
+
+    step '1/4 — Check system and sudo access'
+    sudo -v
+
+    step '2/4 — Prepare Git'
+    if ! command -v git >/dev/null 2>&1; then
+        log INFO 'Installing Git...'
+        run_tool sudo pacman -Syu --needed --noconfirm -- git
+    fi
+    if ! command -v git >/dev/null 2>&1; then
+        fail 'Git is still unavailable after package installation.'
+    fi
+    if ! git check-ref-format "refs/heads/$ref"; then
+        fail "Invalid branch or tag name: $ref"
+    fi
+
+    step '3/4 — Prepare Luna'
+    prepare_checkout "$install_dir" "$ref" "$repo_url"
+    if [[ ! -f "$install_dir/scripts/setup.sh" ]]; then
+        fail "The selected version does not contain scripts/setup.sh: $ref"
+    fi
+
+    step '4/4 — Install Luna'
+    # Setup backs up and replaces config/source conflicts, then asks separately
+    # about NVIDIA drivers. Run from the checkout for a predictable cwd.
+    cd -- "$install_dir"
+    bash "$install_dir/scripts/setup.sh"
+
+    printf '\n'
+    log OK 'Luna setup completed.'
+    log INFO 'Open a new terminal and run luna --version.'
+    log INFO 'Keep the install folder; Luna uses its files.'
+}
+
+prepare_checkout() {
+    local directory=$1 ref=$2 repo_url=$3
+
+    # Git can discover a parent repository, so verify the selected directory is
+    # the worktree root before updating it. This also supports Git worktrees.
+    if [[ -e "$directory/.git" || -L "$directory/.git" ]] || git -C "$directory" rev-parse --git-dir >/dev/null 2>&1; then
+        local checkout_root
+        checkout_root=$(git -C "$directory" rev-parse --show-toplevel) || fail "Not a usable Git checkout: $directory"
+        if [[ "$(realpath -m -- "$checkout_root")" != "$(realpath -m -- "$directory")" ]]; then
+            fail "LUNA_INSTALL_DIR must point to the Git checkout root: $checkout_root"
+        fi
+
+        update_checkout "$directory" "$ref" "$repo_url"
+        return
+    fi
+
+    mkdir -p -- "$(dirname -- "$directory")"
+
+    # Keep the existing replacement behavior for non-Git paths. Removing a
+    # destination symlink leaves its external target untouched.
+    if [[ -e "$directory" || -L "$directory" ]]; then
+        log INFO "Replacing existing path: $directory"
+        rm -rf -- "$directory"
+    fi
+
+    log INFO "Downloading Luna ($ref)..."
+    # Tag installs intentionally detach HEAD; Git's introductory advice is noise here.
+    run_tool git -c advice.detachedHead=false clone --quiet --branch "$ref" --single-branch -- "$repo_url" "$directory"
+}
+
+update_checkout() {
+    local directory=$1 ref=$2 repo_url=$3
+    local origin repo_path
+    origin=$(git -C "$directory" config --get remote.origin.url) || fail "The existing checkout has no origin remote: $directory"
+    repo_path=${repo_url#https://}
+    repo_path=${repo_path%.git}
+    case "${origin%/}" in
+        "https://$repo_path"|"https://$repo_path.git"|"git@${repo_path/\//:}"|"git@${repo_path/\//:}.git"|"ssh://git@$repo_path"|"ssh://git@$repo_path.git")
+            ;;
+        *)
+            fail "The existing checkout's origin is not $repo_url: $origin"
+            ;;
+    esac
+
+    log INFO "Updating Luna ($ref)..."
+
+    # Resolve the requested name on the remote, not against potentially stale
+    # local refs. Match clone's branch-first behavior when a tag has the same name.
+    local remote_refs object_id remote_ref
+    local has_branch=0 has_tag=0
+    remote_refs=$(git -C "$directory" ls-remote --refs origin "refs/heads/$ref" "refs/tags/$ref") || fail 'Could not read branches and tags from origin.'
+    while read -r object_id remote_ref; do
+        case "$remote_ref" in
+            "refs/heads/$ref")
+                has_branch=1
+                ;;
+            "refs/tags/$ref")
+                has_tag=1
+                ;;
+        esac
+    done <<< "$remote_refs"
+
+    if (( has_branch )); then
+        # Fetch explicitly so checkouts cloned with --single-branch can switch
+        # to another branch. Only the remote-tracking ref may move backwards.
+        run_tool git -C "$directory" fetch --quiet --no-tags origin "+refs/heads/$ref:refs/remotes/origin/$ref"
+        if git -C "$directory" show-ref --verify --quiet "refs/heads/$ref"; then
+            run_tool git -C "$directory" switch --quiet --no-guess "$ref" || fail 'Could not switch branches. Commit or stash conflicting changes and retry.'
+        else
+            run_tool git -C "$directory" switch --quiet --no-track -c "$ref" "refs/remotes/origin/$ref" || fail 'Could not switch branches. Commit or stash conflicting changes and retry.'
+        fi
+
+        # This is the merge half of a fast-forward-only pull. Disable automatic
+        # stashing so an install never hides edits or creates a conflicted stash.
+        run_tool git -C "$directory" -c merge.autoStash=false merge --quiet --ff-only "refs/remotes/origin/$ref" || fail 'Could not update the branch. Resolve conflicting edits or diverged commits and retry.'
+    elif (( has_tag )); then
+        # Refresh this tag even if its remote target changed; tags are checked
+        # out detached and do not merge into or reset any local branch.
+        run_tool git -C "$directory" fetch --quiet --no-tags origin "+refs/tags/$ref:refs/tags/$ref"
+        run_tool git -C "$directory" switch --quiet --detach "refs/tags/$ref" || fail 'Could not switch to the tag. Commit or stash conflicting changes and retry.'
+    else
+        fail "Branch or tag does not exist on origin: $ref"
+    fi
+}
+
+resolve_install_dir() {
+    local directory=${LUNA_INSTALL_DIR:-"$HOME/.local/src/luna"}
+    if [[ "$directory" != /* ]]; then
+        fail 'LUNA_INSTALL_DIR must be an absolute path to the Luna checkout.'
+    fi
+
+    # A trailing slash must not turn removal of a symlink into traversal of its target.
+    while [[ "$directory" != / && "$directory" == */ ]]; do
+        directory=${directory%/}
+    done
+
+    # Non-Git install paths are replaced; reject home and its ancestors,
+    # including equivalent paths containing symlinks or dot components.
+    local resolved_dir resolved_home
+    resolved_dir=$(realpath -m -- "$directory")
+    resolved_home=$(realpath -m -- "$HOME")
+    if [[ "$resolved_dir" == / || "$resolved_dir" == "$resolved_home" || "$resolved_home" == "$resolved_dir/"* ]]; then
+        fail 'LUNA_INSTALL_DIR must not be /, your home directory, or a parent of your home directory.'
+    fi
+
+    # Child setup processes inherit the same convention, including the default.
+    export LUNA_INSTALL_DIR="$directory"
+}
+
 usage() {
     cat <<'HELP'
 Usage: bash install.sh [--ref <branch-or-tag>]
@@ -32,18 +223,20 @@ Options:
     --ref <name>    Install a branch or tag (default: master).
     -h, --help      Show this help without changing anything.
 
+Environment:
+    LUNA_INSTALL_DIR    Absolute checkout path (default: ~/.local/src/luna).
+
 Examples:
     bash install.sh --ref master
     bash install.sh --ref v1.0.0
+    LUNA_INSTALL_DIR="$HOME/coding/luna" bash install.sh --ref dev
 
-Checkout: ~/.local/src/luna
 Logs:     $XDG_STATE_HOME/luna/ (defaults to ~/.local/state/luna/)
 
 Requires Arch Linux, a normal user with sudo access, and an interactive terminal.
-Installs dependencies and Hyprland configuration using scripts/setup.sh.
-Package installation may perform a full system upgrade without package-manager confirmations.
-Sudo authentication and the optional NVIDIA confirmation remain interactive.
-An existing install directory is removed and freshly cloned, without a backup.
+Packages may be installed or upgraded automatically.
+Updates existing Luna checkouts; stops if local edits or history conflict.
+Replaces existing non-Git install paths without a backup.
 HELP
 }
 
@@ -98,13 +291,11 @@ tool_output() {
 
 run_tool() {
     local -a statuses
-    printf '\n'
     if "$@" 2>&1 | tool_output; then
         statuses=("${PIPESTATUS[@]}")
     else
         statuses=("${PIPESTATUS[@]}")
     fi
-    printf '\n'
     if (( statuses[0] != 0 )); then
         return "${statuses[0]}"
     fi
@@ -228,7 +419,7 @@ check_system() {
     fi
 
     local tool
-    for tool in pacman sudo tee sed mktemp date mkdir rm; do
+    for tool in pacman sudo tee sed mktemp date mkdir rm dirname realpath; do
         if ! command -v "$tool" >/dev/null 2>&1; then
             fail "Required command is missing: $tool"
         fi
@@ -239,104 +430,6 @@ check_system() {
     if ! { exec </dev/tty; } 2>/dev/null; then
         fail 'Run this installer in an interactive terminal for sudo and NVIDIA confirmation.'
     fi
-}
-
-main() {
-    local ref=master
-    local repo_url=https://github.com/dot-luna/luna.git
-    local install_dir
-
-    while (( $# > 0 )); do
-        case "$1" in
-            --ref)
-                if (( $# < 2 )) || [[ -z "$2" || "$2" == -* ]]; then
-                    log ERROR '--ref requires a branch or tag name.' >&2
-                    exit 2
-                fi
-                ref=$2
-                shift 2
-                ;;
-            -h|--help)
-                usage
-                return
-                ;;
-            *)
-                log ERROR "Unknown option: $1. Use --help for usage." >&2
-                exit 2
-                ;;
-        esac
-    done
-
-    # Reject obvious bad input before requesting authentication or installing
-    # Git. Git performs the full reference-name validation once available.
-    if [[ "$ref" == refs/* || "$ref" == *[[:space:]]* || "$ref" == *..* || "$ref" == *'@{'* ]]; then
-        log ERROR "Invalid branch or tag name: $ref" >&2
-        exit 2
-    fi
-
-    log_file=
-    log_pid=
-    current_step='system checks'
-    trap 'finish "$?"' EXIT
-    trap 'exit 130' INT
-    trap 'exit 143' TERM
-
-    check_system
-    install_dir="$HOME/.local/src/luna"
-    start_log
-    welcome
-    log INFO "Repository: $repo_url"
-    log INFO "Branch/tag: $ref"
-    log INFO "Checkout:   $install_dir"
-    log WARN 'Setup installs packages and may upgrade the system without further package confirmations.'
-
-    step '1/4 — Check system and sudo access'
-    sudo -v
-    log OK 'Arch Linux and sudo access verified.'
-
-    step '2/4 — Prepare Git'
-    if ! command -v git >/dev/null 2>&1; then
-        log INFO 'Installing Git with pacman.'
-        run_tool sudo pacman -Syu --needed --noconfirm -- git
-    fi
-    if ! command -v git >/dev/null 2>&1; then
-        fail 'Git is still unavailable after package installation.'
-    fi
-    if ! git check-ref-format "refs/heads/$ref"; then
-        fail "Invalid branch or tag name: $ref"
-    fi
-    log OK 'Git is ready.'
-
-    step '3/4 — Prepare the Luna checkout'
-    mkdir -p -- "$HOME/.local/src"
-
-    # Running the installer authorizes replacing this fixed install location,
-    # including local changes. rm removes a destination symlink, not its target.
-    if [[ -e "$install_dir" || -L "$install_dir" ]]; then
-        log INFO "Removing existing install checkout: $install_dir"
-        rm -rf -- "$install_dir"
-    fi
-
-    log INFO "Cloning $ref..."
-    run_tool git clone --branch "$ref" --single-branch -- "$repo_url" "$install_dir"
-    if [[ ! -f "$install_dir/scripts/setup.sh" ]]; then
-        fail "The selected version does not contain scripts/setup.sh: $ref"
-    fi
-    log OK "Checkout ready at commit $(git -C "$install_dir" rev-parse --short HEAD)."
-
-    step '4/4 — Run Luna setup'
-    # Setup backs up and replaces config/source conflicts, then asks separately
-    # about NVIDIA drivers. Run from the checkout for a predictable cwd.
-    cd -- "$install_dir"
-    bash "$install_dir/scripts/setup.sh"
-
-    printf '\n'
-    log OK 'Luna setup completed.'
-    log INFO 'Dependencies, Hyprland configuration, source links, and the Luna command are installed.'
-    log INFO 'Open a new terminal, then run luna --version to check the installed version.'
-    log INFO 'Keep the checkout in place; your configuration links depend on it.'
-    log INFO 'If Hyprland is not running, select it in your session chooser or start it using your usual method.'
-    log INFO 'If system packages requested a reboot, reboot before starting the new session.'
 }
 
 # Parse the call and exit together before runtime stdin becomes /dev/tty.
