@@ -16,6 +16,64 @@ HELPER = REPO / "src/luna-bar/bluetooth/agent.py"
 
 
 class BluetoothAgentIsolationTests(unittest.TestCase):
+    @unittest.skipUnless(shutil.which("qs") and shutil.which("dbus-run-session")
+                         and importlib.util.find_spec("dbus") and importlib.util.find_spec("gi"),
+                         "Quickshell, DBus, python-dbus and PyGObject required")
+    def test_agent_launch_ignores_development_python_on_path(self):
+        with tempfile.TemporaryDirectory(prefix="luna-pairing-python-") as directory:
+            root = Path(directory)
+            bluetooth = root / "bluetooth"
+            bluetooth.mkdir()
+            shutil.copy(HELPER.parent / "BluetoothAgent.qml", bluetooth)
+            (bluetooth / "agent.py").symlink_to(HELPER)
+
+            # Exercise the real launcher without creating a layer-shell window or contacting BlueZ.
+            (bluetooth / "PairingDialog.qml").write_text('''import QtQuick
+QtObject {
+    property var screen
+    property var request
+    property string error
+    signal accepted(string value)
+    signal cancelled()
+}
+''')
+            (root / "shell.qml").write_text('''import QtQuick
+import Quickshell
+import "bluetooth"
+ShellRoot {
+    BluetoothAgent {
+        id: pairing
+        enabled: false
+        Component.onCompleted: {
+            helper.command = helper.command.concat(["--help"]);
+            helper.stdout = null;
+            helper.running = true;
+        }
+    }
+    Connections {
+        target: pairing.helper
+        function onExited(exitCode, exitStatus) { Qt.exit(exitCode); }
+    }
+    Timer { interval: 5000; running: true; onTriggered: Qt.exit(98) }
+}
+''')
+            for name in ("python", "python3"):
+                shim = root / name
+                shim.write_text("#!/bin/sh\necho 'Development Python was used' >&2\nexit 99\n")
+                shim.chmod(0o755)
+            runtime = root / "runtime"
+            runtime.mkdir(mode=0o700)
+            environment = dict(os.environ, PATH=str(root) + ":" + os.environ["PATH"],
+                               QT_QPA_PLATFORM="offscreen", XDG_RUNTIME_DIR=str(runtime),
+                               DBUS_SYSTEM_BUS_ADDRESS="unix:path=/nonexistent-luna-test-system-bus")
+            environment.pop("WAYLAND_DISPLAY", None)
+            result = subprocess.run(["dbus-run-session", "--", "qs", "-p", str(root)], env=environment,
+                                    capture_output=True, text=True, timeout=10)
+            output = result.stdout + result.stderr
+            self.assertEqual(result.returncode, 0, output)
+            self.assertNotIn("Development Python was used", output)
+            self.assertNotIn("ModuleNotFoundError", output)
+
     @unittest.skipUnless(shutil.which("dbus-run-session") and importlib.util.find_spec("dbus")
                          and importlib.util.find_spec("gi"), "DBus, python-dbus and PyGObject required")
     def test_agent_on_private_bus(self):

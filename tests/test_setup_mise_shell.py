@@ -1,0 +1,185 @@
+"""Check mise activation and personal startup-file preservation in temporary homes."""
+
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import tempfile
+import unittest
+
+
+REPO = Path(__file__).resolve().parents[1]
+BLOCK_START = "# >>> Luna mise activation >>>"
+
+
+class SetupMiseShellTests(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory(prefix="luna mise shell '")
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name)
+        self.home = self.root / "home"
+        self.home.mkdir()
+        self.checkout = self.root / "checkout"
+        for name in ("scripts/setup/mise-shell.sh", "lib/common.sh"):
+            destination = self.checkout / name
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(REPO / name, destination)
+
+        # Isolate command lookup so a missing fake cannot activate the host mise.
+        self.bin = self.root / "bin"
+        self.bin.mkdir()
+        for name in ("readlink", "dirname", "mkdir", "mktemp", "cat", "chmod", "grep", "mv", "rm"):
+            (self.bin / name).symlink_to(shutil.which(name))
+        self.mise = self.bin / "mise"
+        self.mise.write_text("""#!/bin/sh
+printf '%s\\n' "$*" >> "$MISE_TEST_LOG"
+if [ "$1" != activate ]; then exit 1; fi
+if [ "$2" = fish ]; then
+    printf 'set -gx LUNA_MISE_TEST_ACTIVE fish\\n'
+else
+    printf 'export LUNA_MISE_TEST_ACTIVE=%s\\n' "$2"
+fi
+""")
+        self.mise.chmod(0o755)
+        self.log = self.root / "mise.log"
+        self.env = dict(os.environ, HOME=str(self.home), SHELL="/bin/bash", PATH=str(self.bin),
+                        XDG_CONFIG_HOME=str(self.home / ".config"), TERM="xterm",
+                        MISE_TEST_LOG=str(self.log))
+        for name in ("ZDOTDIR", "BASH_ENV", "ENV", "LUNA_MISE_TEST_ACTIVE"):
+            self.env.pop(name, None)
+
+    def setup(self, *arguments):
+        return subprocess.run([shutil.which("bash"), str(self.checkout / "scripts/setup/mise-shell.sh"),
+                               *arguments], env=self.env, cwd=self.root, input="",
+                              capture_output=True, text=True, timeout=10)
+
+    def assert_success(self, result):
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_preserves_contents_permissions_and_backups_on_rerun(self):
+        config = self.home / ".bashrc"
+        original = "# Personal settings\nexport PERSONAL_SETTING='keep me'"
+        config.write_text(original)
+        config.chmod(0o640)
+        self.assert_success(self.setup())
+        self.assertTrue(config.read_text().startswith(original + "\n"))
+        self.assertEqual(config.stat().st_mode & 0o777, 0o640)
+        self.assertEqual(config.with_name(".bashrc.luna-backup").read_text(), original)
+        installed = config.read_bytes()
+        self.assert_success(self.setup("--force"))
+        self.assertEqual(config.read_bytes(), installed)
+        self.assertEqual(config.read_text().count(BLOCK_START), 1)
+        self.assertFalse(config.with_name(".bashrc.luna-backup.1").exists())
+        self.assertFalse(self.log.exists())
+
+    def test_zdotdir_symlink_keeps_target_and_numbered_backup(self):
+        self.env["SHELL"] = "/usr/bin/zsh"
+        custom = self.root / "zsh config"
+        custom.mkdir()
+        self.env["ZDOTDIR"] = str(custom)
+        foreign = self.root / "personal.zshrc"
+        original = "# Personal Zsh configuration\n"
+        foreign.write_text(original)
+        foreign.chmod(0o600)
+        config = custom / ".zshrc"
+        config.symlink_to(os.path.relpath(foreign, custom))
+        original_link = config.readlink()
+        old_backup = config.with_name(".zshrc.luna-backup")
+        old_backup.write_text("Earlier backup\n")
+
+        self.assert_success(self.setup())
+        self.assertFalse(config.is_symlink())
+        self.assertEqual(config.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(config.with_name(".zshrc.luna-backup.1").readlink(), original_link)
+        self.assertEqual(old_backup.read_text(), "Earlier backup\n")
+        self.assertEqual(foreign.read_text(), original)
+        self.assertFalse((self.home / ".zshrc").exists())
+
+    def check_shell_activation(self, shell, arguments, command):
+        self.env["SHELL"] = shutil.which(shell)
+        self.assert_success(self.setup())
+        result = subprocess.run([shutil.which(shell), *arguments, command], env=self.env,
+                                cwd=self.root, input="", capture_output=True, text=True, timeout=10)
+        self.assert_success(result)
+        self.assertEqual(result.stdout.strip(), shell)
+        self.assertEqual(self.log.read_text(), f"activate {shell}\n")
+
+    def test_bash_activates_in_new_interactive_shell(self):
+        self.check_shell_activation("bash", ["--noprofile", "-i", "-c"],
+                                    'printf "%s\\n" "$LUNA_MISE_TEST_ACTIVE"')
+
+    @unittest.skipUnless(shutil.which("zsh"), "Zsh is required")
+    def test_zsh_activates_from_custom_zdotdir(self):
+        self.env["ZDOTDIR"] = str(self.root / "zsh config")
+        self.check_shell_activation("zsh", ["-d", "-i", "-c"],
+                                    'printf "%s\\n" "$LUNA_MISE_TEST_ACTIVE"')
+
+    @unittest.skipUnless(shutil.which("fish"), "fish is required")
+    def test_fish_activates_from_custom_xdg_config(self):
+        self.env["XDG_CONFIG_HOME"] = str(self.root / "fish config")
+        self.check_shell_activation("fish", ["-i", "-c"],
+                                    'printf "%s\\n" "$LUNA_MISE_TEST_ACTIVE"')
+        self.log.unlink()
+        result = subprocess.run([shutil.which("fish"), "-c", "true"], env=self.env,
+                                cwd=self.root, capture_output=True, text=True, timeout=10)
+        self.assert_success(result)
+        self.assertFalse(self.log.exists())
+
+    def test_noninteractive_source_and_removed_mise_are_quiet(self):
+        self.assert_success(self.setup())
+        result = subprocess.run([shutil.which("bash"), "--noprofile", "--norc", "-c",
+                                 'source "$HOME/.bashrc"'], env=self.env, cwd=self.root,
+                                capture_output=True, text=True, timeout=10)
+        self.assert_success(result)
+        self.assertFalse(self.log.exists())
+        self.mise.unlink()
+        result = subprocess.run([shutil.which("bash"), "--noprofile", "-i", "-c", "true"],
+                                env=self.env, cwd=self.root, input="", capture_output=True,
+                                text=True, timeout=10)
+        self.assert_success(result)
+        self.assertNotIn("mise:", result.stderr)
+        self.assertFalse(self.log.exists())
+
+    def test_fish_config_uses_xdg_home_and_preserves_personal_content(self):
+        self.env["SHELL"] = "/usr/bin/fish"
+        self.env["XDG_CONFIG_HOME"] = str(self.root / "fish config")
+        config = Path(self.env["XDG_CONFIG_HOME"]) / "fish/config.fish"
+        config.parent.mkdir(parents=True)
+        original = "set -gx PERSONAL_SETTING 'keep me'\n"
+        config.write_text(original)
+        self.assert_success(self.setup())
+        self.assert_success(self.setup())
+        self.assertTrue(config.read_text().startswith(original))
+        self.assertIn("if status is-interactive; and command -q mise", config.read_text())
+        self.assertIn("mise activate fish | source", config.read_text())
+        self.assertEqual(config.read_text().count(BLOCK_START), 1)
+        self.assertEqual(config.with_name("config.fish.luna-backup").read_text(), original)
+        self.assertFalse((self.home / ".config/fish/config.fish").exists())
+
+    def test_unsupported_shell_and_nonfile_startup_warn_without_changes(self):
+        self.env["SHELL"] = "/bin/unknown-shell"
+        result = self.setup()
+        self.assert_success(result)
+        self.assertIn("not supported", result.stderr)
+        self.assertEqual(list(self.home.iterdir()), [])
+        self.env["SHELL"] = "/bin/bash"
+        config = self.home / ".bashrc"
+        config.mkdir()
+        personal = config / "keep"
+        personal.write_text("Keep me\n")
+        result = self.setup()
+        self.assert_success(result)
+        self.assertIn("non-file startup path", result.stderr)
+        self.assertEqual(personal.read_text(), "Keep me\n")
+
+    def test_missing_mise_and_help_do_not_modify_home(self):
+        self.mise.unlink()
+        for arguments, expected in (((), 1), (("--help",), 0), (("--unknown",), 2)):
+            with self.subTest(arguments=arguments):
+                result = self.setup(*arguments)
+                self.assertEqual(result.returncode, expected, result.stdout + result.stderr)
+                self.assertEqual(list(self.home.iterdir()), [])
+
+
+if __name__ == "__main__":
+    unittest.main()

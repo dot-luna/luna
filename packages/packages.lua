@@ -34,6 +34,10 @@ return {
         { name = "file", source = "pacman", purpose = "Identify image file types" },
         { name = "xdg-utils", source = "pacman", purpose = "Open folders in the default file explorer" },
 
+        -- Core file management and media playback.
+        { name = "yazi", source = "pacman", purpose = "Terminal file manager" },
+        { name = "mpv", source = "pacman", purpose = "Video and audio player" },
+
         -- Desktop compositor, app portals, and custom Quickshell UI.
         { name = "hyprland", source = "pacman", purpose = "Wayland desktop compositor" },
         { name = "xdg-desktop-portal-hyprland", source = "pacman", purpose = "Hyprland screen sharing and portal integration" },

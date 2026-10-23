@@ -26,6 +26,8 @@ The URL selects the installer script; `--ref` selects the checkout to install. E
 
 The installer clones Luna into `~/.local/src/luna`, installs dependencies and fonts, then links the Hyprland configuration, source directories, and `~/.local/bin/luna`. Source links live in `~/.local/src/`. Conflicting paths are backed up beside the originals with `.luna-backup` suffixes, numbered when needed. Setup adds the command directory to your shell's PATH; open a new terminal afterward and run `luna --version`.
 
+Development tools are listed in `packages/packages.mise.lua`: Node.js LTS, plus the latest Bun, pnpm, Python, and uv. After installing core packages, setup uses [mise](https://mise.jdx.dev/) to install them as global defaults, preserving unrelated mise settings and tools. Edit the manifest to change version requests; project mise configurations can override the defaults. Setup adds mise activation to your Bash, Zsh, or fish startup file, backing up existing content. Open a new terminal afterward. Luna's Bluetooth helper uses the system Python so its Arch dependencies remain available.
+
 Git apps are listed in `packages/packages.git.lua` and installed after fonts. Setup clones each repository into `~/.local/src/<name>` and runs its declared install script with `--prefix "$HOME/.local" --non-interactive`. The app manages its own dependencies and native build. Reinstalling replaces that app's source checkout without a backup. Whatly is included from [our personal fork](https://github.com/dot-luna/whatly), with a **WhatsApp** desktop launcher.
 
 Setup automatically enables and starts Docker, logging a warning if it cannot. Package installation may upgrade the system and runs without package-manager confirmations; `sudo` may still ask for your password. The final installation step offers optional NVIDIA setup, with confirmation defaulting to **No**. It supports Turing or newer GPUs using Arch's standard `linux` kernel.
@@ -39,3 +41,11 @@ Luna's terminal messages use colors and separated steps; external tool output is
 ```sh
 bash ~/.local/src/luna/scripts/setup.sh
 ```
+
+To install only the development tools once core packages are available:
+
+```sh
+/usr/bin/lua -E ~/.local/src/luna/scripts/setup/mise.lua
+```
+
+Pass `--force` to either command to reinstall the requested packages or tools.

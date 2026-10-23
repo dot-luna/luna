@@ -58,7 +58,8 @@ QtObject {
     Component.onCompleted: if (enabled) helper.running = true
 
     property Process helper: Process {
-        command: ["python", "-u", Quickshell.shellPath("bluetooth/agent.py")]
+        // DBus and PyGObject come from Arch packages, outside mise's development Python.
+        command: ["/usr/bin/python3", "-u", Quickshell.shellPath("bluetooth/agent.py")]
         stdinEnabled: true
         stdout: SplitParser { onRead: data => agent.receive(data) }
         stderr: SplitParser { onRead: data => console.warn("Bluetooth pairing:", data) }

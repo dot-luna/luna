@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/python3
 """BlueZ Agent1 bridge: newline JSON prompts out, explicit UI decisions in."""
 import argparse
 import json

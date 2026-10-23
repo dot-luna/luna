@@ -52,8 +52,9 @@ if os.getenv("TEST_FAIL_STEP") == arg[1] then
     os.exit(29)
 end
 ''')
-        (self.steps / "git-apps.lua").write_text(
-            'table.insert(arg, 1, "git-apps")\n' + (self.steps / "install-deps.lua").read_text())
+        for name in ("mise", "git-apps"):
+            (self.steps / f"{name}.lua").write_text(
+                f'table.insert(arg, 1, "{name}")\n' + (self.steps / "install-deps.lua").read_text())
 
     def setup(self, *arguments):
         return subprocess.run(["bash", str(self.checkout / "scripts/setup.sh"), *arguments],
@@ -69,13 +70,13 @@ end
         result = self.setup()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(self.recorded_calls(), [[step] for step in
-                         ("lua", "core", "aur", "main", "fonts", "git-apps", "services", "config", "src", "command", "nvidia", "session")])
+                         ("lua", "core", "mise", "aur", "main", "fonts", "git-apps", "services", "config", "src", "command", "nvidia", "session")])
 
     def test_force_is_forwarded_only_to_steps_accepting_it(self):
         result = self.setup("--force")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(self.recorded_calls(), [
-            ["lua", "--force"], ["core", "--force"], ["aur"], ["main", "--force"],
+            ["lua", "--force"], ["core", "--force"], ["mise", "--force"], ["aur"], ["main", "--force"],
             ["fonts", "--force"], ["git-apps", "--force"], ["services"], ["config", "--force"], ["src", "--force"],
             ["command", "--force"], ["nvidia"], ["session"],
         ])
@@ -84,7 +85,13 @@ end
         self.env["TEST_FAIL_STEP"] = "main"
         result = self.setup()
         self.assertEqual(result.returncode, 29, result.stdout + result.stderr)
-        self.assertEqual(self.recorded_calls(), [[step] for step in ("lua", "core", "aur", "main")])
+        self.assertEqual(self.recorded_calls(), [[step] for step in ("lua", "core", "mise", "aur", "main")])
+
+    def test_failed_mise_setup_stops_before_application_installation(self):
+        self.env["TEST_FAIL_STEP"] = "mise"
+        result = self.setup()
+        self.assertEqual(result.returncode, 29, result.stdout + result.stderr)
+        self.assertEqual(self.recorded_calls(), [[step] for step in ("lua", "core", "mise")])
 
     def test_help_and_unknown_options_do_not_run_steps(self):
         result = self.setup("--help")
