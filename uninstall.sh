@@ -1,1 +1,3 @@
-scripts/uninstall.sh
+#!/usr/bin/env bash
+
+echo todo

@@ -7,19 +7,19 @@ A Hyprland desktop setup for Arch Linux.
 Run from an interactive terminal as your regular user with `sudo` access and `curl` installed:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/dot-luna/luna/master/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/dot-luna/luna/master/install.sh | bash
 ```
 
 To install a specific version, replace `BRANCH_OR_TAG` with an existing branch or tag:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/dot-luna/luna/master/scripts/install.sh | bash -s -- --ref BRANCH_OR_TAG
+curl -fsSL https://raw.githubusercontent.com/dot-luna/luna/master/install.sh | bash -s -- --ref BRANCH_OR_TAG
 ```
 
 To test the development installer and install `dev`, use:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/dot-luna/luna/dev/scripts/install.sh | bash -s -- --ref dev
+curl -fsSL https://raw.githubusercontent.com/dot-luna/luna/dev/install.sh | bash -s -- --ref dev
 ```
 
 The URL selects the installer script; `--ref` selects the checkout to install. Each run removes the existing `~/.local/src/luna` directory, including local changes, and clones the requested branch or tag afresh. The old checkout is not backed up.

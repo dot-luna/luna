@@ -15,7 +15,7 @@ import unittest
 
 
 REPO = Path(__file__).resolve().parents[1]
-INSTALLER = REPO / "scripts/install.sh"
+INSTALLER = REPO / "install.sh"
 ORIGIN = "https://github.com/dot-luna/luna.git"
 
 
