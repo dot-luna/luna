@@ -2,7 +2,8 @@
 return function(resolved)
     local M = {}
     local home = assert(os.getenv("HOME"), "HOME is required")
-    local config = (os.getenv("XDG_CONFIG_HOME") or home .. "/.config") .. "/luna"
+    local config_home = os.getenv("XDG_CONFIG_HOME")
+    local config = (config_home and config_home ~= "" and config_home or home .. "/.config") .. "/luna"
 
     function M.apply()
         local file, failure, code = io.open(config .. "/theme", "r")

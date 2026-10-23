@@ -2,6 +2,7 @@
 
 import json
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -9,7 +10,7 @@ import unittest
 
 
 REPO = Path(__file__).resolve().parents[3]
-BOOTSTRAP = REPO / 'default/hypr/bootstrap.lua'
+ENTRY = REPO / 'apps/hypr/hyprland.lua'
 
 
 @unittest.skipUnless(Path('/usr/bin/lua').is_file(), 'The bootstrap requires Lua')
@@ -21,6 +22,15 @@ class BootstrapKeyringTests(unittest.TestCase):
         self.bin = self.root / 'bin'
         self.bin.mkdir()
         self.calls_file = self.root / 'calls.jsonl'
+        self.installed = self.root / "installed Hyprland's config"
+        (self.installed / 'generated').mkdir(parents=True)
+        shutil.copy2(ENTRY, self.installed / 'hyprland.lua')
+        generated = subprocess.run(
+            ['/usr/bin/lua', '-E', str(REPO / 'apps/hypr/scripts/generate-config.lua')],
+            cwd=self.root, text=True, capture_output=True, check=True,
+        )
+        (self.installed / 'generated/paths.lua').write_text(generated.stdout)
+        (self.bin / 'readlink').symlink_to(shutil.which('readlink'))
         self.env = {
             'PATH': str(self.bin), 'HOME': str(self.root / 'home'), 'ENV': '',
             'BASH_ENV': '', 'TEST_KEYRING_CALLS': str(self.calls_file),
@@ -28,23 +38,26 @@ class BootstrapKeyringTests(unittest.TestCase):
             'XDG_CURRENT_DESKTOP': 'Hyprland',
         }
 
-        # Load only the real bootstrap. Its dependencies and Hyprland API are
+        # Load only the installed entry and generated paths. Other modules and API are
         # inert handlers; registering or dispatching a command never executes it.
         capture = '''
-local bootstrap = dofile(arg[1])
+local load = dofile
 local json = dofile(arg[2] .. "/lib/theme/json.lua")
-local root = arg[3]
+local root = arg[2]
+local config_dir = arg[3]
 local callbacks, commands = {}, {}
 dofile = function(path)
     if path == root .. "/lib/theme/resolved.lua" then
         return function() return {} end
-    elseif path == root .. "/default/hypr/theme.lua" then
+    elseif path == config_dir .. "/generated/paths.lua" then
+        return load(path)
+    elseif path == config_dir .. "/theme.lua" then
         return function() return { apply = function() end } end
-    elseif path == root .. "/default/hypr/bindings.lua" then
+    elseif path == config_dir .. "/bindings.lua" then
         return function() end
-    elseif path == root .. "/default/hypr/monitors.lua"
-        or path == root .. "/default/hypr/workspaces.lua"
-        or path == root .. "/default/hypr/animations.lua" then
+    elseif path == config_dir .. "/monitors.lua"
+        or path == config_dir .. "/workspaces.lua"
+        or path == config_dir .. "/animations.lua" then
         return
     end
     error("Unexpected bootstrap dependency: " .. path)
@@ -56,13 +69,13 @@ hl = {
     dsp = { exec_cmd = function(command) return command end },
     dispatch = function(command) commands[#commands + 1] = command end,
 }
-bootstrap(root)
+load(arg[1])
 assert(#commands == 0, "Startup ran before the Hyprland start event")
 assert(callbacks["hyprland.start"], "Missing Hyprland startup callback")()
 print(json.encode(commands, true))
 '''
         result = subprocess.run(
-            ['/usr/bin/lua', '-E', '-', str(BOOTSTRAP), str(REPO), str(self.root / "Luna's checkout")],
+            ['/usr/bin/lua', '-E', '-', str(self.installed / 'hyprland.lua'), str(REPO), str(self.installed)],
             input=capture, cwd=self.root, env=self.env, capture_output=True, text=True, timeout=10,
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -88,7 +101,7 @@ if tool == 'gnome-keyring-daemon':
             tool.chmod(0o755)
 
     def run_keyring_startup(self):
-        # The closed PATH contains just the two mocks; no Luna command or real
+        # PATH contains the two mocks and readlink; no Luna command or real
         # service manager is reachable, even when a tool is intentionally absent.
         return subprocess.run(['/bin/sh', '-c', self.keyring_command],
                               cwd=self.root, env=self.env, input='', capture_output=True,

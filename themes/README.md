@@ -19,7 +19,7 @@ my-theme/
 | `fonts.lua` | Font families | Fonts must be installed manually |
 | `wallpaper.lua` | Local images, directories, and public image URLs | Images will be imported or downloaded automatically |
 
-`luna theme install /path/to/my-theme` validates and copies a theme, importing its wallpapers automatically. `luna theme set my-theme` merges the theme with shared defaults, writes the resolved JSON, saves the selection, and applies its light/dark system preference. Luna's [Hyprland config](../config/hypr/README.md) reads the resolved JSON at startup or on a manual reload. See the [theme CLI guide](../src/luna-cli/theme/README.md).
+`luna theme install /path/to/my-theme` validates and copies a theme, importing its wallpapers automatically. `luna theme set my-theme` merges the theme with shared defaults, writes the resolved JSON, saves the selection, and applies its light/dark system preference. Luna's [Hyprland config](../apps/hypr/README.md) reads the resolved JSON at startup or on a manual reload. See the [theme CLI guide](../src/luna-cli/theme/README.md).
 
 ## Theme file rules
 

@@ -32,6 +32,8 @@ class SetupAppsTests(unittest.TestCase):
             '#!/usr/bin/env bash\nprintf "configured\\n" > "$HOME/.zsh-setup-ran"\n')
         (self.checkout / "scripts/setup/zen.sh").write_text(
             '#!/usr/bin/env bash\nprintf "configured\\n" > "$HOME/.zen-setup-ran"\n')
+        (self.checkout / "scripts/setup/hypr.sh").write_text(
+            '#!/usr/bin/env bash\nprintf "configured\\n" > "$HOME/.hypr-setup-ran"\n')
         self.source = self.checkout / "apps/kitty"
         (self.source / "scripts").mkdir(parents=True)
         (self.source / "kitty.conf").write_text("# Static fixture\ninclude theme.conf\n")
@@ -100,6 +102,15 @@ io.write("# Generated fixture\\nbackground ", os.getenv("TEST_THEME_COLOR"), "\\
         result = self.setup()
         self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertTrue((self.home / ".zsh-setup-ran").exists())
+        self.assertFalse((self.home / ".hypr-setup-ran").exists())
+
+    def test_hyprland_runs_after_zen_and_propagates_required_failures(self):
+        self.assert_installed(self.setup())
+        self.assertTrue((self.home / ".hypr-setup-ran").exists())
+        (self.checkout / "scripts/setup/hypr.sh").write_text("#!/usr/bin/env bash\nexit 23\n")
+        result = self.setup()
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertTrue((self.home / ".zen-setup-ran").exists())
 
     def test_required_starship_child_failure_stops_before_zsh_setup(self):
         (self.checkout / "scripts/setup/starship.sh").write_text("#!/usr/bin/env bash\nexit 23\n")

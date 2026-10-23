@@ -2,18 +2,29 @@
 
 ## Layout
 
-- `config/hypr/.config/hypr/hyprland.lua`: example entry point for loading Luna defaults.
-- `default/hypr/bootstrap.lua`: loads reusable Luna defaults.
-- `default/hypr/monitors.lua`: enables displays at their preferred mode with automatic placement.
-- `default/hypr/theme.lua`: applies the selected theme through native `hl.config()`.
-- `default/hypr/bindings.lua`: registers Luna's basic keyboard shortcuts.
-- `default/hypr/animations.lua`: sets animation timings and horizontal workspace slides.
+- `apps/hypr/hyprland.lua`: Luna's maintained entry point, copied into the installed app config.
+- `apps/hypr/monitors.lua`: enables displays at their preferred mode with automatic placement.
+- `apps/hypr/theme.lua`: applies the selected theme through native `hl.config()`.
+- `apps/hypr/bindings.lua`: registers Luna's basic keyboard shortcuts.
+- `apps/hypr/animations.lua`: sets animation timings and horizontal workspace slides.
+- `apps/hypr/workspaces.lua`: distributes numbered workspaces across monitors.
+- `apps/hypr/scripts/generate-config.lua`: generates the installed checkout path in `generated/paths.lua`.
 
 ## Load
 
 Requires Hyprland 0.55 or newer with Lua configuration support.
 
-Setup leaves your Hyprland configuration in place. Load Luna from your own Lua configuration using the bootstrap call below, then put personal overrides after it.
+The `apps` setup step installs the maintained files under `$LUNA_CONFIG_DIR/hypr` (normally `~/.config/luna/hypr`). It prepends a managed `dofile` block to `$XDG_CONFIG_HOME/hypr/hyprland.lua`, creating the file when absent. Personal settings stay below Luna's defaults and retain their original bytes and file mode. Reruns update the managed include without duplicating it.
+
+Run only the Hyprland setup with:
+
+```sh
+bash scripts/setup/hypr.sh
+```
+
+Set `HYPRLAND_CONFIG` to an absolute custom Lua config path if your session uses one, including when starting Hyprland with `--config`. A legacy `hyprland.conf` is preserved: when it is the only existing config, setup installs Luna's files but skips activation with a warning. Convert that personal configuration to Lua before rerunning setup; creating a Lua file would otherwise shadow it.
+
+Setup migrates the recognized old Luna entry point from `config/hypr/.config/hypr/hyprland.lua`, replacing its loader and preserving the personal settings below it. An old symlink into the checkout is detached into a personal file. If the old tracked target was deleted during an update, setup recovers it from local Git history; unavailable history or an unrecognized loader requires manual migration instead of discarding settings. Other personal file symlinks remain intact.
 
 The source step links each whole directory under `src/` into `~/.local/src/`:
 
@@ -25,14 +36,13 @@ For example, `~/.local/src/luna-bar` points to the checkout's `src/luna-bar`. Wh
 
 The main `scripts/setup.sh` installs core packages, development tools, main packages, fonts, and Git apps without package-manager confirmations. It links source directories and installs `~/.local/bin/luna`. Open a new terminal after setup so the shell uses that command path. Setup skips Docker enablement and NVIDIA installation, and attempts to reload an active Hyprland session. Individual setup steps live under `scripts/setup/`.
 
-The configuration entry point follows symlinks back to the checkout. If copying it instead, set `LUNA_PATH` to the checkout directory before starting Hyprland. To integrate with an existing Lua config, add this at the desired point in its load order, replacing the example checkout path:
+The installed entry reads its own directory and generated checkout path, so it does not depend on shell environment variables or the working directory. To load an already installed configuration manually:
 
 ```lua
-local root = "/path/to/luna"
-dofile(root .. "/default/hypr/bootstrap.lua")(root)
+dofile("/home/you/.config/luna/hypr/hyprland.lua")
 ```
 
-The entry point supplies theme appearance, animation defaults, and the shortcuts below. Put personal overrides after the bootstrap call.
+The entry point supplies theme appearance, animation defaults, and the shortcuts below. Put personal overrides after the include. Setup's session step attempts a manual reload; running `hypr.sh` alone does not reload or restart Hyprland. Back up files you want to keep before setup; no automatic backups are created.
 
 ## Animations
 
@@ -40,13 +50,13 @@ Windows animate in 200 ms, fades in 150 ms, layers in 180 ms, and workspaces in 
 
 ## Multiple monitors
 
-`default/hypr/workspaces.lua` divides workspaces 1–10 evenly into consecutive ranges across connected monitors, ordered left to right (then top to bottom for equal horizontal positions). Two monitors get 1–5 and 6–10; three get 1–4, 5–7, and 8–10. The 0 key still selects workspace 10. Extra workspaces from an uneven split go to the leftmost monitors. Mirrored outputs do not get a separate range.
+`apps/hypr/workspaces.lua` divides workspaces 1–10 evenly into consecutive ranges across connected monitors, ordered left to right (then top to bottom for equal horizontal positions). Two monitors get 1–5 and 6–10; three get 1–4, 5–7, and 8–10. The 0 key still selects workspace 10. Extra workspaces from an uneven split go to the leftmost monitors. Mirrored outputs do not get a separate range.
 
 Assignments update after startup, reload, hotplug, or monitor rearrangement, moving existing numbered workspaces with their windows. With one display, all ten belong to it.
 
 When a display starts before its workspace range is reassigned, Hyprland can temporarily open an empty workspace above 10. Luna switches that display to the first workspace in its assigned range (6 on the second of two displays) and restores the previous focus and cursor position. This also covers a quick reconnect with the same monitor arrangement. Populated, persistent, explicitly renamed, and special workspaces are preserved.
 
-New outputs use their preferred resolution and refresh rate, automatic placement, and scale 1. Monitor scaling belongs in your personal display configuration. Add output-specific `hl.monitor()` rules after bootstrap for a fixed arrangement.
+New outputs use their preferred resolution and refresh rate, automatic placement, and scale 1. Monitor scaling belongs in your personal display configuration. Add output-specific `hl.monitor()` rules after Luna's include for a fixed arrangement.
 
 ```sh
 hyprctl monitors all

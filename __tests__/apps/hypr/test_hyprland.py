@@ -8,7 +8,7 @@ import tempfile
 import unittest
 
 
-REPO = Path(__file__).resolve().parents[5]
+REPO = Path(__file__).resolve().parents[3]
 
 
 BINDING_API = """
@@ -152,8 +152,8 @@ local function update(event)
 end
 
 local function load_workspaces()
-    local root = arg[1]:match("^(.*)/config/hypr/")
-    dofile(root .. '/default/hypr/workspaces.lua')
+    local config_dir = arg[1]:match("^(.*)/[^/]+$")
+    dofile(config_dir .. '/workspaces.lua')
 end
 '''
 
@@ -169,9 +169,23 @@ class HyprlandThemeTests(unittest.TestCase):
         self.library.mkdir(parents=True)
         self.theme = self.library / 'tokyo-night'
         shutil.copytree(REPO / 'themes/bundled/tokyo-night', self.theme)
-        self.env = dict(os.environ, XDG_CONFIG_HOME=str(self.root / 'config'),
+        self.home = self.root / 'home'
+        self.home.mkdir()
+        self.env = dict(os.environ, HOME=str(self.home), XDG_CONFIG_HOME=str(self.root / 'config'),
                         XDG_DATA_HOME=str(self.root / 'data'), XDG_STATE_HOME=str(self.root / 'state'))
         self.env.pop('LUNA_PATH', None)
+        self.env.pop('HYPRLAND_INSTANCE_SIGNATURE', None)
+        self.installed = self.root / 'installed hypr'
+        self.installed.mkdir()
+        for source in (REPO / 'apps/hypr').glob('*.lua'):
+            shutil.copy2(source, self.installed / source.name)
+        (self.installed / 'generated').mkdir()
+        generated = subprocess.run(
+            ['/usr/bin/lua', '-E', str(REPO / 'apps/hypr/scripts/generate-config.lua')],
+            cwd=self.root, env=self.env, text=True, capture_output=True, check=True,
+        )
+        (self.installed / 'generated/paths.lua').write_text(generated.stdout)
+        self.entry = self.installed / 'hyprland.lua'
         self.publish()
 
     def publish(self):
@@ -185,8 +199,8 @@ file:close()
 """, env=self.env, text=True, capture_output=True, check=True)
 
     def lua(self, script, ok=True):
-        result = subprocess.run(['/usr/bin/lua', '-E', '-', str(REPO / 'config/hypr/.config/hypr/hyprland.lua'),
-                                 str(self.config / 'theme')], env=self.env, input=BINDING_API + script.replace("dofile(arg[1])", "binding_api(); dofile(arg[1])"),
+        result = subprocess.run(['/usr/bin/lua', '-E', '-', str(self.entry),
+                                 str(self.config / 'theme'), str(REPO)], env=self.env, cwd=self.root, input=BINDING_API + script.replace("dofile(arg[1])", "binding_api(); dofile(arg[1])"),
                                 text=True, capture_output=True, timeout=10)
         self.assertEqual(result.returncode == 0, ok, result.stdout + result.stderr)
         return result
@@ -213,17 +227,15 @@ assert(calls[1].decoration.rounding == 0)
 assert(calls[1].decoration.active_opacity == 0.90)
 assert(calls[1].decoration.inactive_opacity == 0.85)
 assert(calls[1].monitor == nil)
-assert(#monitors == 2)
+assert(#monitors == 1)
 assert(monitors[1].mode == "preferred" and monitors[1].position == "auto")
 assert(monitors[1].scale == 1)
-assert(monitors[2].mode == "1920x1080@60")
-assert(monitors[2].output == "desc:LG Electronics 2D HD LG TV 0x01010101")
 assert(calls[1].general.col.active_border == "#7aa2f7")
 assert(calls[1].general.col.inactive_border == "#414868")
 assert(calls[1].decoration.blur.size == 10)
 assert(calls[1].decoration.blur.passes == 3)
 assert(calls[1].decoration.shadow.color == "#13141caa")
-local root = arg[1]:match("^(.*)/config/hypr/")
+local root = arg[3]
 local resolved = dofile(root .. '/lib/theme/resolved.lua')(root)
 local output = assert(io.open(resolved.path, 'w'))
 output:write(resolved.encode(resolved.resolve({ colors = { accent = '#82aaff' } }, 'other')))
@@ -234,7 +246,7 @@ assert(#calls == 2)
 assert(calls[2].general.col.active_border == "#82aaff")
 assert(calls[2].general.gaps_in == 5)
 assert(calls[2].decoration.rounding == 0)
-assert(#monitors == 4 and monitors[3].position == "auto")
+assert(#monitors == 2 and monitors[2].position == "auto")
 ''')
         self.assertFalse((self.root / 'config/luna/generated').exists())
 
@@ -247,6 +259,27 @@ assert(#monitors == 4 and monitors[3].position == "auto")
         output = self.config / 'theme.json'
         output.write_text(output.read_text().replace('"rounding":0', '"rounding":-1'))
         self.lua('hl = { config = function() error("Invalid settings must not be applied") end }; dofile(arg[1])', ok=False)
+
+    def test_empty_and_unset_xdg_config_read_the_home_theme_selection(self):
+        config = self.home / '.config/luna'
+        config.mkdir(parents=True)
+        shutil.copy2(self.config / 'theme.json', config / 'theme.json')
+        (config / 'theme').write_text('tokyo-night\n')
+        for value in ('', None):
+            with self.subTest(XDG_CONFIG_HOME=value):
+                if value is None:
+                    self.env.pop('XDG_CONFIG_HOME', None)
+                else:
+                    self.env['XDG_CONFIG_HOME'] = value
+                self.lua('''
+local calls = 0
+hl = { config = function(settings)
+    calls = calls + 1
+    assert(settings.general.col.active_border == "#7aa2f7")
+end }
+dofile(arg[1])
+assert(calls == 1, "Home theme selection was not applied")
+''')
 
     def test_workspace_ranges_follow_monitor_order_and_hotplug(self):
         self.lua('''
@@ -274,8 +307,8 @@ hl = {
     dsp = { workspace = { move = function(options) return options end } },
     dispatch = function(options) table.insert(moves, options) end,
 }
-local root = arg[1]:match("^(.*)/config/hypr/")
-dofile(root .. '/default/hypr/workspaces.lua')
+local config_dir = arg[1]:match("^(.*)/[^/]+$")
+dofile(config_dir .. '/workspaces.lua')
 local function update(event)
     events[event]()
     if pending then local callback = pending; pending = nil; callback() end
@@ -482,11 +515,24 @@ assert(not repeat_flags["XF86AudioMute"] and not repeat_flags["XF86AudioPlay"])
         (self.config / 'theme').write_text('tokyo-night\n')
         entry = self.root / 'config/hypr/hyprland.lua'
         entry.parent.mkdir()
-        entry.symlink_to(REPO / 'config/hypr/.config/hypr/hyprland.lua')
+        entry.symlink_to(self.entry)
         script = 'hl = { config = function(settings) assert(settings.general.border_size == 1) end, monitor = function(settings) assert(settings.scale == 1) end }; dofile(arg[1])'
         result = subprocess.run(['/usr/bin/lua', '-E', '-', str(entry)], env=self.env,
                                 input=BINDING_API + script.replace("dofile(arg[1])", "binding_api(); dofile(arg[1])"), text=True, capture_output=True, timeout=10)
         self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_generated_checkout_path_is_authoritative_and_required(self):
+        self.env['LUNA_PATH'] = str(self.root / 'wrong checkout')
+        self.lua('hl = { config = function() end }; dofile(arg[1])')
+        generated = self.installed / 'generated/paths.lua'
+        for contents in ('return {}', 'return { install_dir = "relative" }', 'return false'):
+            with self.subTest(contents=contents):
+                generated.write_text(contents)
+                result = self.lua('hl = { config = function() end }; dofile(arg[1])', ok=False)
+                self.assertIn('Regenerate Luna', result.stderr)
+        generated.unlink()
+        result = self.lua('hl = { config = function() end }; dofile(arg[1])', ok=False)
+        self.assertIn('generated/paths.lua', result.stderr)
 
     def test_hyprland_parser(self):
         executable = shutil.which('Hyprland')
@@ -496,7 +542,7 @@ assert(not repeat_flags["XF86AudioMute"] and not repeat_flags["XF86AudioPlay"])
         if '--verify-config' not in help_text:
             self.skipTest('Hyprland config verification is unavailable')
         (self.config / 'theme').write_text('tokyo-night\n')
-        result = subprocess.run([executable, '--verify-config', '-c', str(REPO / 'config/hypr/.config/hypr/hyprland.lua')],
+        result = subprocess.run([executable, '--verify-config', '-c', str(self.entry)],
                                 env=self.env, text=True, capture_output=True, timeout=20)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn('config ok', result.stdout + result.stderr)

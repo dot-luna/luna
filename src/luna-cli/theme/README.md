@@ -39,7 +39,7 @@ luna theme current
 - Selection: `$XDG_CONFIG_HOME/luna/theme`, defaulting to `~/.config/luna/theme`.
 - `set` merges the installed exports with shared defaults, validates the result, writes `~/.config/luna/theme.json` (respecting `$XDG_CONFIG_HOME`), applies the resolved `colors.mode`, and saves the selection.
 - An unchanged selection and identical resolved output are skipped unless `--force` is supplied. Setting the same theme again rebuilds missing or changed output.
-- Luna's [Hyprland config](../../../config/hypr/README.md) reads the generated JSON on its next startup or manual reload. Theme selection does not trigger a live reload or change the wallpaper.
+- Luna's [Hyprland config](../../../apps/hypr/README.md) reads the generated JSON on its next startup or manual reload. Theme selection does not trigger a live reload or change the wallpaper.
 
 After editing installed theme files, run `luna theme set <name>` again, then reload the consuming components. Existing selections from before JSON generation must be set again once. Luna Bar applies the resolved UI font family; terminal font integration remains separate.
 
