@@ -125,6 +125,19 @@ The config-directory override controls app output only; Luna's theme selection, 
 
 Luna's terminal messages use colors and separated steps; external tool output is muted gray. Set `NO_COLOR=1` to disable colors. Plain-text logs are saved in `~/.local/state/luna/`, or `$XDG_STATE_HOME/luna/` when set.
 
+## Virtual machines
+
+Luna supports [Windows](src/luna-cli/windows/README.md) and
+[macOS](src/luna-cli/macos/README.md) through Dockur and Docker Compose.
+Run `luna win install` or `luna mac install` to choose RAM, CPU cores, and disk
+size interactively; macOS also asks for its version. Enter accepts defaults,
+explicit flags skip individual prompts, and `--yes` skips all prompts.
+macOS installation is completed through its recovery console after preparation.
+
+Use `luna win start` / `luna mac start` for a desktop session and
+`luna win stop` / `luna mac stop` to release the VM's CPU/RAM while keeping its
+disk. Closing the desktop client also stops its VM unless `--keep-alive` is set.
+
 ## Run setup again
 
 ```sh

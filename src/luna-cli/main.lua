@@ -47,6 +47,8 @@ local launcher = dofile(source_dir .. "/launcher/init.lua")(common, source_dir .
 launcher.register(parser)
 local windows = dofile(source_dir .. "/windows/init.lua")(common, source_dir .. "/windows")
 local windows_parser = windows.register(parser)
+local macos = dofile(source_dir .. "/macos/init.lua")(common, source_dir .. "/macos")
+local macos_parser = macos.register(parser)
 local lock = dofile(source_dir .. "/lock/init.lua")(common, source_dir .. "/lock")
 lock.register(parser)
 local sleep = dofile(source_dir .. "/sleep/init.lua")(common, source_dir .. "/sleep")
@@ -111,6 +113,16 @@ elseif options.screensaver or options.idle or options.awake then
     if not ok then
         common.error("Screensaver command failed: " .. tostring(message))
         os.exit(1)
+    end
+elseif options.macos then
+    if not (options.install or options.start or options.stop or options.status or options.logs or options.delete) then
+        common.info(macos_parser:get_help())
+    else
+        local ok, message = pcall(macos.run, options)
+        if not ok then
+            common.error("macOS command failed: " .. tostring(message))
+            os.exit(1)
+        end
     end
 elseif options.windows then
     if not (options.install or options.start or options.stop or options.status or options.logs or options.delete) then

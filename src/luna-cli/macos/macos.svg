@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+    <title>macOS virtual machine</title>
+    <path fill="#94a3b8" d="M27 44h10l3 12H24z"/>
+    <rect x="17" y="54" width="30" height="4" rx="2" fill="#cbd5e1"/>
+    <rect x="4" y="6" width="56" height="40" rx="5" fill="#cbd5e1"/>
+    <rect x="8" y="10" width="48" height="28" rx="2" fill="#312e81"/>
+    <path fill="#818cf8" d="M8 33 22 18l12 13 9-8 13 11v4H8z"/>
+    <circle cx="44" cy="18" r="4" fill="#e0e7ff"/>
+    <circle cx="32" cy="42" r="1.5" fill="#64748b"/>
+</svg>

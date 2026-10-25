@@ -217,7 +217,7 @@ return function(common, directory)
         elseif options.start then
             start(options)
         elseif options.stop then
-            common.run(compose("stop", "--timeout", "120", "windows"))
+            common.run({ "bash", root .. "/lib/vm-stop.sh", config.path, "windows" })
         elseif options.status then
             common.run(compose("ps", "--all", "windows"))
         elseif options.logs then

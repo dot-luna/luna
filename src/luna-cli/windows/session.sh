@@ -22,7 +22,7 @@ cleanup() {
     rm -f -- "$rdp_arguments"
     if [[ $vm_started == true && $rdp_ready == true && $keep_alive == false ]]; then
         printf '\nStopping Windows VM...\n'
-        "${compose[@]}" stop --timeout 120 windows || result=1
+        bash "$(dirname -- "$0")/../../../lib/vm-stop.sh" "$compose_file" windows || result=1
     fi
     exit "$result"
 }

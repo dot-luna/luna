@@ -12,6 +12,7 @@ import time
 import unittest
 
 REPO = Path(__file__).resolve().parents[4]
+STOP_INSPECT_FORMAT = '{{.State.Running}} {{.State.Restarting}} {{.HostConfig.RestartPolicy.Name}}'
 
 
 class WindowsTests(unittest.TestCase):
@@ -24,6 +25,7 @@ class WindowsTests(unittest.TestCase):
         self.env = dict(os.environ, HOME=str(self.root),
                         XDG_CONFIG_HOME=str(self.root / 'config'),
                         XDG_DATA_HOME=str(self.root / 'data'),
+                        LUNA_INSTALL_DIR=str(REPO),
                         PATH=str(tools) + ':' + os.environ['PATH'],
                         WAYLAND_DISPLAY='test', TEST_ROOT=str(self.root))
         self.config = self.root / 'config/luna/windows/compose.yml'
@@ -45,8 +47,18 @@ if name == 'docker':
             'environment': {'USERNAME': 'luna', 'PASSWORD': 'private-test-secret'}}}}))
     elif 'up' in args and os.getenv('DOCKER_UP_FAIL'):
         sys.exit(1)
+    elif 'stop' in args and os.getenv('DOCKER_STOP_FAIL'):
+        sys.exit(1)
+    elif args[:1] == ['update']:
+        sys.exit(int(os.getenv('DOCKER_UPDATE_FAIL', '0')))
     elif args and args[0] == 'inspect':
-        print('2026-10-13T00:00:00Z')
+        if args[2] == '{{.State.StartedAt}}':
+            print('2026-10-13T00:00:00Z')
+        elif args[2] == '{{.State.Running}} {{.State.Restarting}} {{.HostConfig.RestartPolicy.Name}}':
+            if os.getenv('DOCKER_STOP_INSPECT_FAIL'): sys.exit(1)
+            print(os.getenv('DOCKER_STOP_STATE', 'false false no'))
+        else:
+            sys.exit(1)
     elif 'logs' in args:
         print('Windows started successfully')
     elif 'down' in args:
@@ -85,6 +97,15 @@ elif name == 'hyprctl':
 
     def clear(self):
         (self.root / 'commands').write_text('')
+
+    def assert_verified_stop(self):
+        compose = ['docker', 'compose', '--project-name', 'luna-windows', '--file', str(self.config)]
+        self.assertEqual(self.commands()[-4:], [
+            [*compose, 'ps', '--all', '-q', 'windows'],
+            ['docker', 'update', '--restart=no', 'mock-container'],
+            [*compose, 'stop', '--timeout', '120', 'windows'],
+            ['docker', 'inspect', '--format', STOP_INSPECT_FORMAT, 'mock-container'],
+        ])
 
     def test_help_status_and_missing_install(self):
         self.assertIn('logs', self.cli().stdout)
@@ -185,6 +206,7 @@ elif name == 'hyprctl':
         for flag in ('-grab-keyboard', '/f', '/clipboard', '/scale:140', '/p:private-test-secret'):
             self.assertIn(flag, arguments)
         self.assertTrue(any(cmd[-4:] == ['stop', '--timeout', '120', 'windows'] for cmd in commands))
+        self.assert_verified_stop()
         self.assertEqual(list(self.config.parent.glob('.rdp-*')), [])
         self.assertNotIn('private-test-secret', (self.root / 'commands').read_text())
 
@@ -193,6 +215,7 @@ elif name == 'hyprctl':
         self.clear()
         self.cli('start', '--keep-alive')
         self.assertFalse(any('stop' in cmd for cmd in self.commands()))
+        self.assertFalse(any('update' in cmd for cmd in self.commands()))
         self.clear()
         self.env['RDP_EXIT'] = '2'
         self.cli('start', ok=False)
@@ -210,7 +233,57 @@ elif name == 'hyprctl':
         self.assertTrue(any(cmd[-5:] == ['logs', '--tail', '100', '--follow', 'windows'] for cmd in commands))
         self.assertTrue(any(cmd[-4:] == ['logs', '--tail', '25', 'windows'] for cmd in commands))
         self.assertFalse(any('up' in cmd or 'down' in cmd or 'rm' in cmd for cmd in commands))
+        self.assert_verified_stop()
         self.assertTrue(self.config.exists())
+
+    def test_stop_and_session_cleanup_propagate_stop_failure(self):
+        self.cli('install')
+        self.env['DOCKER_STOP_FAIL'] = '1'
+        for command in ['stop', 'start']:
+            with self.subTest(command=command):
+                self.clear()
+                result = self.cli(command, ok=False)
+                self.assertIn('Cannot stop Windows', result.stderr)
+                self.assertNotIn('VM stopped.', result.stdout)
+                self.assert_verified_stop()
+                self.assertEqual(list(self.config.parent.glob('.rdp-*')), [])
+
+    def test_stop_and_session_cleanup_reject_running_or_restarting_vm(self):
+        self.cli('install')
+        for state in ['true false no', 'false true no', 'false false always']:
+            for command in ['stop', 'start']:
+                with self.subTest(command=command, state=state):
+                    self.clear()
+                    self.env['DOCKER_STOP_STATE'] = state
+                    result = self.cli(command, ok=False)
+                    self.assertIn('shutdown is unverified', result.stderr)
+                    self.assertNotIn('VM stopped.', result.stdout)
+                    self.assert_verified_stop()
+                    self.assertEqual(list(self.config.parent.glob('.rdp-*')), [])
+
+    def test_stop_and_session_cleanup_still_stop_after_policy_update_failure(self):
+        self.cli('install')
+        self.env['DOCKER_UPDATE_FAIL'] = '1'
+        for command in ['stop', 'start']:
+            with self.subTest(command=command):
+                self.clear()
+                result = self.cli(command, ok=False)
+                self.assertIn('Cannot disable automatic restart', result.stderr)
+                self.assertNotIn('VM stopped.', result.stdout)
+                self.assert_verified_stop()
+                self.assertEqual(list(self.config.parent.glob('.rdp-*')), [])
+
+    def test_stop_and_session_cleanup_propagate_inspect_failure(self):
+        self.cli('install')
+        self.env['DOCKER_STOP_INSPECT_FAIL'] = '1'
+        for command in ['stop', 'start']:
+            with self.subTest(command=command):
+                self.clear()
+                result = self.cli(command, ok=False)
+                self.assertIn('Cannot verify Windows shutdown', result.stderr)
+                self.assertNotIn('VM stopped.', result.stdout)
+                self.assert_verified_stop()
+                self.assertEqual(list(self.config.parent.glob('.rdp-*')), [])
 
     def test_start_is_foreground_and_second_session_is_rejected(self):
         self.cli('install')

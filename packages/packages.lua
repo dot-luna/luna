@@ -70,10 +70,11 @@ return {
         { name = "upower", source = "pacman", purpose = "Battery and power information" },
         { name = "power-profiles-daemon", source = "pacman", purpose = "Provide powerprofilesctl and desktop power mode switching" },
 
-        -- Container runtime and Windows VM client.
-        { name = "docker", source = "pacman", purpose = "Run containers and the Dockur Windows VM" },
+        -- Container runtime and desktop clients for the Windows and macOS VMs.
+        { name = "docker", source = "pacman", purpose = "Run containers and the Dockur Windows and macOS VMs" },
         { name = "docker-compose", source = "pacman", purpose = "Manage container stacks with Docker Compose" },
         { name = "freerdp", source = "pacman", purpose = "Connect to the Windows VM over RDP" },
+        { name = "tigervnc", source = "pacman", purpose = "Connect to the macOS VM console over VNC" },
 
         -- Desktop controls for brightness, clipboard access, and locking.
         { name = "brightnessctl", source = "pacman", purpose = "Display brightness controls" },

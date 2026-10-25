@@ -46,6 +46,8 @@ disown
 
 Closing Windows or interrupting an attached desktop session stops the VM, unless `--keep-alive` was supplied. `logs` follows Docker output independently; closing the log viewer does not stop the VM. `status` reports container state, which does not by itself mean Windows has finished booting.
 
+`stop` and normal desktop cleanup disable the VM container's [automatic restart policy](https://docs.docker.com/engine/containers/start-containers-automatically/), allow [120 seconds for shutdown before Docker forces it to stop](https://docs.docker.com/reference/cli/docker/container/stop/), and verify it is neither running nor restarting. A stopped VM uses no guest CPU or RAM and will not restart automatically, including after Docker restarts. Its disk and configuration remain; the shared Docker daemon and other containers keep running. If shutdown cannot be verified, the command fails; check the reported error and retry `luna win stop`.
+
 ## Delete the VM
 
 `luna win delete` (also `luna win remove`) asks you to type `delete` before permanently removing the Compose containers, Windows virtual disk and downloaded setup files, private configuration, and launcher entry. `--yes` skips the confirmation for scripts. Your shared `~/Windows` directory and the cached Docker image are kept.
