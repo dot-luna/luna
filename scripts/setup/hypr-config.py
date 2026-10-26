@@ -12,7 +12,12 @@ import tempfile
 
 
 REPO = Path(__file__).resolve().parents[2]
-MODULES = ("hyprland", "animations", "bindings", "monitors", "theme", "workspaces")
+MODULES = (
+    "hyprland", "animations", "bindings", "monitors", "theme", "workspaces",
+    "autostart", "rules", "input",
+    "bindings/apps", "bindings/windows", "bindings/workspaces", "bindings/desktop", "bindings/media",
+    "bindings/display", "bindings/appearance",
+)
 LEGACY_PATH = Path("config/hypr/.config/hypr/hyprland.lua")
 START = b"-- >>> Luna Hyprland >>>"
 END = b"-- <<< Luna Hyprland <<<"
@@ -320,7 +325,7 @@ def plan(staging_path, output_path, active_path):
     staging = Path(staging_path)
     output = absolute_path(output_path, "Hyprland configuration destination")
     active = absolute_path(active_path, "HYPRLAND_CONFIG")
-    for directory in (output, output / "generated"):
+    for directory in (output, output / "bindings", output / "generated"):
         if directory.is_symlink() or (directory.exists() and not directory.is_dir()):
             raise ValueError(f"Hyprland configuration destination must be a directory, not a symlink: {directory}")
     output = output.resolve()

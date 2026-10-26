@@ -2,18 +2,32 @@
 
 ## Layout
 
-- `apps/hypr/config/hyprland.lua`: Luna's maintained entry point, copied into the installed app config.
+- `apps/hypr/config/hyprland.lua`: resolves paths and loads the modules in an explicit order.
+- `apps/hypr/config/autostart.lua`: starts the existing session services when Hyprland starts.
+- `apps/hypr/config/input.lua`: keyboard repeat, touchpad behavior, workspace gestures and split preservation.
+- `apps/hypr/config/rules.lua`: Luna surfaces, Zen picture-in-picture, GTK dialogs and the drop-down terminal.
 - `apps/hypr/config/monitors.lua`: enables displays at their preferred mode with automatic placement.
 - `apps/hypr/config/theme.lua`: applies the selected theme through native `hl.config()`.
-- `apps/hypr/config/bindings.lua`: registers Luna's basic keyboard shortcuts.
+- `apps/hypr/config/bindings.lua`: shares the binding helper and loads the shortcut groups below.
+- `apps/hypr/config/bindings/apps.lua`: terminal and browser shortcuts.
+- `apps/hypr/config/bindings/windows.lua`: navigation, resizing, fullscreen, floating and groups.
+- `apps/hypr/config/bindings/workspaces.lua`: workspace/monitor navigation, scratchpad and drop-down terminal.
+- `apps/hypr/config/bindings/display.lua`: desktop zoom and temporary monitor scaling.
+- `apps/hypr/config/bindings/appearance.lua`: workspace layout, gaps, transparency and single-window proportions.
+- `apps/hypr/config/bindings/desktop.lua`: Luna menus, lock, notifications and capture shortcuts.
+- `apps/hypr/config/bindings/media.lua`: volume, brightness and media keys.
 - `apps/hypr/config/animations.lua`: sets animation timings and horizontal workspace slides.
 - `apps/hypr/config/workspaces.lua`: distributes numbered workspaces across monitors.
 - `apps/hypr/app.lua`: declares the config directory, builder, and personal Lua include.
 - `apps/hypr/build.lua`: fills `templates/paths.lua` with the checkout path in `generated/paths.lua`.
 
+All modules are copied into the installed app config. Runtime toggles do not rewrite
+these files or personal overrides.
+
 ## Load
 
 Requires Hyprland 0.55 or newer with Lua configuration support.
+The complete configuration and native callback APIs are checked against Hyprland 0.56.2.
 
 The `apps` setup step installs the maintained files under `$LUNA_CONFIG_DIR/hypr` (normally `~/.config/luna/hypr`). It prepends a managed `dofile` block to `$XDG_CONFIG_HOME/hypr/hyprland.lua`, creating the file when absent. Personal settings stay below Luna's defaults and retain their original bytes and file mode. Reruns update the managed include without duplicating it.
 
@@ -57,7 +71,20 @@ Assignments update after startup, reload, hotplug, or monitor rearrangement, mov
 
 When a display starts before its workspace range is reassigned, Hyprland can temporarily open an empty workspace above 10. Luna switches that display to the first workspace in its assigned range (6 on the second of two displays) and restores the previous focus and cursor position. This also covers a quick reconnect with the same monitor arrangement. Populated, persistent, explicitly renamed, and special workspaces are preserved.
 
-New outputs use their preferred resolution and refresh rate, automatic placement, and scale 1. Monitor scaling belongs in your personal display configuration. Add output-specific `hl.monitor()` rules after Luna's include for a fixed arrangement.
+New outputs use their preferred resolution and refresh rate, automatic placement, and scale 1. Add output-specific `hl.monitor()` rules after Luna's include for a fixed arrangement and persistent scaling.
+
+`Super + /` and `Super + Alt + /` temporarily increase/decrease the focused monitor's
+scale, using valid quarter steps from 1 to 3 and the original scale. The shortcut
+preserves resolution, refresh rate, position, rotation and color mode. It skips
+mirrored displays, fractional logical pixel sizes and changes that would overlap
+another display. At a limit, it leaves the scale alone. Automatically positioned
+neighbors can move after scaling and block a later decrease; fixed positions avoid
+that. Reload the config to restore the configured arrangement.
+
+Use monitor names such as `DP-1` in advanced `hl.monitor()` overrides. Hyprland can
+preserve ICC/HDR/VRR and other rule settings when updating an exact named rule;
+settings inherited only from a `desc:` or catch-all rule cannot all be read back
+through Lua and may be lost when a named scaling override is created.
 
 ```sh
 hyprctl monitors all
@@ -73,15 +100,71 @@ This step supports Turing or newer NVIDIA hardware and asks for confirmation bef
 
 ## Keybindings
 
+### Windows and workspaces
+
 | Shortcut | Action |
 | --- | --- |
 | Super + Return | Open Kitty |
 | Super + Shift + Return | Open Zen |
 | Super + W | Close the active window |
 | Super + F | Toggle edge-to-edge monitor fullscreen for the focused window |
+| Super + Alt + F | Toggle maximized window |
+| Super + Ctrl + F | Toggle app fullscreen inside the window's current geometry |
+| Super + Arrows | Focus the neighboring window |
+| Super + Shift + Arrows | Swap with the neighboring window |
+| Alt + Tab / Alt + Shift + Tab | Cycle forward/backward through windows and raise the selection |
+| Super + left/right mouse drag | Move/resize a window |
+| Super + −/= | Shrink/grow width by 100px; add Alt for 25px |
+| Super + Shift + −/= | Shrink/grow height by 100px; add Alt for 25px |
+| Super + T | Toggle floating |
+| Super + J / Super + P | Toggle dwindle split direction / pseudo tiling |
+| Super + O | Float, pin and raise a window; press again to unpin and tile it |
+| Super + G / Super + Alt + G | Toggle a group / remove the focused window from it |
+| Super + Alt + Arrows | Move the focused window into the neighboring group |
+| Super + Alt + Tab / Super + Alt + Shift + Tab | Next/previous grouped window |
+| Super + Ctrl + Left/Right | Previous/next grouped window |
+| Super + Alt + 1–5 | Select a grouped window by position |
 | Super + 1–9 | Switch to workspace 1–9 |
 | Super + 0 | Switch to workspace 10 |
 | Super + Shift + 1–9 / 0 | Move the focused window to that workspace and follow it (0 = 10) |
+| Super + Shift + Alt + 1–9 / 0 | Move to that workspace without following |
+| Super + Tab / Super + Shift + Tab | Next/previous existing workspace on this monitor |
+| Super + mouse wheel | Cycle existing workspaces on this monitor |
+| Super + Ctrl + Tab | Return to the former workspace on this monitor |
+| Ctrl + Alt + Tab / Ctrl + Alt + Shift + Tab | Next/previous monitor |
+| Super + Ctrl + Shift + Arrows | Move the window to the monitor in that direction and follow |
+| Super + S / Super + Alt + S | Show/hide scratchpad / send the window there without following |
+| Super + Grave (backtick) | Launch or show/hide the drop-down Kitty terminal |
+
+Resize keys use the physical minus/equal positions on a US keyboard so Shift keeps
+working across layouts. Scratchpad and terminal workspaces are separate from the
+numbered 1–10 set. To return a scratchpad window, use the normal numbered move keys.
+The terminal starts only when requested, opens at 90% width and half height, and
+reuses its existing window. A session-specific `flock` prevents duplicate terminals.
+
+### Display and appearance
+
+| Shortcut | Action |
+| --- | --- |
+| Super + Ctrl + Z | Increase desktop zoom by 0.5, up to 3× |
+| Super + Ctrl + Alt + Z | Reset zoom to 1× |
+| `Super + /` and `Super + Alt + /` | Increase/decrease the focused monitor's scale |
+| Super + Ctrl + L | Toggle dwindle/scrolling on the active numbered workspace |
+| Super + Shift + Backspace | Toggle gaps off and restore their previous values |
+| Super + Backspace | Toggle transparent/opaque windows and restore previous opacity values |
+| Super + Ctrl + Backspace | Toggle square proportions for a lone tiled window |
+
+Appearance, layout and zoom changes reset on config reload. Gap and opacity toggles
+save the current values on first use, including theme and personal overrides, and
+restore them on the next press. Layout switching leaves named and special workspaces
+alone and keeps numbered workspace-to-monitor assignments intact. Split/pseudo
+shortcuts apply to dwindle; they do not change scrolling layout behavior.
+
+### Luna desktop
+
+| Shortcut | Action |
+| --- | --- |
+| Super + L | Lock the screen |
 | Super + Ctrl + B | Focus Luna Bar |
 | Super + Ctrl + Space | Toggle the control center |
 | Super + Space | Toggle the application launcher |
@@ -104,6 +187,18 @@ The same actions are available under Luna's Trigger → Screenshot menu and thro
 Recordings save to `~/Videos/Recordings`; Trigger → Screen Recording and
 `luna record [region|screen|stop|toggle]` share the same worker and visible Stop control.
 The login hook also runs `luna auth start` for administrator password dialogs.
+
+## Input and window rules
+
+Keys repeat at 40 characters per second after 250ms. Touchpads support tap-to-click
+and two-finger right-clicking, and pause while typing.
+Keyboard layout, remaps, pointer sensitivity and natural scrolling remain personal
+preferences. Three-finger horizontal swipes switch existing workspaces on the
+current monitor without creating extra workspaces.
+
+Zen picture-in-picture windows float, keep their aspect ratio, stay pinned across
+workspaces and open in the bottom-right corner. GTK portal dialogs float and center.
+Normal browser windows and Kitty terminals keep their regular tiling behavior.
 
 Luna's global bindings consume their matching key events and bypass application shortcut inhibitors, including in fullscreen apps. They retain normal lock-screen protection. Personal global bindings can use the same flags:
 

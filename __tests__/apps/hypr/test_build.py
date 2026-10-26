@@ -64,6 +64,28 @@ class BuildConfigTests(unittest.TestCase):
         self.assertEqual(paths, {'install_dir': str(REPO)})
         self.assertNotIn(str(self.root / 'staging'), str(paths))
 
+    def test_required_modules_exist_and_are_not_empty(self):
+        checkout = self.root / 'checkout'
+        app = checkout / 'apps/hypr'
+        shutil.copytree(REPO / 'apps/hypr', app)
+        self.generate(checkout=checkout)
+        for name, contents in (('rules.lua', (None, b'')),
+                               ('bindings/windows.lua', (None, b'')),
+                               ('input.lua', (None, b'')),
+                               ('bindings/appearance.lua', (None, b'')),
+                               ('bindings/display.lua', (None, b''))):
+            module = app / 'config' / name
+            original = module.read_bytes()
+            for content in contents:
+                with self.subTest(module=name, content=content):
+                    if content is None:
+                        module.unlink()
+                    else:
+                        module.write_bytes(content)
+                    result = self.generate(checkout=checkout, ok=False)
+                    self.assertIn(name.removesuffix('.lua'), result.stderr)
+                    module.write_bytes(original)
+
 
 if __name__ == '__main__':
     unittest.main()

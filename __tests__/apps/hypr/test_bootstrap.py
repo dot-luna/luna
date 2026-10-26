@@ -25,6 +25,7 @@ class BootstrapKeyringTests(unittest.TestCase):
         self.installed = self.root / "installed Hyprland's config"
         (self.installed / 'generated').mkdir(parents=True)
         shutil.copy2(ENTRY, self.installed / 'hyprland.lua')
+        shutil.copy2(ENTRY.parent / 'autostart.lua', self.installed / 'autostart.lua')
         subprocess.run(
             ['/usr/bin/lua', '-E', str(REPO / 'scripts/setup/build-app.lua'),
              str(REPO / 'apps/hypr'), str(self.installed), str(self.installed),
@@ -39,8 +40,8 @@ class BootstrapKeyringTests(unittest.TestCase):
             'XDG_CURRENT_DESKTOP': 'Hyprland',
         }
 
-        # Load only the installed entry and generated paths. Other modules and API are
-        # inert handlers; registering or dispatching a command never executes it.
+        # Load only the entry, startup module and generated paths. Other modules
+        # are inert handlers; registering or dispatching never executes a command.
         capture = '''
 local load = dofile
 local json = dofile(arg[2] .. "/lib/theme/json.lua")
@@ -50,7 +51,8 @@ local callbacks, commands = {}, {}
 dofile = function(path)
     if path == root .. "/lib/theme/resolved.lua" then
         return function() return {} end
-    elseif path == config_dir .. "/generated/paths.lua" then
+    elseif path == config_dir .. "/generated/paths.lua"
+        or path == config_dir .. "/autostart.lua" then
         return load(path)
     elseif path == config_dir .. "/theme.lua" then
         return function() return { apply = function() end } end
@@ -58,6 +60,8 @@ dofile = function(path)
         return function() end
     elseif path == config_dir .. "/monitors.lua"
         or path == config_dir .. "/workspaces.lua"
+        or path == config_dir .. "/input.lua"
+        or path == config_dir .. "/rules.lua"
         or path == config_dir .. "/animations.lua" then
         return
     end

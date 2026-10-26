@@ -139,7 +139,7 @@ Battery warnings appear once at 15%, with a persistent critical alert at 5%.
 Charging resets the warning cycle; recovery above 20%/8% rearms each threshold.
 They use Luna notifications and respect Do Not Disturb.
 
-The bar hides on monitors whose active workspace has a fullscreen window, releasing its reserved space and dismissing the control center. It returns when fullscreen ends or you switch to a workspace without fullscreen content. Other monitors are unaffected.
+The bar hides on monitors whose active workspace has a fullscreen window, releasing its reserved space and dismissing the control center. Maximized windows and client-only fullscreen inside a tile keep the bar visible. It returns when fullscreen ends or you switch to a workspace without fullscreen content. Other monitors are unaffected.
 
 ## Theme
 

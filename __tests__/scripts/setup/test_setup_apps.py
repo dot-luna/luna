@@ -514,6 +514,7 @@ end
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertEqual((installed / "kitty.conf").read_bytes(),
                                  (REPO / "apps/kitty/config/kitty.conf").read_bytes())
+                self.assertIn("remember_window_size no\n", (installed / "kitty.conf").read_text())
                 for name in ("kitty.conf", "generated/theme.conf"):
                     self.assertFalse((installed / name).is_symlink())
                 options = dict(line.split(maxsplit=1)

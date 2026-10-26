@@ -1,7 +1,14 @@
 return function(ctx)
     -- These modules are loaded together; never publish an incomplete config.
-    for _, name in ipairs({ "hyprland", "animations", "bindings", "monitors", "theme", "workspaces" }) do
-        assert(ctx.read("config/" .. name .. ".lua") ~= "", "Empty Hyprland module: " .. name)
+    local modules = {
+        "hyprland", "animations", "bindings", "monitors", "theme", "workspaces",
+        "autostart", "rules", "input",
+        "bindings/apps", "bindings/windows", "bindings/workspaces", "bindings/desktop", "bindings/media",
+        "bindings/display", "bindings/appearance",
+    }
+    for _, name in ipairs(modules) do
+        local content = ctx.read("config/" .. name .. ".lua")
+        assert(content ~= "", "Empty Hyprland module: " .. name)
     end
 
     -- Quote the final checkout path as Lua data, including unusual folder names.

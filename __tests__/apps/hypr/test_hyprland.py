@@ -19,13 +19,27 @@ local function binding_api()
     hl.window_rule = hl.window_rule or function() end
     hl.on = hl.on or function() end
     hl.timer = hl.timer or function() end
+    hl.gesture = hl.gesture or function() end
+    hl.config = hl.config or function() end
+    hl.get_monitors = hl.get_monitors or function() return {} end
+    hl.get_windows = hl.get_windows or function() return {} end
     hl.curve = function() end
     hl.animation = function() end
     hl.dsp = {
         exec_cmd = function(command) return command end,
-        window = { close = function() end, move = function(options) return options end, fullscreen = function(options) return options end },
-        focus = function() end,
+        window = {},
+        group = {},
+        workspace = { toggle_special = function(name) return { special = name } end },
+        focus = function(options) return options end,
+        layout = function(message) return { layout = message } end,
     }
+    for _, name in ipairs({ "close", "move", "fullscreen", "fullscreen_state", "float", "pin",
+        "swap", "resize", "drag", "cycle_next", "bring_to_top", "pseudo" }) do
+        hl.dsp.window[name] = function(options) return options or {} end
+    end
+    for _, name in ipairs({ "toggle", "next", "prev", "active" }) do
+        hl.dsp.group[name] = function(options) return options or {} end
+    end
 end
 """
 
@@ -176,9 +190,7 @@ class HyprlandThemeTests(unittest.TestCase):
         self.env.pop('LUNA_PATH', None)
         self.env.pop('HYPRLAND_INSTANCE_SIGNATURE', None)
         self.installed = self.root / 'installed hypr'
-        self.installed.mkdir()
-        for source in (REPO / 'apps/hypr/config').glob('*.lua'):
-            shutil.copy2(source, self.installed / source.name)
+        shutil.copytree(REPO / 'apps/hypr/config', self.installed)
         (self.installed / 'generated').mkdir()
         subprocess.run(
             ['/usr/bin/lua', '-E', str(REPO / 'scripts/setup/build-app.lua'),
@@ -216,7 +228,9 @@ file:close()
 local calls = {}
 local monitors = {}
 hl = {
-    config = function(settings) table.insert(calls, settings) end,
+    config = function(settings)
+        if settings.general and settings.general.col then table.insert(calls, settings) end
+    end,
     monitor = function(settings) table.insert(monitors, settings) end,
 }
 dofile(arg[1])
@@ -252,14 +266,15 @@ assert(#monitors == 2 and monitors[2].position == "auto")
         self.assertFalse((self.root / 'config/luna/generated').exists())
 
     def test_no_selection_and_invalid_selection(self):
-        self.lua('hl = { config = function() error("No theme should be applied") end }; dofile(arg[1])')
+        guard = 'hl = { config = function(settings) if settings.decoration then error("Theme must not be applied") end end }; dofile(arg[1])'
+        self.lua(guard)
         for name in ('../escape', 'missing'):
             (self.config / 'theme').write_text(name + '\n')
-            self.lua('hl = { config = function() error("Invalid theme must not be applied") end }; dofile(arg[1])', ok=False)
+            self.lua(guard, ok=False)
         (self.config / 'theme').write_text('tokyo-night\n')
         output = self.config / 'theme.json'
         output.write_text(output.read_text().replace('"rounding":0', '"rounding":-1'))
-        self.lua('hl = { config = function() error("Invalid settings must not be applied") end }; dofile(arg[1])', ok=False)
+        self.lua(guard, ok=False)
 
     def test_empty_and_unset_xdg_config_read_the_home_theme_selection(self):
         config = self.home / '.config/luna'
@@ -275,6 +290,7 @@ assert(#monitors == 2 and monitors[2].position == "auto")
                 self.lua('''
 local calls = 0
 hl = { config = function(settings)
+    if not settings.general or not settings.general.col then return end
     calls = calls + 1
     assert(settings.general.col.active_border == "#7aa2f7")
 end }
@@ -464,6 +480,7 @@ assert(active_monitor == left and cursor.x == 360 and cursor.y == 220)
 local bindings = {}
 local descriptions = {}
 local repeat_flags = {}
+local combinations = {}
 hl = {
     config = function() end,
     bind = function(keys, action, flags)
@@ -473,15 +490,22 @@ hl = {
         assert(type(flags.description) == "string" and flags.description:match("%S"),
             keys .. " must describe its Lua action for the keybinding guide")
         assert(not bindings[keys], "Duplicate shortcut: " .. keys)
+        local parts = {}
+        for part in keys:gmatch("[^+]+") do
+            parts[#parts + 1] = part:gsub("%s+", ""):lower()
+        end
+        table.sort(parts)
+        local canonical = table.concat(parts, "+")
+        assert(not combinations[canonical], "Duplicate key combination: " .. keys)
+        combinations[canonical] = true
         bindings[keys] = action or true
         descriptions[keys] = flags.description
         repeat_flags[keys] = flags.repeating
     end,
 }
 dofile(arg[1])
-local count = 0
-for _ in pairs(bindings) do count = count + 1 end
-assert(count == 45)
+assert(bindings["SUPER + T"] and bindings["SUPER + S"])
+assert(bindings["SUPER + CTRL + L"] and bindings["SUPER + CTRL + Z"])
 assert(bindings["SUPER + F"].action == "toggle")
 assert(bindings["SUPER + F"].mode == "fullscreen")
 assert(bindings["SUPER + F"].layout_aware == false)
@@ -517,7 +541,7 @@ assert(not repeat_flags["XF86AudioMute"] and not repeat_flags["XF86AudioPlay"])
         entry = self.root / 'config/hypr/hyprland.lua'
         entry.parent.mkdir()
         entry.symlink_to(self.entry)
-        script = 'hl = { config = function(settings) assert(settings.general.border_size == 1) end, monitor = function(settings) assert(settings.scale == 1) end }; dofile(arg[1])'
+        script = 'hl = { config = function(settings) if settings.general then assert(settings.general.border_size == 1) end end, monitor = function(settings) assert(settings.scale == 1) end }; dofile(arg[1])'
         result = subprocess.run(['/usr/bin/lua', '-E', '-', str(entry)], env=self.env,
                                 input=BINDING_API + script.replace("dofile(arg[1])", "binding_api(); dofile(arg[1])"), text=True, capture_output=True, timeout=10)
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -543,8 +567,13 @@ assert(not repeat_flags["XF86AudioMute"] and not repeat_flags["XF86AudioPlay"])
         if '--verify-config' not in help_text:
             self.skipTest('Hyprland config verification is unavailable')
         (self.config / 'theme').write_text('tokyo-night\n')
+        runtime = self.root / 'runtime'
+        runtime.mkdir(mode=0o700)
+        env = dict(self.env, XDG_RUNTIME_DIR=str(runtime))
+        for name in ('DISPLAY', 'WAYLAND_DISPLAY', 'HYPRLAND_INSTANCE_SIGNATURE'):
+            env.pop(name, None)
         result = subprocess.run([executable, '--verify-config', '-c', str(self.entry)],
-                                env=self.env, text=True, capture_output=True, timeout=20)
+                                env=env, text=True, capture_output=True, timeout=20)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn('config ok', result.stdout + result.stderr)
 

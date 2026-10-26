@@ -32,7 +32,10 @@ class SetupHyprTests(unittest.TestCase):
         copy_app_setup(self.checkout)
         source = self.checkout / "apps/hypr/config"
         for name in helper.MODULES:
-            (source / (name + ".lua")).write_text("loads = (loads or 0) + 1\n" if name == "hyprland" else "-- static module\n")
+            module = source / (name + ".lua")
+            module.parent.mkdir(parents=True, exist_ok=True)
+            content = "loads = (loads or 0) + 1\n" if name == "hyprland" else "-- static module\n"
+            module.write_text(content)
         self.generator = source.parent / "build.lua"
 
         self.bin = self.root / "bin"
@@ -99,8 +102,10 @@ class SetupHyprTests(unittest.TestCase):
         self.assertTrue(content.endswith(PERSONAL))
         self.assertEqual(self.active.stat().st_mode & 0o777, 0o640)
         self.assertEqual(self.run_lua(), "1\t1")
-        self.assertEqual({path.name for path in self.destination.iterdir()},
-                         {name + ".lua" for name in helper.MODULES} | {"generated"})
+        self.assertEqual({str(path.relative_to(self.destination)) for path in self.destination.rglob("*")
+                          if path.is_file()},
+                         {name + ".lua" for name in helper.MODULES} | {"generated/paths.lua"})
+        self.assertEqual((self.destination / "input.lua").read_bytes(), b"-- static module\n")
         self.assertTrue((self.destination / "generated/paths.lua").is_file())
         before = self.active.stat().st_mtime_ns
         self.setup()
@@ -260,11 +265,29 @@ class SetupHyprTests(unittest.TestCase):
     def test_generation_failure_keeps_all_installed_and_personal_bytes(self):
         self.put_active(PERSONAL)
         self.setup()
-        paths = [self.active, *self.destination.glob("*.lua"), self.destination / "generated/paths.lua"]
+        paths = [self.active, *self.destination.rglob("*.lua")]
         before = {path: path.read_bytes() for path in paths}
         self.generator.write_text('return function(ctx) ctx.write("generated/paths.lua", "partial"); error("bad generation") end\n')
         self.setup(ok=False)
         self.assertEqual(before, {path: path.read_bytes() for path in paths})
+
+    def test_incomplete_modules_preserve_installed_and_personal_content(self):
+        self.put_active(PERSONAL)
+        self.setup()
+        paths = [self.active, *self.destination.rglob("*.lua")]
+        before = {path: path.read_bytes() for path in paths}
+        for name, contents in (("bindings/desktop.lua", (None, b"")), ("input.lua", (None, b""))):
+            module = self.checkout / "apps/hypr/config" / name
+            original = module.read_bytes()
+            for content in contents:
+                with self.subTest(module=name, content=content):
+                    if content is None:
+                        module.unlink()
+                    else:
+                        module.write_bytes(content)
+                    self.setup(ok=False)
+                    self.assertEqual(before, {path: path.read_bytes() for path in paths})
+                    module.write_bytes(original)
 
     def test_relative_paths_repository_and_active_aliases_are_rejected(self):
         for name, value in (("XDG_CONFIG_HOME", "relative"), ("LUNA_CONFIG_DIR", "relative"),
@@ -290,10 +313,14 @@ class SetupHyprTests(unittest.TestCase):
         self.assertEqual(list(outside.iterdir()), [])
         self.destination.unlink()
         self.destination.mkdir()
-        (self.destination / "generated").symlink_to(outside)
-        self.setup(ok=False)
-        self.assertEqual(list(outside.iterdir()), [])
-        (self.destination / "generated").unlink()
+        for name in ("generated", "bindings"):
+            with self.subTest(directory=name):
+                (self.destination / name).symlink_to(outside)
+                self.setup(ok=False)
+                with self.assertRaisesRegex(ValueError, "not a symlink"):
+                    helper.plan(self.checkout / "apps/hypr/config", self.destination, self.active)
+                self.assertEqual(list(outside.iterdir()), [])
+                (self.destination / name).unlink()
         (self.destination / "theme.lua").mkdir()
         self.setup(ok=False)
         self.assertFalse(self.active.exists())

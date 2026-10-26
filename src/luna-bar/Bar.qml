@@ -7,6 +7,7 @@ import Quickshell.Wayland
 import Quickshell.Hyprland
 import Luna as Luna
 import "components"
+import "Fullscreen.js" as Fullscreen
 
 PanelWindow {
     id: bar
@@ -19,7 +20,7 @@ PanelWindow {
     required property var workspaceConfig
     property bool keyboardActive: false
     readonly property var monitor: Hyprland.monitors.values.find(item => item.name === screen.name)
-    readonly property bool fullscreenActive: !!(monitor && monitor.activeWorkspace && monitor.activeWorkspace.hasFullscreen)
+    readonly property bool fullscreenActive: Fullscreen.isActive(monitor)
     onActiveWorkspaceChanged: {
         if (calendarPanel) calendarPanel.dismiss();
         if (center) center.dismiss();

@@ -14,6 +14,16 @@ ShellRoot {
     readonly property var config: JSON.parse(Quickshell.env("LUNA_BAR_CONFIG"))
     readonly property var notifications: notificationStore
 
+    // Quickshell updates workspace flags on fullscreen events, but the bar also
+    // needs fresh client modes to distinguish maximized from actual fullscreen.
+    Connections {
+        target: Hyprland
+        function onRawEvent(event) {
+            if (["fullscreen", "openwindow", "movewindowv2"].includes(event.name))
+                Hyprland.refreshToplevels();
+        }
+    }
+
     // Session helpers are shared by every monitor; only their visible surfaces follow focus.
     HardwareControls {
         id: hardware
