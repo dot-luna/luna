@@ -148,8 +148,107 @@ print -r -- "$HISTFILE"
 print -r -- "$HISTSIZE:$SAVEHIST"
 bindkey '^A'
 """, interactive=True)
-        self.assertEqual(output.splitlines(), [str(self.home / ".histfile"), "1000:1000",
+        self.assertEqual(output.splitlines(), [str(self.home / ".histfile"), "32768:32768",
                                               '"^A" beginning-of-line'])
+
+    def test_saved_history_retains_old_commands_and_omits_spaces_and_consecutive_duplicates(self):
+        # Interactive stdin exercises Zsh's real history reader and exit-time writer.
+        (self.home / ".zshrc").write_text(
+            'source "$LUNA_TEST_CONFIG/zshrc"\nPROMPT=""\nunsetopt PROMPT_SP\n'
+        )
+        history = self.home / ".histfile"
+        previous = [f"print -r -- saved-{number}" for number in range(1500)]
+        history.write_text("\n".join(previous) + "\n")
+        commands = [
+            "print -r -- first",
+            "print -r -- first",
+            " print -r -- hidden",
+            "print -r -- second",
+            "print -r -- first",
+            "exit",
+        ]
+        for session in (commands, ["print -r -- later-session", "exit"]):
+            result = subprocess.run(
+                [ZSH, "-d", "-i"], env=self.env, cwd=self.root,
+                input="\n".join(session) + "\n", capture_output=True, text=True, timeout=10,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(result.stderr, "")
+
+        self.assertEqual(history.read_text().splitlines(), [
+            *previous, "print -r -- first", "print -r -- second", "print -r -- first",
+            "exit", "print -r -- later-session", "exit",
+        ])
+
+    def assert_history_navigation(self):
+        (self.home / ".histfile").write_text(
+            "git status\nprint unrelated\ngit log\nprint newest\n"
+        )
+        capture = self.root / "editor buffers"
+        self.env.update(LUNA_TEST_ZSH=ZSH, LUNA_TEST_CAPTURE=str(capture))
+        # Record the editor buffer without accepting/executing commands. Reset the
+        # history position between cases so one search cannot influence the next.
+        (self.home / ".zshrc").write_text(r'''
+source "$LUNA_TEST_CONFIG/zshrc"
+PROMPT='LUNA_TEST_READY>'
+RPROMPT=''
+_capture_buffer() { print -rn -- "$BUFFER"$'\0'"$CURSOR"$'\0' >> "$LUNA_TEST_CAPTURE"; }
+_reset_buffer() { zle .end-of-history; zle .kill-buffer; }
+_multiline_buffer() { BUFFER=$'first line\nsecond line'; CURSOR=3; }
+zle -N _capture_buffer
+zle -N _reset_buffer
+zle -N _multiline_buffer
+bindkey '^O' _capture_buffer
+bindkey '^K' _reset_buffer
+bindkey '^Y' _multiline_buffer
+zshexit() { print -r -- LUNA_TEST_FINISHED; }
+''')
+        cases = []
+        expected = []
+        for up, down in (("\x1b[A", "\x1b[B"), ("\x1bOA", "\x1bOB")):
+            cases.extend([
+                "git" + up,
+                "git" + up * 2,
+                "git" + up * 2 + down,
+                "git" + up + down,
+                up,
+                "\x19" + down,
+                "\x19" + down + up,
+            ])
+            expected.extend([
+                ("git log", 7), ("git status", 10), ("git log", 7), ("git", 3),
+                ("print newest", 12), ("first line\nsecond line", 14),
+                ("first line\nsecond line", 3),
+            ])
+        self.env["LUNA_TEST_KEYS"] = "".join("\x0b" + keys + "\x0f" for keys in cases)
+        self.env["LUNA_TEST_KEYS"] += "\x0bexit\n"
+        self.run_zsh('''
+zmodload zsh/zpty
+zpty terminal "$LUNA_TEST_ZSH" -d -i
+zpty -r terminal output '*LUNA_TEST_READY>*'
+zpty -w -n terminal "$LUNA_TEST_KEYS"
+zpty -r terminal output '*LUNA_TEST_FINISHED*'
+zpty -d terminal
+''')
+        fields = capture.read_text().split("\0")[:-1]
+        self.assertEqual(
+            [(buffer, int(cursor)) for buffer, cursor in zip(fields[::2], fields[1::2])],
+            expected,
+        )
+
+    def test_history_arrows_search_prefix_and_preserve_multiline_edits(self):
+        self.assert_history_navigation()
+
+    def test_history_arrows_with_packaged_suggestions_and_highlighting(self):
+        packages = Path("/usr/share/zsh/plugins")
+        plugins = ("zsh-autosuggestions", "zsh-syntax-highlighting")
+        if not all((packages / plugin / f"{plugin}.zsh").is_file() for plugin in plugins):
+            self.skipTest("Packaged Zsh suggestions and highlighting are required")
+        isolated = self.root / "share/zsh/plugins"
+        isolated.mkdir(parents=True)
+        for plugin in plugins:
+            (isolated / plugin).symlink_to(packages / plugin, target_is_directory=True)
+        self.assert_history_navigation()
 
     def test_existing_history_file_and_personal_overrides_are_preserved(self):
         self.env["HISTFILE"] = str(self.root / "personal history")
@@ -213,8 +312,8 @@ print -r -- "$PNPM_HOME"
     def test_interactive_source_initializes_completions_and_activates_once(self):
         self.add_generated_completion()
         output = self.run_zsh("""
-before_options=$(setopt)
 source "$LUNA_TEST_CONFIG/zshrc"
+before_options=$(setopt)
 source "$LUNA_TEST_CONFIG/zshrc"
 [[ "$(setopt)" == "$before_options" ]] || exit 1
 (( ! ${+luna_zsh_dir} )) || exit 1

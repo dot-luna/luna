@@ -536,6 +536,28 @@ assert(repeat_flags["XF86AudioRaiseVolume"] and repeat_flags["XF86MonBrightnessD
 assert(not repeat_flags["XF86AudioMute"] and not repeat_flags["XF86AudioPlay"])
 ''')
 
+    def test_terminal_shortcut_captures_focused_process(self):
+        self.lua('''
+local binds, commands = {}, {}
+local focused = { pid = 4321, class = "luna-dropdown" }
+hl = {
+    get_active_window = function() return focused end,
+    dsp = { exec_cmd = function(command) return command end },
+    dispatch = function(command) table.insert(commands, command) end,
+}
+local config_dir = arg[1]:match("^(.*)/[^/]+$")
+local launcher = "'/checkout with spaces/bin/luna'"
+dofile(config_dir .. '/bindings/apps.lua')(function(keys, action) binds[keys] = action end, launcher)
+binds["SUPER + Return"]()
+focused = nil
+binds["SUPER + Return"]()
+focused = { pid = -1 }
+binds["SUPER + Return"]()
+assert(commands[1] == launcher .. " terminal --pid=4321")
+assert(commands[2] == launcher .. " terminal --pid=0")
+assert(commands[3] == launcher .. " terminal --pid=0")
+''')
+
     def test_symlink_entry_point(self):
         (self.config / 'theme').write_text('tokyo-night\n')
         entry = self.root / 'config/hypr/hyprland.lua'

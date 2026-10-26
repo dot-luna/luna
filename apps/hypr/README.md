@@ -110,7 +110,7 @@ This step supports Turing or newer NVIDIA hardware and asks for confirmation bef
 
 | Shortcut | Action |
 | --- | --- |
-| Super + Return | Open the default terminal through xdg-terminal-exec |
+| Super + Return | Open the default terminal in the focused terminal's folder, otherwise home |
 | Super + Shift + Return | Open the default browser for HTTPS links |
 | Super + W | Close the active window |
 | Super + Shift + W | Close all windows on the focused workspace (or its open scratchpad) |

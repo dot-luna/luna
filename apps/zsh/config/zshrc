@@ -22,9 +22,26 @@
     # Personal settings later in .zshrc can override history and keybindings.
     if [[ -o interactive ]]; then
         HISTFILE="${HISTFILE:-$HOME/.histfile}"
-        HISTSIZE=1000
-        SAVEHIST=1000
+        HISTSIZE=32768
+        SAVEHIST=32768
+
+        # Append on exit so other terminals keep their commands. Skip consecutive
+        # duplicates and commands starting with a space when saving history.
+        setopt APPEND_HISTORY HIST_IGNORE_DUPS HIST_IGNORE_SPACE
+
         bindkey -e
+
+        # Up/Down search the prefix before the cursor, or all history on an empty
+        # line. Zsh's own widgets also let the arrows move within multiline input.
+        autoload -Uz up-line-or-beginning-search down-line-or-beginning-search
+        zle -N up-line-or-beginning-search
+        zle -N down-line-or-beginning-search
+
+        # Cover normal and application cursor sequences used by Kitty and other terminals.
+        bindkey '^[[A' up-line-or-beginning-search
+        bindkey '^[[B' down-line-or-beginning-search
+        bindkey '^[OA' up-line-or-beginning-search
+        bindkey '^[OB' down-line-or-beginning-search
     fi
 
     source "$luna_zsh_dir/completion.zsh"

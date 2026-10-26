@@ -45,6 +45,8 @@ local bar = dofile(source_dir .. "/bar/init.lua")(common, source_dir .. "/bar")
 bar.register(parser)
 local launcher = dofile(source_dir .. "/launcher/init.lua")(common, source_dir .. "/launcher")
 launcher.register(parser)
+local terminal = dofile(source_dir .. "/terminal/init.lua")(common, source_dir .. "/terminal")
+terminal.register(parser)
 local windows = dofile(source_dir .. "/windows/init.lua")(common, source_dir .. "/windows")
 local windows_parser = windows.register(parser)
 local macos = dofile(source_dir .. "/macos/init.lua")(common, source_dir .. "/macos")
@@ -76,9 +78,9 @@ if options.version then
     return
 end
 
--- Bare entry points show help rather than performing any system operation.
-if options.auth or options.control or options.record then
-    local handler = options.auth and auth or options.control and control or record
+-- Dispatch desktop actions through their modules and report failures consistently.
+if options.auth or options.control or options.record or options.terminal then
+    local handler = options.auth and auth or options.control and control or options.terminal and terminal or record
     local ok, message = pcall(handler.run, options)
     if not ok then
         common.error(tostring(message))
