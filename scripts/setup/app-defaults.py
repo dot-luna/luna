@@ -125,16 +125,42 @@ def set_mime_defaults(config_home, choices):
         write_preference(target, original, content, mode)
 
 
-def verify(arguments, expected, label):
+def verify(arguments, expected, label, quiet=False):
     try:
         result = subprocess.run(arguments, capture_output=True, text=True, timeout=10,
                                 env=dict(os.environ, XTE_CACHE_ENABLED="0"))
         if result.returncode == 0 and result.stdout.strip() == expected:
-            print(f"[OK] {label} set to {expected}.")
-            return
+            if not quiet:
+                print(f"[OK] {label} set to {expected}.")
+            return True
     except (OSError, subprocess.TimeoutExpired):
         pass
-    warn(f"{label} preference saved, but selection could not be verified. Check {' '.join(arguments)}.")
+    if not quiet:
+        warn(f"{label} preference saved, but selection could not be verified. Check {' '.join(arguments)}.")
+    return False
+
+
+def verify_mime_defaults(choices, media_defaults):
+    """Verify every selection, summarizing broad audio/video choices in one line."""
+    remaining = dict(choices)
+    for pattern, desktop_id in media_defaults.items():
+        mime_types = [mime_type for mime_type, selected in choices.items()
+                      if mime_type.startswith(pattern[:-1]) and selected == desktop_id]
+        if not mime_types:
+            continue
+        unverified = []
+        for mime_type in mime_types:
+            if not verify(["xdg-mime", "query", "default", mime_type], desktop_id, "", quiet=True):
+                unverified.append(mime_type)
+            remaining.pop(mime_type)
+        label = f"Default {pattern.split('/')[0]} player"
+        if unverified:
+            warn(f"{label} preferences saved, but could not verify {len(unverified)} MIME defaults. "
+                 f"Check xdg-mime query default {unverified[0]}.")
+        else:
+            print(f"[OK] {label} set to {desktop_id}.")
+    for mime_type, desktop_id in remaining.items():
+        verify(["xdg-mime", "query", "default", mime_type], desktop_id, f"Default {mime_type}")
 
 
 def apply_defaults(config_home, manifest):
@@ -149,7 +175,11 @@ def apply_defaults(config_home, manifest):
     from gi.repository import GioUnix
 
     choices = {}
-    for key, desktop_id in manifest.items():
+    media_defaults = {}
+    # Expand wildcards first so explicit per-format preferences always win,
+    # regardless of the Lua table's iteration order.
+    for key in sorted(manifest, key=lambda key: (not key.endswith("/*"), key)):
+        desktop_id = manifest[key]
         try:
             application = GioUnix.DesktopAppInfo.new(desktop_id)
         except TypeError:
@@ -166,6 +196,18 @@ def apply_defaults(config_home, manifest):
             if not shutil.which("xdg-terminal-exec"):
                 warn("Default terminal skipped: xdg-terminal-exec is unavailable.")
                 continue
+        if key in ("audio/*", "video/*"):
+            supported = sorted({mime_type for mime_type in application.get_supported_types() or []
+                                if mime_type.startswith(key[:-1])
+                                and re.fullmatch(r"[\w!#$&^_.+\-]+/[\w!#$&^_.+\-]+", mime_type, re.ASCII)})
+            if not supported:
+                warn(f"Default {key} skipped: {desktop_id} advertises no supported types.")
+                continue
+            # An unavailable explicit choice must leave that format's existing
+            # preference intact, rather than falling back to the wildcard.
+            choices.update({mime_type: desktop_id for mime_type in supported if mime_type not in manifest})
+            media_defaults[key] = desktop_id
+            continue
         choices[key] = desktop_id
 
     if not choices:
@@ -177,8 +219,7 @@ def apply_defaults(config_home, manifest):
         verify(["xdg-terminal-exec", "--print-id"], terminal, "Default terminal")
     if choices:
         set_mime_defaults(config_home, choices)
-        for mime_type, desktop_id in choices.items():
-            verify(["xdg-mime", "query", "default", mime_type], desktop_id, f"Default {mime_type}")
+        verify_mime_defaults(choices, media_defaults)
 
 
 if __name__ == "__main__":

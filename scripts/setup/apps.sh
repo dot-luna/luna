@@ -62,6 +62,7 @@ luna_success "Installed Kitty configuration: $kitty_dir"
 /usr/bin/python3 "$setup_dir/kitty-include.py" "$active_kitty_dir/kitty.conf" "$kitty_dir/kitty.conf"
 luna_success "Configured Kitty include: $active_kitty_dir/kitty.conf"
 
+bash "$setup_dir/mpv.sh"
 bash "$setup_dir/starship.sh"
 bash "$setup_dir/zsh.sh"
 bash "$setup_dir/zen.sh"

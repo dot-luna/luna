@@ -52,7 +52,8 @@ sys.exit(int(os.environ.get("TEST_TERMINAL_STATUS", "0")))
                         XDG_CONFIG_DIRS=str(self.root / "system config"),
                         XDG_CACHE_HOME=str(self.root / "cache"), GIO_USE_VFS="local",
                         BASH_ENV="", NO_COLOR="1")
-        for name in ("TEST_TERMINAL_ID", "TEST_TERMINAL_STATUS", "TEST_FILE_MANAGER_ID", "TEST_FILE_MANAGER_STATUS"):
+        for name in ("TEST_TERMINAL_ID", "TEST_TERMINAL_STATUS", "TEST_FILE_MANAGER_ID", "TEST_FILE_MANAGER_STATUS",
+                     "TEST_MEDIA_FAILURE_TYPE", "TEST_FLAC_ID"):
             self.env.pop(name, None)
 
     def add_desktop(self, desktop_id, command, categories="", extra=""):
@@ -70,6 +71,25 @@ assert len(sys.argv) == 4 and sys.argv[1:3] == ["query", "default"]
 pathlib.Path(os.environ["HOME"], "file-manager-verified").touch()
 print(os.environ.get("TEST_FILE_MANAGER_ID", "org.gnome.Nautilus.desktop"))
 sys.exit(int(os.environ.get("TEST_FILE_MANAGER_STATUS", "0")))
+''')
+        (self.bin / "xdg-mime").chmod(0o755)
+
+    def add_mpv(self, mime_types="audio/mpeg;audio/flac;video/mp4;video/x-matroska;image/jpeg;application/json;x-scheme-handler/https;"):
+        (self.bin / "mpv").write_text("#!/bin/sh\nexit 99\n")
+        (self.bin / "mpv").chmod(0o755)
+        self.add_desktop("mpv.desktop", "mpv --player-operation-mode=pseudo-gui -- %U", "AudioVideo;",
+                         f"MimeType={mime_types}\n")
+        (self.bin / "xdg-mime").write_text(f"#!{sys.executable}\n" + '''
+import os, pathlib, sys
+assert len(sys.argv) == 4 and sys.argv[1:3] == ["query", "default"]
+with pathlib.Path(os.environ["HOME"], "media-queries").open("a") as output:
+    output.write(sys.argv[3] + "\\n")
+if sys.argv[3] == os.environ.get("TEST_MEDIA_FAILURE_TYPE"):
+    print("other.desktop")
+elif sys.argv[3] == "audio/flac":
+    print(os.environ.get("TEST_FLAC_ID", "mpv.desktop"))
+else:
+    print("mpv.desktop")
 ''')
         (self.bin / "xdg-mime").chmod(0o755)
 
@@ -318,6 +338,114 @@ sys.exit(int(os.environ.get("TEST_FILE_MANAGER_STATUS", "0")))
             self.assertIn(b"application/json=custom-files.desktop;", content)
             self.assertNotIn(b"Nautilus", content)
 
+    def test_mpv_selects_only_advertised_audio_video_types_and_preserves_other_defaults(self):
+        self.add_mpv()
+        self.config_home.mkdir(parents=True)
+        generic = self.config_home / "mimeapps.list"
+        generic.write_text("[Default Applications]\naudio/mpeg=old.desktop;\n"
+                           "audio/unsupported=other.desktop;\nimage/jpeg=viewer.desktop;\n"
+                           "application/json=editor.desktop;\nx-scheme-handler/https=browser.desktop;\n"
+                           "[Added Associations]\naudio/mpeg=old.desktop;\n"
+                           "[Removed Associations]\naudio/mpeg=mpv.desktop;blocked.desktop;\n")
+        result = self.setup()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Default audio player set to mpv.desktop", result.stdout)
+        self.assertIn("Default video player set to mpv.desktop", result.stdout)
+        self.assertNotIn("Default audio/mpeg set", result.stdout)
+        media_types = {"audio/mpeg", "audio/flac", "video/mp4", "video/x-matroska"}
+        self.assertEqual(set((self.home / "media-queries").read_text().splitlines()), media_types)
+        for name in ("mimeapps.list", "hyprland-mimeapps.list"):
+            content = (self.config_home / name).read_text()
+            for mime_type in media_types:
+                self.assertIn(f"{mime_type}=mpv.desktop;", content)
+            self.assertNotIn("/*", content)
+            for mime_type in ("audio/unsupported", "image/jpeg", "application/json", "x-scheme-handler/https"):
+                self.assertNotIn(f"{mime_type}=mpv.desktop;", content)
+        content = generic.read_text()
+        self.assertIn("audio/mpeg=mpv.desktop;old.desktop;", content)
+        self.assertIn("[Removed Associations]\naudio/mpeg=blocked.desktop;", content)
+        self.assertIn("audio/unsupported=other.desktop;", content)
+        self.assertIn("image/jpeg=viewer.desktop;", content)
+        self.assertIn("application/json=editor.desktop;", content)
+        self.assertIn("x-scheme-handler/https=browser.desktop;", content)
+        before = {path: (path.read_bytes(), path.stat().st_mtime_ns) for path in self.config_home.iterdir()}
+        result = self.setup()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(before, {path: (path.read_bytes(), path.stat().st_mtime_ns)
+                                  for path in self.config_home.iterdir()})
+
+    def test_missing_mpv_preserves_existing_media_defaults(self):
+        self.config_home.mkdir(parents=True)
+        mime = self.config_home / "mimeapps.list"
+        original = b"[Default Applications]\naudio/mpeg=other.desktop;\nvideo/mp4=other.desktop;\n"
+        mime.write_bytes(original)
+        result = self.setup()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("mpv.desktop is unavailable", result.stderr)
+        self.assertEqual(mime.read_bytes(), original)
+        self.assertFalse((self.config_home / "hyprland-mimeapps.list").exists())
+
+    def test_media_defaults_skip_missing_or_invalid_support_metadata(self):
+        self.add_mpv("image/jpeg;audio/*;video/bad=value;")
+        self.manifest.write_text('return { ["audio/*"] = "mpv.desktop", ["video/*"] = "mpv.desktop" }\n')
+        result = self.setup()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("advertises no supported types", result.stderr)
+        self.assertFalse(self.config_home.exists())
+
+        self.add_desktop("mpv.desktop", "mpv %U", "AudioVideo;")
+        result = self.setup()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("advertises no supported types", result.stderr)
+        self.assertFalse(self.config_home.exists())
+
+    def test_exact_media_preferences_override_wildcards(self):
+        self.add_mpv()
+        self.add_desktop("music.desktop", "/bin/true %U", "Audio;", "MimeType=audio/flac;\n")
+        self.env["TEST_FLAC_ID"] = "music.desktop"
+        self.manifest.write_text('''return {
+    ["audio/flac"] = "music.desktop",
+    ["audio/*"] = "mpv.desktop",
+    ["video/*"] = "mpv.desktop",
+}
+''')
+        result = self.setup()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Default audio/flac set to music.desktop", result.stdout)
+        for name in ("mimeapps.list", "hyprland-mimeapps.list"):
+            content = (self.config_home / name).read_text()
+            self.assertIn("audio/flac=music.desktop;", content)
+            self.assertNotIn("audio/flac=mpv.desktop;", content)
+            self.assertIn("audio/mpeg=mpv.desktop;", content)
+
+    def test_media_verification_failure_warns_once_and_keeps_saved_preferences(self):
+        self.add_mpv()
+        self.env["TEST_MEDIA_FAILURE_TYPE"] = "audio/mpeg"
+        result = self.setup()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Default audio player preferences saved, but could not verify 1 MIME defaults", result.stderr)
+        self.assertIn("Check xdg-mime query default audio/mpeg", result.stderr)
+        self.assertNotIn("Default audio player set to", result.stdout)
+        self.assertIn("Default video player set to mpv.desktop", result.stdout)
+        self.assertIn("audio/mpeg=mpv.desktop;", (self.config_home / "mimeapps.list").read_text())
+
+    def test_unavailable_exact_media_choice_preserves_existing_preference(self):
+        self.add_mpv()
+        self.add_desktop("hidden.desktop", "/bin/true %U", "Audio;", "Hidden=true\nMimeType=audio/flac;\n")
+        self.config_home.mkdir(parents=True)
+        mime = self.config_home / "mimeapps.list"
+        mime.write_text("[Default Applications]\naudio/flac=existing.desktop;\n")
+        for desktop_id in ("missing.desktop", "hidden.desktop"):
+            with self.subTest(desktop_id=desktop_id):
+                self.manifest.write_text('return { ["audio/*"] = "mpv.desktop", '
+                                         f'["audio/flac"] = "{desktop_id}" }}\n')
+                result = self.setup()
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn(f"{desktop_id} is unavailable", result.stderr)
+                self.assertIn("audio/flac=existing.desktop;", mime.read_text())
+                self.assertNotIn("audio/flac=mpv.desktop;", mime.read_text())
+                self.assertIn("audio/mpeg=mpv.desktop;", mime.read_text())
+
     def test_invalid_manifest_fails_before_any_preference_is_changed(self):
         self.add_nautilus()
         self.config_home.mkdir(parents=True)
@@ -328,6 +456,9 @@ sys.exit(int(os.environ.get("TEST_FILE_MANAGER_STATUS", "0")))
         before = {path: (path.read_bytes(), path.stat().st_mtime_ns) for path in self.config_home.iterdir()}
         for source in ("return false", 'return { terminal = "kitty.desktop", browser = "other.desktop" }',
                        'return { terminal = "kitty.desktop", ["inode/directory"] = 4 }',
+                       'return { ["image/*"] = "mpv.desktop" }',
+                       'return { ["audio/m*"] = "mpv.desktop" }',
+                       'return { ["*/*"] = "mpv.desktop" }',
                        'return { terminal = "$(touch INJECTED).desktop" }', "return {"):
             with self.subTest(manifest=source):
                 self.manifest.write_text(source)
@@ -359,6 +490,32 @@ sys.exit(int(os.environ.get("TEST_FILE_MANAGER_STATUS", "0")))
         self.assertIn("org.gnome.Nautilus.desktop is unavailable", result.stderr)
         self.assertIn("Default terminal set to kitty.desktop", result.stdout)
         self.assertFalse((self.config_home / "mimeapps.list").exists())
+
+    @unittest.skipUnless(shutil.which("xdg-mime") and shutil.which("gio"), "xdg-mime and gio are required")
+    def test_real_mime_lookup_uses_mpv_for_audio_and_video(self):
+        self.add_mpv("audio/mpeg;video/mp4;")
+        self.add_desktop("old.desktop", "/bin/true %U", "AudioVideo;", "MimeType=audio/mpeg;video/mp4;\n")
+        (self.bin / "xdg-mime").unlink()
+        (self.bin / "xdg-mime").symlink_to(shutil.which("xdg-mime"))
+        self.config_home.mkdir(parents=True)
+        self.env.update(PATH=f"{self.bin}:/usr/bin:/bin", XDG_CURRENT_DESKTOP="GNOME:Hyprland", LC_ALL="C")
+        original = "[Default Applications]\naudio/mpeg=old.desktop;\nvideo/mp4=old.desktop;\n"
+        (self.config_home / "mimeapps.list").write_text(original + "[Removed Associations]\n"
+                                                      "audio/mpeg=mpv.desktop;\nvideo/mp4=mpv.desktop;\n")
+        (self.config_home / "gnome-mimeapps.list").write_text(original)
+
+        result = self.setup()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Default audio player set to mpv.desktop", result.stdout)
+        self.assertIn("Default video player set to mpv.desktop", result.stdout)
+        for desktop in ("GNOME:Hyprland", "Hyprland", ""):
+            for mime_type in ("audio/mpeg", "video/mp4"):
+                with self.subTest(desktop=desktop, mime_type=mime_type):
+                    query = subprocess.run([shutil.which("gio"), "mime", mime_type],
+                                           env=dict(self.env, XDG_CURRENT_DESKTOP=desktop),
+                                           capture_output=True, text=True, timeout=5)
+                    self.assertEqual(query.returncode, 0, query.stderr)
+                    self.assertIn("mpv.desktop", query.stdout.splitlines()[0])
 
     @unittest.skipUnless(shutil.which("xdg-mime") and shutil.which("gio"), "xdg-mime and gio are required")
     def test_real_mime_lookup_uses_nautilus_after_desktop_override_and_removal(self):

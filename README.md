@@ -66,22 +66,28 @@ return {
     ["x-scheme-handler/https"] = "zen.desktop",
     ["text/html"] = "zen.desktop",
     ["application/xhtml+xml"] = "zen.desktop",
+    ["audio/*"] = "mpv.desktop",
+    ["video/*"] = "mpv.desktop",
 }
 ```
 
-The `terminal` key selects the preferred terminal for [xdg-terminal-exec](https://github.com/Vladimir-csp/xdg-terminal-exec). Other keys are MIME types or URL schemes such as `inode/directory` or `x-scheme-handler/https`. The `defaults` step reads this manifest; edit it to change the choices without editing setup scripts. Unavailable applications warn and skip independently; invalid manifests or required file update failures stop the step.
+The `terminal` key selects the preferred terminal for [xdg-terminal-exec](https://github.com/Vladimir-csp/xdg-terminal-exec). Other keys are MIME types or URL schemes such as `inode/directory` or `x-scheme-handler/https`. The special `audio/*` and `video/*` keys expand to matching types advertised by the installed application's desktop entry; exact MIME entries override these choices. The `defaults` step reads this manifest; edit it to change the choices without editing setup scripts. Unavailable applications warn and skip independently; invalid manifests or required file update failures stop the step.
 
 The terminal preference is written to `$XDG_CONFIG_HOME/xdg-terminals.list` and `hyprland-xdg-terminals.list`, plus any existing user lists for desktops in `XDG_CURRENT_DESKTOP`. The config directory defaults to `~/.config`; it is independent of `LUNA_CONFIG_DIR`. Other list contents, permissions, and symlinks are preserved. Reruns restore the selected terminal's priority without repeatedly adding entries.
 
-MIME preferences are written to `mimeapps.list`, `hyprland-mimeapps.list`, and existing current-desktop lists under `$XDG_CONFIG_HOME`, preserving unrelated associations. The bundled manifest selects Nautilus for folders and Zen for HTTP/HTTPS links and HTML/XHTML files. Check them with `xdg-mime query default inode/directory` and `xdg-mime query default x-scheme-handler/https`.
+MIME preferences are written to `mimeapps.list`, `hyprland-mimeapps.list`, and existing current-desktop lists under `$XDG_CONFIG_HOME`, preserving unrelated associations. The bundled manifest selects Nautilus for folders, Zen for HTTP/HTTPS links and HTML/XHTML files, and mpv for its supported audio/video MIME types. Check them with `xdg-mime query default inode/directory`, `xdg-mime query default x-scheme-handler/https`, `xdg-mime query default audio/mpeg`, and `xdg-mime query default video/mp4`.
 
-Use `--skip=defaults` to keep your terminal, browser, and file-manager preferences, or run `bash /path/to/luna/scripts/setup/defaults.sh` to apply them separately. Check the selected terminal with `xdg-terminal-exec --print-id`; launch it with `xdg-terminal-exec`. This preference applies to callers using that mechanism. Luna's existing Kitty-specific launcher dialogs still launch Kitty directly.
+Use `--skip=defaults` to keep your terminal, browser, file-manager, and media-player preferences, or run `bash /path/to/luna/scripts/setup/defaults.sh` to apply them separately. Check the selected terminal with `xdg-terminal-exec --print-id`; launch it with `xdg-terminal-exec`. This preference applies to callers using that mechanism. Luna's existing Kitty-specific launcher dialogs still launch Kitty directly.
 
-`LUNA_CONFIG_DIR` sets the absolute directory for installed app configs. It defaults to `$XDG_CONFIG_HOME/luna`, or `~/.config/luna` when `XDG_CONFIG_HOME` is unset or empty. An unset or empty `LUNA_CONFIG_DIR` uses this default. Setup installs Kitty under `kitty/`, Starship under `starship/`, Zsh under `zsh/`, Zen styles under `zen/`, and Hyprland under `hypr/` inside that directory.
+`LUNA_CONFIG_DIR` sets the absolute directory for installed app configs. It defaults to `$XDG_CONFIG_HOME/luna`, or `~/.config/luna` when `XDG_CONFIG_HOME` is unset or empty. An unset or empty `LUNA_CONFIG_DIR` uses this default. Setup installs Kitty under `kitty/`, mpv under `mpv/`, Starship under `starship/`, Zsh under `zsh/`, Zen styles under `zen/`, and Hyprland under `hypr/` inside that directory.
 
 Setup copies `apps/kitty/kitty.conf` to `$LUNA_CONFIG_DIR/kitty/kitty.conf` and generates `theme.conf` beside it from Luna's selected theme and font preferences. Font size and window behavior stay in the static config.
 
 Setup prepends an `include` for the installed Luna config to `$XDG_CONFIG_HOME/kitty/kitty.conf` when it is missing, creating the file if needed. `KITTY_CONFIG_DIRECTORY` can select a different absolute Kitty config directory. Existing contents and symlinks are preserved; a matching include anywhere in the file is left as-is. Personal settings remain below a newly added include, so they can override Luna's defaults. Setup does not reload Kitty.
+
+mpv setup copies `apps/mpv/mpv.conf` and `input.conf` into `$LUNA_CONFIG_DIR/mpv` and refreshes managed defaults blocks in mpv's active personal configuration, normally under `$XDG_CONFIG_HOME/mpv`. Existing `~/.mpv` configuration and an absolute `MPV_HOME` override are respected. Personal settings, bindings, symlinks, and permissions are preserved; personal settings following Luna's defaults can override them. A custom `input-conf` setting warns because it selects a separate bindings file.
+
+These defaults load on each normal mpv launch: fullscreen playback, speed `1.75`, the on-screen controller disabled, and Up/Down adjusting volume by five. Run `bash /path/to/luna/scripts/setup/mpv.sh` to refresh only these configs, then `bash /path/to/luna/scripts/setup/defaults.sh` to select mpv as the default player. Back up files you want to keep first; setup creates no backups.
 
 Hyprland follows the same installed-config pattern: `apps/hypr/` contains the maintained Lua entry point and modules, copied to `$LUNA_CONFIG_DIR/hypr`. Setup generates the checkout location in `hypr/generated/paths.lua` and prepends a managed `dofile` block to `$XDG_CONFIG_HOME/hypr/hyprland.lua`, creating it if absent. Personal settings remain after the include, and existing personal symlinks and file modes are preserved. `HYPRLAND_CONFIG` can select an absolute custom Lua file. The recognized old Luna loader is migrated while keeping its personal settings; old symlinks into the checkout are detached. Deleted old targets are recovered from local Git history when available, otherwise setup reports a migration error instead of discarding settings.
 

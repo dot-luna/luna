@@ -26,6 +26,8 @@ class SetupAppsTests(unittest.TestCase):
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(REPO / name, destination)
         # Keep Kitty deployment cases isolated from the other app installers.
+        (self.checkout / "scripts/setup/mpv.sh").write_text(
+            '#!/usr/bin/env bash\nprintf "configured\\n" > "$HOME/.mpv-setup-ran"\n')
         (self.checkout / "scripts/setup/starship.sh").write_text(
             '#!/usr/bin/env bash\nprintf "configured\\n" > "$HOME/.starship-setup-ran"\n')
         (self.checkout / "scripts/setup/zsh.sh").write_text(
@@ -86,10 +88,17 @@ io.write("# Generated fixture\\nbackground ", os.getenv("TEST_THEME_COLOR"), "\\
         self.assertEqual((self.config_home / "kitty/kitty.conf").read_bytes(), self.include_prefix())
         self.assertFalse((self.config_home / "luna/zsh").exists())
         self.assertFalse((self.config_home / "luna/starship").exists())
+        self.assertEqual((self.home / ".mpv-setup-ran").read_text(), "configured\n")
         self.assertEqual((self.home / ".starship-setup-ran").read_text(), "configured\n")
         self.assertEqual((self.home / ".zsh-setup-ran").read_text(), "configured\n")
         self.assertEqual((self.home / ".zen-setup-ran").read_text(), "configured\n")
         self.assertEqual(list(self.home.rglob("*.luna-backup*")), [])
+
+    def test_required_mpv_child_failure_fails_app_setup(self):
+        (self.checkout / "scripts/setup/mpv.sh").write_text("#!/usr/bin/env bash\nexit 23\n")
+        result = self.setup()
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse((self.home / ".starship-setup-ran").exists())
 
     def test_required_zsh_child_failure_fails_app_setup(self):
         (self.checkout / "scripts/setup/zsh.sh").write_text("#!/usr/bin/env bash\nexit 23\n")
