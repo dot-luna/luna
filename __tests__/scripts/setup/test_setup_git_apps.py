@@ -38,7 +38,7 @@ class GitAppSetupTests(unittest.TestCase):
                      "TEST_NONEXECUTABLE", "TEST_ROOT_USER"):
             self.env.pop(name, None)
 
-        for name in ("scripts/setup/git-apps.lua", "lib/common.lua"):
+        for name in ("scripts/setup/7-install-git-apps.lua", "lib/common.lua"):
             target = self.checkout / name
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(REPO / name, target)
@@ -104,9 +104,10 @@ if os.environ.get("TEST_SKIP_EXECUTABLE") != "1":
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         return result.stdout.strip()
 
-    def setup(self, *arguments):
-        return subprocess.run(["/usr/bin/lua", "-E", str(self.checkout / "scripts/setup/git-apps.lua"), *arguments],
-                              env=self.env, cwd=self.root, input="", text=True,
+    def setup(self, *arguments, cwd=None, script=None):
+        script = script or self.checkout / "scripts/setup/7-install-git-apps.lua"
+        return subprocess.run(["/usr/bin/lua", "-E", str(script), *arguments],
+                              env=self.env, cwd=cwd or self.root, input="", text=True,
                               capture_output=True, timeout=15)
 
     def records(self, name):
@@ -135,6 +136,35 @@ if os.environ.get("TEST_SKIP_EXECUTABLE") != "1":
                                          "--single-branch", "--", ORIGIN, str(self.destination)]])
         self.assertTrue(os.access(self.home / ".local/bin/whatly", os.X_OK))
         self.assertIn("Fixture app installer output", result.stdout)
+
+    def test_entry_point_supports_basename_and_external_symlink_invocations(self):
+        self.assert_success(self.setup(cwd=self.checkout / "scripts/setup", script="7-install-git-apps.lua"))
+        linked_script = self.root / "linked git-apps.lua"
+        linked_script.symlink_to(self.checkout / "scripts/setup/7-install-git-apps.lua")
+        self.assert_success(self.setup(cwd=self.home, script=linked_script))
+
+    def test_reinstall_from_inside_replaced_checkout(self):
+        for nested in (False, True):
+            with self.subTest(nested=nested):
+                cwd = self.destination / "old/subdir" if nested else self.destination
+                cwd.mkdir(parents=True, exist_ok=True)
+                (cwd / "old-file").write_text("Old local contents\n")
+                result = self.setup(cwd=cwd)
+                self.assert_success(result)
+                self.assertNotIn("getcwd", result.stdout + result.stderr)
+                self.assertFalse((self.destination / "old").exists())
+                self.assertFalse((self.destination / "old-file").exists())
+                self.assertTrue(os.access(self.home / ".local/bin/whatly", os.X_OK))
+
+    def test_restarted_install_failure_is_propagated(self):
+        self.destination.mkdir(parents=True)
+        self.env["TEST_INSTALL_STATUS"] = "37"
+        result = self.setup(cwd=self.destination)
+        self.assert_failed(result)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("37", result.stderr)
+        self.assertNotIn("getcwd", result.stdout + result.stderr)
+        self.assertEqual(len(self.clones()), 1)
 
     def test_reinstall_discards_local_changes_and_switches_requested_ref(self):
         self.assert_success(self.setup())
@@ -247,7 +277,7 @@ if os.environ.get("TEST_SKIP_EXECUTABLE") != "1":
         result = self.setup()
         self.assert_failed(result)
         self.assertIn("overlaps Luna", result.stderr)
-        self.assertTrue((self.checkout / "scripts/setup/git-apps.lua").is_file())
+        self.assertTrue((self.checkout / "scripts/setup/7-install-git-apps.lua").is_file())
         self.assertEqual(self.clones(), [])
 
     def test_parent_symlink_cannot_redirect_deletion_inside_luna(self):

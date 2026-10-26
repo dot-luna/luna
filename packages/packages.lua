@@ -5,11 +5,11 @@
 -- Extra is reserved for optional additions outside the main setup.
 -- Package managers resolve transitive dependencies automatically.
 --
--- scripts/setup/lua.sh bootstraps lua and lua-argparse before this file
+-- scripts/setup/1-setup-lua.sh bootstraps lua and lua-argparse before this file
 -- can be read. Other core tools will be handled by the main setup later.
 return {
     -- Never put AUR packages in core: every core entry must use pacman.
-    -- Only Lua and argparse are installed by scripts/setup/lua.sh; keep those two
+    -- Only Lua and argparse are installed by scripts/setup/1-setup-lua.sh; keep those two
     -- entries in sync with that script.
     core = {
         -- Bootstrap, repository, and package build tools.
@@ -24,8 +24,8 @@ return {
         { name = "mise", source = "pacman", purpose = "Manage development tools and runtime versions" },
         { name = "ripgrep", source = "pacman", purpose = "Search files from the terminal" },
 
-        -- Expose whole source directories while retaining checkout-relative paths.
-        { name = "stow", source = "pacman", purpose = "Link Luna source directories into ~/.local/src" },
+        -- General dotfile and source-directory symlink management.
+        { name = "stow", source = "pacman", purpose = "Manage symlinks for dotfiles and source directories" },
 
         -- Font discovery, validation, and cache updates for the Luna font CLI.
         { name = "fontconfig", source = "pacman", purpose = "Provide fc-list, fc-scan, and fc-cache" },
@@ -50,6 +50,8 @@ return {
         { name = "qt6-svg", source = "pacman", purpose = "Render SVG icons in the custom desktop UI" },
         { name = "qt6-imageformats", source = "pacman", purpose = "Decode additional wallpaper formats, including WebP" },
         { name = "polkit", source = "pacman", purpose = "Desktop authorization backend; also needs an authentication agent" },
+
+        -- TODO: Replace this KDE agent with Luna's own Quickshell polkit UI.
         { name = "polkit-kde-agent", source = "pacman", purpose = "Administrator password dialogs" },
 
         -- Store application credentials through the desktop Secret Service.

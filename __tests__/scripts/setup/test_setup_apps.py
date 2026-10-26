@@ -8,6 +8,8 @@ import subprocess
 import tempfile
 import unittest
 
+from __tests__.scripts.setup.app_fixture import copy_app_setup
+
 
 REPO = Path(__file__).resolve().parents[3]
 
@@ -21,118 +23,266 @@ class SetupAppsTests(unittest.TestCase):
         self.home = self.root / "home"
         self.home.mkdir()
         self.checkout = self.root / "checkout"
-        for name in ("scripts/setup/apps.sh", "scripts/setup/kitty-include.py", "lib/common.sh"):
-            destination = self.checkout / name
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(REPO / name, destination)
-        # Keep Kitty deployment cases isolated from the other app installers.
-        (self.checkout / "scripts/setup/mpv.sh").write_text(
-            '#!/usr/bin/env bash\nprintf "configured\\n" > "$HOME/.mpv-setup-ran"\n')
-        (self.checkout / "scripts/setup/starship.sh").write_text(
-            '#!/usr/bin/env bash\nprintf "configured\\n" > "$HOME/.starship-setup-ran"\n')
-        (self.checkout / "scripts/setup/zsh.sh").write_text(
-            '#!/usr/bin/env bash\nprintf "configured\\n" > "$HOME/.zsh-setup-ran"\n')
-        (self.checkout / "scripts/setup/zen.sh").write_text(
-            '#!/usr/bin/env bash\nprintf "configured\\n" > "$HOME/.zen-setup-ran"\n')
-        (self.checkout / "scripts/setup/hypr.sh").write_text(
-            '#!/usr/bin/env bash\nprintf "configured\\n" > "$HOME/.hypr-setup-ran"\n')
-        self.source = self.checkout / "apps/kitty"
-        (self.source / "scripts").mkdir(parents=True)
-        (self.source / "kitty.conf").write_text("# Static fixture\ninclude theme.conf\n")
-        (self.source / "theme.conf").write_text("# Obsolete theme must not be copied\n")
+        copy_app_setup(self.checkout)
+        # Keep Kitty cases focused while retaining the shared production runner.
+        self.order = ["kitty"]
+        self.write_order()
+        self.app = self.checkout / "apps/kitty"
+        self.source = self.app / "config"
+        (self.source / "kitty.conf").write_text("# Static fixture\ninclude generated/theme.conf\n")
+        (self.app / "theme.conf").write_text("# App metadata must not be copied\n")
 
-        # Isolate deployment behavior from the generator's separately tested theme mapping.
-        (self.source / "scripts/generate-theme.lua").write_text('''
-assert(#arg == 0, "Setup arguments must not reach the generator")
-if os.getenv("TEST_THEME_FAIL") == "1" then
-    io.write("# Incomplete output\\n")
-    io.stderr:write("Fixture generation failed\\n")
-    os.exit(29)
+        # Only the theme values are faked; staging and publishing use production code.
+        (self.app / "build.lua").write_text('''return function(ctx)
+    if os.getenv("TEST_THEME_FAIL") == "1" then
+        ctx.write("generated/theme.conf", "# Incomplete output\\n")
+        error("Fixture generation failed")
+    end
+    ctx.write("generated/theme.conf", "# Generated fixture\\nbackground "
+        .. os.getenv("TEST_THEME_COLOR") .. "\\n")
 end
-io.write("# Generated fixture\\nbackground ", os.getenv("TEST_THEME_COLOR"), "\\n")
 ''')
         self.config_home = self.home / ".config"
         self.destination = self.config_home / "luna/kitty"
         self.env = dict(os.environ, HOME=str(self.home),
                         XDG_CONFIG_HOME=str(self.config_home), TEST_THEME_COLOR="#123456")
-        for name in ("LUNA_CONFIG_DIR", "KITTY_CONFIG_DIRECTORY", "TEST_THEME_FAIL"):
+        for name in ("LUNA_CONFIG_DIR", "KITTY_CONFIG_DIRECTORY", "TEST_THEME_FAIL", "LUNA_SETUP_APP"):
             self.env.pop(name, None)
 
     def setup(self, *arguments, entry=None):
-        script = entry or self.checkout / "scripts/setup/apps.sh"
-        return subprocess.run(["bash", str(script), *arguments], env=self.env,
+        script = entry or self.checkout / "scripts/setup/10-setup-app-configs.lua"
+        return subprocess.run(["/usr/bin/lua", "-E", str(script), *arguments], env=self.env,
                               cwd=self.root, input="", capture_output=True, text=True, timeout=10)
 
     def assert_installed(self, result, destination=None):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         destination = destination or self.destination
         self.assertFalse(destination.is_symlink())
-        for name in ("kitty.conf", "theme.conf"):
+        for name in ("kitty.conf", "generated/theme.conf"):
             self.assertTrue((destination / name).is_file(), str(destination / name))
             self.assertFalse((destination / name).is_symlink())
         self.assertEqual((destination / "kitty.conf").read_bytes(),
                          (self.source / "kitty.conf").read_bytes())
-        self.assertEqual((destination / "theme.conf").read_text(),
+        self.assertEqual((destination / "generated/theme.conf").read_text(),
                          "# Generated fixture\nbackground " + self.env["TEST_THEME_COLOR"] + "\n")
+
+    def installed_contents(self):
+        return {str(path.relative_to(self.destination)): path.read_bytes()
+                for path in self.destination.rglob("*") if path.is_file()}
 
     def include_prefix(self, destination=None):
         destination = destination or self.destination
         path = str(destination / "kitty.conf").replace("$", "$$")
         return ("include " + path + "\n").encode()
 
+    def write_order(self):
+        (self.checkout / "apps/order.lua").write_text(
+            "return { " + ", ".join(json.dumps(name) for name in self.order) + " }\n")
+
+    def add_app(self, name, builder=None, registered=True):
+        app = self.checkout / "apps" / name
+        (app / "config").mkdir(parents=True)
+        (app / "config/main.conf").write_text("# " + name + " defaults\n")
+        descriptor = 'return { config = "config"'
+        if builder is not None:
+            descriptor += ', builder = "build.lua"'
+            (app / "build.lua").write_text(builder)
+        (app / "app.lua").write_text(descriptor + " }\n")
+        if registered:
+            self.order.append(name)
+            self.write_order()
+        return app
+
+    def test_installs_registered_app_without_builder_or_personal_connection(self):
+        app = self.add_app("notes")
+        (app / "config/nested").mkdir()
+        (app / "config/nested/options.conf").write_text("# Nested settings\n")
+        (app / "README.md").write_text("App documentation\n")
+        (app / "unregistered.lua").write_text('error("Only app.lua is a descriptor")\n')
+        self.assert_installed(self.setup())
+        installed = self.destination.parent / "notes"
+        self.assertEqual({str(path.relative_to(installed)) for path in installed.rglob("*") if path.is_file()},
+                         {"main.conf", "nested/options.conf"})
+        self.assertEqual((installed / "nested/options.conf").read_text(), "# Nested settings\n")
+        self.assertFalse((self.config_home / "notes").exists())
+
+    def test_builders_run_in_declared_order(self):
+        # The explicit order takes precedence over app names and directory order.
+        for name in ("zulu", "alpha"):
+            self.add_app(name, '''return function(ctx)
+    local log = assert(io.open(os.getenv("HOME") .. "/build-order", "a"))
+    log:write(ctx.source:match("([^/]+)$"), "\\n")
+    log:close()
+end
+''')
+        self.assert_installed(self.setup())
+        self.assertEqual((self.home / "build-order").read_text(), "zulu\nalpha\n")
+
+    def test_unregistered_app_descriptor_is_not_loaded(self):
+        app = self.add_app("notes", registered=False)
+        (app / "app.lua").write_text('error("Unregistered app must not run")\n')
+        self.assert_installed(self.setup())
+        self.assertFalse((self.destination.parent / "notes").exists())
+
+    def test_missing_registered_descriptor_fails_before_installing_any_app(self):
+        self.order.append("missing")
+        self.write_order()
+        result = self.setup()
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("missing", result.stderr)
+        self.assertFalse(self.destination.exists())
+        self.assertFalse((self.config_home / "kitty").exists())
+
+    def test_invalid_order_fails_before_installing_any_app(self):
+        for value in ('"kitty"', 'true', '{ kitty = true }',
+                      '{ [1] = "kitty", [3] = "mpv" }',
+                      '{ "kitty", "kitty" }', '{ "kitty", "../notes" }',
+                      '{ "kitty", 12 }'):
+            with self.subTest(order=value):
+                (self.checkout / "apps/order.lua").write_text("return " + value + "\n")
+                result = self.setup()
+                self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertFalse(self.destination.exists())
+                self.assertFalse((self.config_home / "kitty").exists())
+
+    def test_empty_order_installs_nothing(self):
+        self.order = []
+        self.write_order()
+        result = self.setup()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse(self.destination.parent.exists())
+        self.assertFalse((self.config_home / "kitty").exists())
+
+    def test_selected_app_must_be_registered(self):
+        self.add_app("notes", registered=False)
+        self.env["LUNA_SETUP_APP"] = "notes"
+        result = self.setup()
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("notes", result.stderr)
+        self.assertFalse(self.destination.parent.exists())
+
+    def test_selected_app_does_not_load_other_descriptors(self):
+        app = self.add_app("notes")
+        (app / "app.lua").write_text('error("Only Kitty was selected")\n')
+        self.env["LUNA_SETUP_APP"] = "kitty"
+        self.assert_installed(self.setup())
+        self.assertFalse((self.destination.parent / "notes").exists())
+
+    def test_selected_app_still_validates_complete_order(self):
+        self.order.append("../notes")
+        self.write_order()
+        self.env["LUNA_SETUP_APP"] = "kitty"
+        result = self.setup()
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse(self.destination.exists())
+
+    def test_failed_app_build_stops_later_apps_without_publishing_partial_output(self):
+        self.add_app("zulu")
+        self.add_app("omega", '''return function(ctx)
+    ctx.write("generated/options.conf", "# Partial output\\n")
+    error("Required fixture build failed")
+end
+''')
+        self.add_app("alpha")
+        result = self.setup()
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Required fixture build failed", result.stderr)
+        self.assertTrue((self.destination.parent / "zulu/main.conf").is_file())
+        self.assertTrue((self.destination / "kitty.conf").is_file())
+        self.assertFalse((self.destination.parent / "omega").exists())
+        self.assertFalse((self.destination.parent / "alpha").exists())
+
+    def test_invalid_later_descriptor_fails_before_installing_any_app(self):
+        app = self.add_app("zulu")
+        (app / "app.lua").write_text('return { config = "../kitty/config" }\n')
+        result = self.setup()
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse(self.destination.exists())
+        self.assertFalse((self.config_home / "kitty").exists())
+
+    def test_template_replacements_are_literal_and_use_final_install_paths(self):
+        app = self.add_app("notes", '''return function(ctx)
+    ctx.render("options.conf.in", "generated/options.conf", {
+        paths = { installed = ctx.destination },
+        literal = "%1 $HOME $(touch INJECTED) `touch INJECTED` {{untouched}}",
+    })
+end
+''')
+        (app / "options.conf.in").write_text("path={{paths.installed}}\ntext={{literal}}\n")
+        self.assert_installed(self.setup())
+        installed = self.destination.parent / "notes"
+        self.assertEqual((installed / "generated/options.conf").read_text(),
+                         f"path={installed}\ntext=%1 $HOME $(touch INJECTED) `touch INJECTED` {{{{untouched}}}}\n")
+        self.assertFalse((self.root / "INJECTED").exists())
+        self.assertFalse((installed / "options.conf.in").exists())
+
+    def test_missing_template_value_preserves_previous_app_configuration(self):
+        app = self.add_app("notes", '''return function(ctx)
+    ctx.render("options.conf.in", "generated/options.conf", { value = "complete" })
+end
+''')
+        template = app / "options.conf.in"
+        template.write_text("option={{value}}\n")
+        self.assert_installed(self.setup())
+        installed = self.destination.parent / "notes"
+        template.write_text("option={{missing}}\n")
+        (app / "config/main.conf").write_text("# New version\n")
+        result = self.setup()
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Missing template value: missing", result.stderr)
+        self.assertEqual((installed / "main.conf").read_text(), "# notes defaults\n")
+        self.assertEqual((installed / "generated/options.conf").read_text(), "option=complete\n")
+
+    def test_current_apps_config_step_never_runs_system_or_browser_extras(self):
+        # Restore the production order and all six app descriptors for this smoke test.
+        copy_app_setup(self.checkout)
+        # Old installers and optional extras must never run from the config step.
+        for name in ("hypr.sh", "kitty.sh", "mpv.sh", "starship.sh", "zsh.sh", "zen.sh", "zen-extensions.sh"):
+            (self.checkout / "scripts/setup" / name).write_text(
+                '#!/bin/sh\nprintf forbidden > "$HOME/extra-ran"\nexit 99\n')
+        (self.checkout / "scripts/setup/zen_mods.py").write_text(
+            'raise RuntimeError("Config setup must not import Mod installation")\n')
+        (self.checkout / "scripts/setup/zen-extensions.py").write_text(
+            'raise RuntimeError("Config setup must not import policy installation")\n')
+        fixture_bin = self.root / "bin"
+        fixture_bin.mkdir()
+        for name in ("readlink", "mkdir"):
+            (fixture_bin / name).symlink_to(shutil.which(name))
+        for name in ("sudo", "curl", "wget", "zen", "zen-browser", "systemctl", "gsettings"):
+            command = fixture_bin / name
+            command.write_text('#!/bin/sh\nprintf forbidden > "$HOME/command-ran"\nexit 99\n')
+            command.chmod(0o755)
+        mise = fixture_bin / "mise"
+        mise.write_text('#!/bin/sh\nprintf "# Fixture completion\\n"\n')
+        mise.chmod(0o755)
+        self.env = {"HOME": str(self.home), "PATH": str(fixture_bin),
+                    "XDG_CONFIG_HOME": str(self.config_home), "NO_COLOR": "1"}
+        profile = self.home / "zen-profile"
+        profile.mkdir()
+        (profile / "prefs.js").write_text("// Existing browser profile\n")
+        self.env["ZEN_PROFILE_DIR"] = str(profile)
+        result = self.setup()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual({path.name for path in self.destination.parent.iterdir()},
+                         {"hypr", "kitty", "mpv", "starship", "zen", "zsh"})
+        self.assertTrue((profile / "chrome/userChrome.css").is_file())
+        self.assertFalse((self.home / "extra-ran").exists())
+        self.assertFalse((self.home / "command-ran").exists())
+
     def test_default_kitty_deployment_copies_only_configuration(self):
         self.env.pop("XDG_CONFIG_HOME")
         self.assert_installed(self.setup())
         self.assertEqual({path.name for path in self.destination.iterdir()},
-                         {"kitty.conf", "theme.conf"})
+                         {"kitty.conf", "generated"})
         self.assertEqual((self.config_home / "kitty/kitty.conf").read_bytes(), self.include_prefix())
         self.assertFalse((self.config_home / "luna/zsh").exists())
         self.assertFalse((self.config_home / "luna/starship").exists())
-        self.assertEqual((self.home / ".mpv-setup-ran").read_text(), "configured\n")
-        self.assertEqual((self.home / ".starship-setup-ran").read_text(), "configured\n")
-        self.assertEqual((self.home / ".zsh-setup-ran").read_text(), "configured\n")
-        self.assertEqual((self.home / ".zen-setup-ran").read_text(), "configured\n")
         self.assertEqual(list(self.home.rglob("*.luna-backup*")), [])
-
-    def test_required_mpv_child_failure_fails_app_setup(self):
-        (self.checkout / "scripts/setup/mpv.sh").write_text("#!/usr/bin/env bash\nexit 23\n")
-        result = self.setup()
-        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertFalse((self.home / ".starship-setup-ran").exists())
-
-    def test_required_zsh_child_failure_fails_app_setup(self):
-        (self.checkout / "scripts/setup/zsh.sh").write_text("#!/usr/bin/env bash\nexit 23\n")
-        result = self.setup()
-        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertFalse((self.home / ".zen-setup-ran").exists())
-
-    def test_required_zen_child_failure_fails_app_setup(self):
-        (self.checkout / "scripts/setup/zen.sh").write_text("#!/usr/bin/env bash\nexit 23\n")
-        result = self.setup()
-        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertTrue((self.home / ".zsh-setup-ran").exists())
-        self.assertFalse((self.home / ".hypr-setup-ran").exists())
-
-    def test_hyprland_runs_after_zen_and_propagates_required_failures(self):
-        self.assert_installed(self.setup())
-        self.assertTrue((self.home / ".hypr-setup-ran").exists())
-        (self.checkout / "scripts/setup/hypr.sh").write_text("#!/usr/bin/env bash\nexit 23\n")
-        result = self.setup()
-        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertTrue((self.home / ".zen-setup-ran").exists())
-
-    def test_required_starship_child_failure_stops_before_zsh_setup(self):
-        (self.checkout / "scripts/setup/starship.sh").write_text("#!/usr/bin/env bash\nexit 23\n")
-        result = self.setup()
-        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertFalse((self.home / ".zsh-setup-ran").exists())
 
     @unittest.skipUnless(shutil.which("zsh"), "Zsh is required")
     def test_installed_zsh_selects_starship_config_and_preserves_personal_file(self):
-        for name in ("starship.sh", "zsh.sh", "zsh-config.py"):
-            shutil.copy2(REPO / "scripts/setup" / name, self.checkout / "scripts/setup" / name)
-        for name in ("starship", "zsh"):
-            shutil.copytree(REPO / "apps" / name, self.checkout / "apps" / name)
+        self.order.extend(("starship", "zsh"))
+        self.write_order()
 
         # Keep actual installation and shell wiring, replacing only external tools.
         fixture_bin = self.root / "bin"
@@ -154,7 +304,7 @@ io.write("# Generated fixture\\nbackground ", os.getenv("TEST_THEME_COLOR"), "\\
 
         self.assert_installed(self.setup())
         installed = self.config_home / "luna/starship/starship.toml"
-        self.assertEqual(installed.read_bytes(), (REPO / "apps/starship/starship.toml").read_bytes())
+        self.assertEqual(installed.read_bytes(), (REPO / "apps/starship/config/starship.toml").read_bytes())
         shell = subprocess.run(
             [shutil.which("zsh"), "-d", "-f", "-i", "-c",
              'source "$HOME/.zshrc"; print -r -- "$STARSHIP_CONFIG"'],
@@ -187,17 +337,17 @@ io.write("# Generated fixture\\nbackground ", os.getenv("TEST_THEME_COLOR"), "\\
 
     def test_repeated_setup_refreshes_both_files_without_backups(self):
         self.assert_installed(self.setup())
-        (self.source / "kitty.conf").write_text("# Updated static fixture\ninclude theme.conf\n")
+        (self.source / "kitty.conf").write_text("# Updated static fixture\ninclude generated/theme.conf\n")
         self.env["TEST_THEME_COLOR"] = "#abcdef"
         self.assert_installed(self.setup())
         self.assertEqual((self.config_home / "kitty/kitty.conf").read_bytes(), self.include_prefix())
         self.assertEqual(list(self.home.rglob("*.luna-backup*")), [])
-        self.assertEqual((self.source / "theme.conf").read_text(),
-                         "# Obsolete theme must not be copied\n")
+        self.assertEqual((self.app / "theme.conf").read_text(),
+                         "# App metadata must not be copied\n")
 
     def test_symlink_entry_and_extra_arguments_use_the_checkout(self):
         entry = self.root / "install app configs"
-        entry.symlink_to(self.checkout / "scripts/setup/apps.sh")
+        entry.symlink_to(self.checkout / "scripts/setup/10-setup-app-configs.lua")
         result = self.setup("--help", "-h", "--force", "--unknown", "main", entry=entry)
         self.assert_installed(result)
 
@@ -332,10 +482,7 @@ io.write("# Generated fixture\\nbackground ", os.getenv("TEST_THEME_COLOR"), "\\
 
     def test_real_generator_installs_selected_theme_and_personal_font(self):
         # Exercise setup and generation together while retaining disposable state.
-        for name in ("kitty.conf", "scripts/generate-theme.lua"):
-            shutil.copy2(REPO / "apps/kitty" / name, self.source / name)
-        shutil.copytree(REPO / "lib/theme", self.checkout / "lib/theme")
-        shutil.copy2(REPO / "lib/common.lua", self.checkout / "lib/common.lua")
+        shutil.copytree(REPO / "apps/kitty", self.app, dirs_exist_ok=True)
         defaults = subprocess.run(
             ["/usr/bin/lua", "-E", "-", str(self.checkout)], env=self.env,
             cwd=self.root, capture_output=True, text=True, check=True, timeout=10,
@@ -366,11 +513,11 @@ io.write("# Generated fixture\\nbackground ", os.getenv("TEST_THEME_COLOR"), "\\
                 result = self.setup()
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertEqual((installed / "kitty.conf").read_bytes(),
-                                 (REPO / "apps/kitty/kitty.conf").read_bytes())
-                for name in ("kitty.conf", "theme.conf"):
+                                 (REPO / "apps/kitty/config/kitty.conf").read_bytes())
+                for name in ("kitty.conf", "generated/theme.conf"):
                     self.assertFalse((installed / name).is_symlink())
                 options = dict(line.split(maxsplit=1)
-                               for line in (installed / "theme.conf").read_text().splitlines()
+                               for line in (installed / "generated/theme.conf").read_text().splitlines()
                                if line.strip() and not line.startswith("#"))
                 self.assertEqual(options["background"], background)
                 self.assertEqual(options["foreground"], "#aabbcc")
@@ -385,14 +532,14 @@ io.write("# Generated fixture\\nbackground ", os.getenv("TEST_THEME_COLOR"), "\\
 
     def test_failed_generation_preserves_previously_installed_files(self):
         self.assert_installed(self.setup())
-        original = {path.name: path.read_bytes() for path in self.destination.iterdir()}
+        original = self.installed_contents()
         active = self.config_home / "kitty/kitty.conf"
         original_active = active.read_bytes()
         (self.source / "kitty.conf").write_text("# New static config\n")
         self.env["TEST_THEME_FAIL"] = "1"
         result = self.setup()
         self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual({path.name: path.read_bytes() for path in self.destination.iterdir()}, original)
+        self.assertEqual(self.installed_contents(), original)
         self.assertEqual(active.read_bytes(), original_active)
         self.assertEqual(list(self.home.rglob("*.luna-backup*")), [])
 
@@ -410,11 +557,11 @@ io.write("# Generated fixture\\nbackground ", os.getenv("TEST_THEME_COLOR"), "\\
 
     def test_missing_static_config_fails_before_replacing_installed_files(self):
         self.assert_installed(self.setup())
-        original = {path.name: path.read_bytes() for path in self.destination.iterdir()}
+        original = self.installed_contents()
         (self.source / "kitty.conf").unlink()
         result = self.setup()
         self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual({path.name: path.read_bytes() for path in self.destination.iterdir()}, original)
+        self.assertEqual(self.installed_contents(), original)
 
     def test_relative_luna_config_dir_is_rejected(self):
         self.env["LUNA_CONFIG_DIR"] = "relative configs"
@@ -454,7 +601,7 @@ io.write("# Generated fixture\\nbackground ", os.getenv("TEST_THEME_COLOR"), "\\
         result = self.setup()
         self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual((self.source / "kitty.conf").read_bytes(), original)
-        self.assertTrue((self.source / "scripts/generate-theme.lua").is_file())
+        self.assertTrue((self.app / "build.lua").is_file())
 
     def test_symlinked_kitty_destination_is_rejected(self):
         self.destination.parent.mkdir(parents=True)
@@ -494,25 +641,99 @@ io.write("# Generated fixture\\nbackground ", os.getenv("TEST_THEME_COLOR"), "\\
         self.destination.mkdir(parents=True)
         foreign = self.root / "foreign configs"
         foreign.mkdir()
-        for name in ("kitty.conf", "theme.conf"):
+        for name in ("kitty.conf", "generated/theme.conf"):
+            (foreign / name).parent.mkdir(parents=True, exist_ok=True)
+            (self.destination / name).parent.mkdir(parents=True, exist_ok=True)
             (foreign / name).write_text("# Personal " + name + "\n")
             (self.destination / name).symlink_to(foreign / name)
         self.assert_installed(self.setup())
-        for name in ("kitty.conf", "theme.conf"):
+        for name in ("kitty.conf", "generated/theme.conf"):
             self.assertEqual((foreign / name).read_text(), "# Personal " + name + "\n")
 
     def test_directory_conflicts_fail_without_replacing_existing_files(self):
         self.destination.mkdir(parents=True)
         static = self.destination / "kitty.conf"
         static.write_text("# Keep existing configuration\n")
-        theme = self.destination / "theme.conf"
-        theme.mkdir()
+        theme = self.destination / "generated/theme.conf"
+        theme.mkdir(parents=True)
         personal = theme / "personal"
         personal.write_text("Keep this directory\n")
         result = self.setup()
         self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(static.read_text(), "# Keep existing configuration\n")
         self.assertEqual(personal.read_text(), "Keep this directory\n")
+
+    def test_personal_link_through_owned_file_is_rejected_before_publication(self):
+        personal = self.root / "personal.conf"
+        personal.write_text("# Personal settings\n")
+        self.destination.mkdir(parents=True)
+        installed = self.destination / "kitty.conf"
+        installed.symlink_to(personal)
+        active = self.config_home / "kitty/kitty.conf"
+        active.parent.mkdir()
+        active.symlink_to(installed)
+        result = self.setup()
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertTrue(installed.is_symlink())
+        self.assertEqual(personal.read_text(), "# Personal settings\n")
+
+    def test_existing_include_is_not_duplicated_when_owned_symlink_is_replaced(self):
+        personal = self.root / "prior.conf"
+        personal.write_text("# Previous installed file\n")
+        self.destination.mkdir(parents=True)
+        (self.destination / "kitty.conf").symlink_to(personal)
+        active = self.config_home / "kitty/kitty.conf"
+        active.parent.mkdir()
+        original = self.include_prefix() + b"# Personal settings\n"
+        active.write_bytes(original)
+        self.assert_installed(self.setup())
+        self.assertEqual(active.read_bytes(), original)
+        self.assertEqual(personal.read_text(), "# Previous installed file\n")
+
+    def test_multiple_lua_connections_preserve_personal_settings_on_rerun(self):
+        app = self.add_app("notes")
+        (app / "config/main.conf").rename(app / "config/main.lua")
+        (app / "config/main.lua").write_text("-- Lua defaults\n")
+        (app / "app.lua").write_text('''return {
+    config = "config",
+    connections = {
+        { type = "lua", source = "main.lua", target = "notes/first.lua" },
+        { type = "lua", source = "main.lua", target = "notes/second.lua" },
+    },
+}
+''')
+        active = self.config_home / "notes/first.lua"
+        active.parent.mkdir(parents=True)
+        active.write_text("-- Personal settings\n")
+        active.chmod(0o640)
+        self.assert_installed(self.setup())
+        original = active.read_bytes()
+        self.assertTrue(original.endswith(b"-- Personal settings\n"))
+        self.assertEqual(original.count(b"dofile("), 1)
+        self.assertEqual(active.stat().st_mode & 0o777, 0o640)
+        self.assert_installed(self.setup())
+        self.assertEqual(active.read_bytes(), original)
+        self.assertEqual(active.with_name("second.lua").read_bytes(), original.splitlines(keepends=True)[0])
+
+    def test_lua_connection_rejects_alias_through_file_that_will_be_replaced(self):
+        app = self.add_app("notes")
+        (app / "app.lua").write_text('''return {
+    config = "config",
+    connections = { { type = "lua", source = "main.conf", target = "notes/main.lua" } },
+}
+''')
+        installed = self.destination.parent / "notes/main.conf"
+        installed.parent.mkdir(parents=True)
+        personal = self.root / "personal.lua"
+        personal.write_text("-- Personal settings\n")
+        installed.symlink_to(personal)
+        active = self.config_home / "notes/main.lua"
+        active.parent.mkdir()
+        active.symlink_to(installed)
+        result = self.setup()
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertTrue(installed.is_symlink())
+        self.assertEqual(personal.read_text(), "-- Personal settings\n")
 
 
 if __name__ == "__main__":

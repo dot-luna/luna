@@ -116,6 +116,26 @@ luna_script_dir() {
     dirname -- "$script_path"
 }
 
+# Append a caller-provided block atomically after it checks the file and markers.
+# Keep contents/mode, replace a final symlink, and isolate temporary-file cleanup
+# from the caller's traps. Explicit returns also protect calls in conditionals.
+luna_append_config_block() (
+    path=$1 start_marker=$2 end_marker=$3
+    mkdir -p -- "${path%/*}" || return
+    temporary=$(mktemp "${path}.luna.XXXXXX") || return
+    trap 'rm -f -- "$temporary"' EXIT
+
+    if [[ -f "$path" ]]; then
+        cat -- "$path" > "$temporary" || return
+        chmod --reference="$path" -- "$temporary" || return
+    fi
+
+    printf '\n%s\n' "$start_marker" >> "$temporary" || return
+    cat >> "$temporary" || return
+    printf '%s\n' "$end_marker" >> "$temporary" || return
+    mv -fT -- "$temporary" "$path"
+)
+
 # Generated app configurations have their own destination; theme state continues
 # to use XDG_CONFIG_HOME/luna. Export defaults for child setup processes.
 luna_resolve_config_dir() {

@@ -21,7 +21,7 @@ class SetupSessionTests(unittest.TestCase):
         self.bin = self.root / "bin"
         self.bin.mkdir()
         self.checkout = self.root / "checkout"
-        for name in ("scripts/setup/session.sh", "lib/common.sh"):
+        for name in ("scripts/setup/15-reload-hyprland.sh", "lib/common.sh"):
             destination = self.checkout / name
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(REPO / name, destination)
@@ -59,7 +59,7 @@ sys.exit(int(os.environ.get("TEST_RELOAD_STATUS", "0")))
             path.chmod(0o755)
 
     def setup(self, *arguments):
-        return subprocess.run([str(self.bin / "bash"), str(self.checkout / "scripts/setup/session.sh"),
+        return subprocess.run([str(self.bin / "bash"), str(self.checkout / "scripts/setup/15-reload-hyprland.sh"),
                                *arguments], env=self.env, cwd=self.root, input="",
                               capture_output=True, text=True, timeout=5)
 

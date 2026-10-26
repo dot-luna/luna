@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-"""Publish Zen styles and font defaults in an existing browser profile."""
+"""Plan stylesheet imports and font defaults in an existing Zen profile."""
 
 import configparser
 import json
@@ -9,8 +9,6 @@ import re
 import stat
 import sys
 import tempfile
-
-import zen_mods
 
 
 BOM = b"\xef\xbb\xbf"
@@ -160,7 +158,7 @@ def font_preferences(fonts):
         or any(ord(character) < 32 or ord(character) == 127 for character in fonts[role])
         for role in ("ui", "mono")
     ):
-        raise ValueError("The Zen generator must provide valid UI and monospace fonts")
+        raise ValueError("The Zen builder must provide valid UI and monospace fonts")
 
     # Match the Fonts settings dialog: these are defaults for generic families,
     # while the site's own font declarations and downloadable fonts still win.
@@ -185,10 +183,27 @@ def managed_preferences(content, preferences, start, end):
     return bom + body + newline.join((*lines, end, b""))
 
 
-def read_personal(path, repo, output):
-    target = path.resolve()
-    if target.is_relative_to(repo) or target.is_relative_to(output):
-        raise ValueError(f"Profile file points into Luna's source or generated configs: {path}")
+def read_personal(path, repo, output, forbidden=()):
+    # Check every symlink hop, including parent directories: publication replaces
+    # owned links, so their current external targets are not safe personal paths.
+    pending = list(path.parts)
+    target = Path(pending.pop(0))
+    links = 0
+    while pending:
+        part = pending.pop(0)
+        target = target.parent if part == ".." else target / part
+        if target.is_relative_to(repo) or target.is_relative_to(output):
+            raise ValueError(f"Profile file points into Luna's source or generated configs: {path}")
+        if target in forbidden:
+            raise ValueError("Zen profile styles and user.js must not point to browser lock files")
+        if target.is_symlink():
+            links += 1
+            if links > 40:
+                raise ValueError(f"Profile file contains a symlink loop or too many links: {path}")
+            link = target.readlink()
+            pending = list(link.parts) + pending
+            target = Path(pending.pop(0)) if link.is_absolute() else target.parent
+
     try:
         content = target.read_bytes()
         mode = stat.S_IMODE(target.stat().st_mode)
@@ -211,12 +226,12 @@ def write_file(path, content, mode):
             temporary.unlink(missing_ok=True)
 
 
-def configure(destination, available, styles):
+def plan(destination, available, styles):
+    """Validate every personal file before the shared installer publishes anything."""
     if not isinstance(styles, dict) or any(
         not isinstance(styles.get(key), str) or not styles[key] for key in ("chrome", "content")
     ):
-        raise ValueError("The Zen generator must provide nonempty chrome and content styles")
-    encoded = {key: styles[key].encode("utf-8") for key in ("chrome", "content")}
+        raise ValueError("The Zen builder must provide nonempty chrome and content styles")
     preferences = font_preferences(styles.get("fonts"))
     output = absolute_path(destination, "Zen configuration destination")
     generated = output / "generated"
@@ -225,17 +240,10 @@ def configure(destination, available, styles):
         if directory.is_symlink() or (directory.exists() and not directory.is_dir()):
             raise ValueError(f"Zen configuration destination must be a directory, not a symlink: {directory}")
     output = output.resolve()
-    generated = output / "generated"
     if overlaps(output, repo):
         raise ValueError("Zen source and installed configuration must be separate paths")
 
     writes = []
-    for name, key in (("userChrome.css", "chrome"), ("userContent.css", "content")):
-        path = generated / name
-        if path.is_dir() and not path.is_symlink():
-            raise ValueError(f"Expected a stylesheet, found a directory: {path}")
-        # Owned generated files replace symlinks; personal symlinks stay intact.
-        writes.append((path, encoded[key], 0o600))
 
     # An explicit profile also supports alternate installs, including Flatpak,
     # whose executable may not be on PATH. No browser command is ever launched.
@@ -254,13 +262,13 @@ def configure(destination, available, styles):
     if profile is not None:
         targets = set()
         for relative, installed in (
-            ("chrome/userChrome.css", generated / "userChrome.css"),
-            ("chrome/userContent.css", generated / "userContent.css"),
+            ("chrome/userChrome.css", output / "userChrome.css"),
+            ("chrome/userContent.css", output / "userContent.css"),
             ("user.js", None),
         ):
-            target, content, mode = read_personal(profile / relative, repo, output)
-            if target in (profile / ".parentlock", profile / "lock"):
-                raise ValueError("Zen profile styles and user.js must not point to browser lock files")
+            target, content, mode = read_personal(
+                profile / relative, repo, output, (profile / ".parentlock", profile / "lock")
+            )
             if target in targets:
                 raise ValueError("Zen profile styles and user.js must be separate files")
             targets.add(target)
@@ -270,21 +278,12 @@ def configure(destination, available, styles):
             if updated != content:
                 writes.append((target, updated, mode))
 
-        # Mod registry/cache updates need the browser profile lock. The module
-        # holds it through publication and skips gracefully when Zen is running.
-        for target, content, mode in zen_mods.prepare_mod(
-            profile, lambda path: read_personal(path, repo, output)
-        ):
-            if target in targets:
-                raise ValueError("Zen mod files, profile styles, and user.js must be separate files")
-            targets.add(target)
-            writes.append((target, content, mode))
+    return writes
 
-    # Preflight every profile file before any generated or personal file changes.
-    for path, content, mode in writes:
+
+def configure(destination, available, styles):
+    for path, content, mode in plan(destination, available, styles):
         write_file(path, content, mode)
-    if profile is not None:
-        print("Connected Luna's Zen styles and font defaults; restart Zen to apply them.")
 
 
 if __name__ == "__main__":
@@ -293,5 +292,3 @@ if __name__ == "__main__":
     except (OSError, ValueError, RuntimeError, KeyError, IndexError) as error:
         print(f"Cannot configure Zen: {error}", file=sys.stderr)
         sys.exit(1)
-    finally:
-        zen_mods.release_lock()

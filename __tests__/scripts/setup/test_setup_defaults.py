@@ -21,7 +21,7 @@ class SetupDefaultsTests(unittest.TestCase):
         self.config_home = self.home / ".config"
         self.checkout = self.root / "checkout"
         self.manifest = self.checkout / "default/apps.lua"
-        for name in ("scripts/setup/defaults.sh", "scripts/setup/app-defaults.py", "default/apps.lua", "lib/common.sh", "lib/theme/json.lua"):
+        for name in ("scripts/setup/13-set-default-apps.sh", "scripts/setup/app-defaults.py", "default/apps.lua", "lib/common.sh", "lib/theme/json.lua"):
             destination = self.checkout / name
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(REPO / name, destination)
@@ -95,7 +95,7 @@ else:
 
     def setup(self, *arguments):
         return subprocess.run([str(self.bin / "bash"),
-                               str(self.checkout / "scripts/setup/defaults.sh"), *arguments],
+                               str(self.checkout / "scripts/setup/13-set-default-apps.sh"), *arguments],
                               env=self.env, cwd=self.root, input="", capture_output=True,
                               text=True, timeout=5)
 
@@ -105,7 +105,7 @@ else:
         result = self.setup("--help", "--unknown", "extra")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("Default terminal set to kitty.desktop", result.stdout)
-        self.assertIn("without backups", result.stderr)
+        self.assertNotIn("Back up", result.stderr)
         for name in ("xdg-terminals.list", "hyprland-xdg-terminals.list"):
             self.assertEqual((self.config_home / name).read_bytes(), b"kitty.desktop\n")
         self.assertTrue((self.home / "verified").exists())

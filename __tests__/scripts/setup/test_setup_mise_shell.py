@@ -8,6 +8,9 @@ import tempfile
 import unittest
 
 
+from __tests__.scripts.setup.app_fixture import copy_app_setup
+
+
 REPO = Path(__file__).resolve().parents[3]
 BLOCK_START = "# >>> Luna mise activation >>>"
 
@@ -20,12 +23,7 @@ class SetupMiseShellTests(unittest.TestCase):
         self.home = self.root / "home"
         self.home.mkdir()
         self.checkout = self.root / "checkout"
-        for name in ("scripts/setup/mise-shell.sh", "scripts/setup/zsh.sh",
-                     "scripts/setup/zsh-config.py", "lib/common.sh"):
-            destination = self.checkout / name
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(REPO / name, destination)
-        shutil.copytree(REPO / "apps/zsh", self.checkout / "apps/zsh")
+        copy_app_setup(self.checkout)
 
         # Isolate command lookup so a missing fake cannot activate the host mise.
         self.bin = self.root / "bin"

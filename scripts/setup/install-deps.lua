@@ -1,7 +1,11 @@
 #!/usr/bin/lua -E
--- Install one manifest group after lua.sh prepares the system Lua runtime.
--- Resolve shared helpers before setup; never rely on the caller's cwd.
-local script_dir = assert(arg[0]:match("^(.*)/"), "Run this script using its path")
+-- Install one manifest group after 1-setup-lua.sh prepares the system Lua runtime.
+
+-- Resolve the entry point before loading helpers so symlinks and any cwd work.
+local pipe = assert(io.popen("readlink -f -- '" .. arg[0]:gsub("'", "'\\''") .. "'", "r"))
+local script_path = pipe:read("*a"):gsub("\n$", "")
+assert(pipe:close(), "Cannot resolve setup script: " .. arg[0])
+local script_dir = assert(script_path:match("^(.*)/"), "Cannot resolve setup script directory")
 local common = dofile(script_dir .. "/../../lib/common.lua")
 common.setup_logging()
 
@@ -31,14 +35,7 @@ local function install()
     -- Validate the entire manifest before any installation. Core is pacman-only.
     for _, group in ipairs({ "core", "main", "fonts", "extra" }) do
         local entries = manifest[group]
-        assert(type(entries) == "table", "Package group must be a list: " .. group)
-        local count = 0
-        for key in pairs(entries) do
-            assert(type(key) == "number" and key % 1 == 0 and key >= 1 and key <= #entries,
-                "Package group must be a contiguous list: " .. group)
-            count = count + 1
-        end
-        assert(count == #entries, "Package group must be a contiguous list: " .. group)
+        common.assert_list(entries, "Package group " .. group)
 
         for _, entry in ipairs(entries) do
             assert(type(entry) == "table", "Invalid package entry in " .. group)
@@ -60,10 +57,11 @@ local function install()
     end
 
     -- Missing AUR support must not block packages from official repositories.
+    local is_root = common.is_root()
     local helper
     local skipped_aur = false
     if #packages.aur > 0 then
-        if common.is_root() then
+        if is_root then
             common.warn("AUR packages skipped: they require a regular user.")
         else
             helper = common.available("yay") and "yay" or common.available("paru") and "paru"
@@ -88,7 +86,7 @@ local function install()
             local arguments
             if source == "pacman" then
                 arguments = { "pacman", "-Syu", "--noconfirm" }
-                if not common.is_root() then
+                if not is_root then
                     assert(common.available("sudo"), "sudo is required")
                     table.insert(arguments, 1, "sudo")
                 end
@@ -118,12 +116,20 @@ local function install()
             end
 
             -- Sudo can still authenticate; package confirmations use their defaults.
-            -- Verify each target rather than relying only on the command's status.
             local suffix = #names == 1 and "" or "s"
             common.info(string.format("Installing or updating %d package%s for %s.", #names, suffix, selected_group))
             common.run(arguments)
+
+            -- Verify all targets in one pacman process; only inspect individual
+            -- targets after failure so a missing package still gets a precise error.
+            local query = { "pacman", "-Q", "--" }
             for _, name in ipairs(names) do
-                assert(common.succeeds({ "pacman", "-Q", "--", name }), "Package was not installed: " .. name)
+                table.insert(query, name)
+            end
+            if not common.succeeds(query) then
+                for _, name in ipairs(names) do
+                    assert(common.succeeds({ "pacman", "-Q", "--", name }), "Package was not installed: " .. name)
+                end
             end
         end
     end

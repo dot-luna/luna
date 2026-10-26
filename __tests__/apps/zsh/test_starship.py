@@ -24,7 +24,7 @@ class StarshipModuleTests(unittest.TestCase):
         self.config = self.root / "installed config"
         (self.config / "zsh").mkdir(parents=True)
         self.module = self.config / "zsh/tools.zsh"
-        shutil.copy2(REPO / "apps/zsh/tools.zsh", self.module)
+        shutil.copy2(REPO / "apps/zsh/config/tools.zsh", self.module)
         self.prompt = self.config / "starship/starship.toml"
         self.prompt.parent.mkdir()
         self.prompt.write_text("command_timeout = 987\n")

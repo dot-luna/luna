@@ -183,7 +183,8 @@ def manual_include(content, installed):
                     return True
                 checkout = luna_checkout(resolved)
                 if checkout is not None and resolved in (
-                    checkout / LEGACY_PATH, checkout / "apps/hypr/hyprland.lua"
+                    checkout / LEGACY_PATH, checkout / "apps/hypr/hyprland.lua",
+                    checkout / "apps/hypr/config/hyprland.lua",
                 ):
                     raise ValueError("Migrate the manual Luna source dofile to the installed config before setup")
         previous.append(line)
@@ -258,13 +259,26 @@ def active_entry(active, output):
         warn("Existing hyprland.conf was kept; convert it to Lua before connecting Luna's Hyprland config.")
         return None
 
-    target = active.resolve()
+    # A link inside the installed directory may point out today and be replaced
+    # during publication. Reject that intermediate hop before it changes meaning.
+    target = parent / active.name
+    seen = set()
+    while True:
+        if target.is_relative_to(output):
+            raise ValueError("The active Hyprland file points into Luna's installed configuration")
+        if target in seen:
+            raise ValueError("The active Hyprland file contains a symlink loop")
+        seen.add(target)
+        if not target.is_symlink():
+            break
+        link = target.readlink()
+        target = link if link.is_absolute() else target.parent / link
+        target = target.parent.resolve() / target.name
+
     checkout = luna_checkout(target)
     old_link = active.is_symlink() and checkout is not None and target == checkout / LEGACY_PATH
     if checkout is not None and not old_link:
         raise ValueError("The active Hyprland file points into Luna's source; only the old entry symlink can be migrated")
-    if target.is_relative_to(output):
-        raise ValueError("The active Hyprland file points into Luna's installed configuration")
     try:
         content = target.read_bytes()
         mode = stat.S_IMODE(target.stat().st_mode)
@@ -302,7 +316,7 @@ def write_file(path, content, mode):
             temporary.unlink(missing_ok=True)
 
 
-def configure(staging_path, output_path, active_path):
+def plan(staging_path, output_path, active_path):
     staging = Path(staging_path)
     output = absolute_path(output_path, "Hyprland configuration destination")
     active = absolute_path(active_path, "HYPRLAND_CONFIG")
@@ -316,7 +330,7 @@ def configure(staging_path, output_path, active_path):
     writes = []
     for relative, source in (
         *((name + ".lua", name + ".lua") for name in MODULES),
-        ("generated/paths.lua", "paths.lua"),
+        ("generated/paths.lua", "generated/paths.lua"),
     ):
         path = output / relative
         if path.is_dir() and not path.is_symlink():
@@ -329,8 +343,12 @@ def configure(staging_path, output_path, active_path):
     if entry is not None:
         writes.append(entry)
 
+    return writes
+
+
+def configure(staging_path, output_path, active_path):
     # All generation, migration and path checks finish before replacing files.
-    for path, content, mode in writes:
+    for path, content, mode in plan(staging_path, output_path, active_path):
         write_file(path, content, mode)
 
 

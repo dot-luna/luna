@@ -2,13 +2,14 @@
 
 ## Layout
 
-- `apps/hypr/hyprland.lua`: Luna's maintained entry point, copied into the installed app config.
-- `apps/hypr/monitors.lua`: enables displays at their preferred mode with automatic placement.
-- `apps/hypr/theme.lua`: applies the selected theme through native `hl.config()`.
-- `apps/hypr/bindings.lua`: registers Luna's basic keyboard shortcuts.
-- `apps/hypr/animations.lua`: sets animation timings and horizontal workspace slides.
-- `apps/hypr/workspaces.lua`: distributes numbered workspaces across monitors.
-- `apps/hypr/scripts/generate-config.lua`: generates the installed checkout path in `generated/paths.lua`.
+- `apps/hypr/config/hyprland.lua`: Luna's maintained entry point, copied into the installed app config.
+- `apps/hypr/config/monitors.lua`: enables displays at their preferred mode with automatic placement.
+- `apps/hypr/config/theme.lua`: applies the selected theme through native `hl.config()`.
+- `apps/hypr/config/bindings.lua`: registers Luna's basic keyboard shortcuts.
+- `apps/hypr/config/animations.lua`: sets animation timings and horizontal workspace slides.
+- `apps/hypr/config/workspaces.lua`: distributes numbered workspaces across monitors.
+- `apps/hypr/app.lua`: declares the config directory, builder, and personal Lua include.
+- `apps/hypr/build.lua`: fills `templates/paths.lua` with the checkout path in `generated/paths.lua`.
 
 ## Load
 
@@ -29,12 +30,12 @@ Setup migrates the recognized old Luna entry point from `config/hypr/.config/hyp
 The source step links each whole directory under `src/` into `~/.local/src/`:
 
 ```sh
-bash scripts/setup/src.sh
+bash scripts/setup/12-link-sources.sh
 ```
 
 For example, `~/.local/src/luna-bar` points to the checkout's `src/luna-bar`. Whole-directory links preserve the source modules' relative paths back into the checkout. Matching links are reused, and conflicting paths are replaced without backups. Back up files you want to keep before running setup.
 
-The main `scripts/setup.sh` installs core packages, development tools, main packages, fonts, and Git apps without package-manager confirmations. It links source directories and installs `~/.local/bin/luna`. Open a new terminal after setup so the shell uses that command path. Setup skips Docker enablement and NVIDIA installation, and attempts to reload an active Hyprland session. Individual setup steps live under `scripts/setup/`.
+The main `scripts/setup.sh` installs core packages, development tools, main packages, fonts, and Git apps without package-manager confirmations. It links source directories and installs `/usr/local/bin/luna` without changing shell startup files for command lookup. Setup skips Docker enablement and NVIDIA installation, and attempts to reload an active Hyprland session. Individual setup steps live under `scripts/setup/`.
 
 The installed entry reads its own directory and generated checkout path, so it does not depend on shell environment variables or the working directory. To load an already installed configuration manually:
 
@@ -50,7 +51,7 @@ Windows animate in 200 ms, fades in 150 ms, layers in 180 ms, and workspaces in 
 
 ## Multiple monitors
 
-`apps/hypr/workspaces.lua` divides workspaces 1–10 evenly into consecutive ranges across connected monitors, ordered left to right (then top to bottom for equal horizontal positions). Two monitors get 1–5 and 6–10; three get 1–4, 5–7, and 8–10. The 0 key still selects workspace 10. Extra workspaces from an uneven split go to the leftmost monitors. Mirrored outputs do not get a separate range.
+`apps/hypr/config/workspaces.lua` divides workspaces 1–10 evenly into consecutive ranges across connected monitors, ordered left to right (then top to bottom for equal horizontal positions). Two monitors get 1–5 and 6–10; three get 1–4, 5–7, and 8–10. The 0 key still selects workspace 10. Extra workspaces from an uneven split go to the leftmost monitors. Mirrored outputs do not get a separate range.
 
 Assignments update after startup, reload, hotplug, or monitor rearrangement, moving existing numbered workspaces with their windows. With one display, all ten belong to it.
 

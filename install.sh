@@ -4,13 +4,15 @@
 #
 # Download this script directly from the repository root:
 #   curl -fsSL https://raw.githubusercontent.com/dot-luna/luna/master/install.sh | bash
-#   curl -fsSL https://raw.githubusercontent.com/dot-luna/luna/master/install.sh | bash -s -- --ref v1.0.0
+#   curl -fsSL https://raw.githubusercontent.com/dot-luna/luna/master/install.sh | bash -s -- --ref dev
 #
 # LUNA_INSTALL_DIR selects the checkout; it defaults to ~/.local/src/luna.
 # LUNA_CONFIG_DIR selects the generated app configuration destination.
 # Keep the checkout in place after setup because deployed configs refer to it.
 # Run as your normal user in a terminal; sudo is used for system setup.
+# Defaults to the latest release tag, or master when no release exists.
 # Existing Luna checkouts are updated in place to the requested branch or tag.
+
 set -euo pipefail
 
 # Decide before tee replaces stdout, then share that choice with setup children.
@@ -26,12 +28,11 @@ fi
 export LUNA_COLOR
 
 main() {
-    local ref=master
+    local ref=latest
+    local ref_kind=any
     local repo_url=https://github.com/dot-luna/luna.git
     local install_dir
-    local skip_list skip_step normalized_skips=
-    local valid_steps='lua core mise aur main fonts git-apps src command postinstall apps keyring defaults session cleanup'
-    local -A skipped_steps=()
+    local requested_skips=,
     local -a setup_arguments=()
 
     while (( $# > 0 )); do
@@ -45,32 +46,13 @@ main() {
                 shift 2
                 ;;
             --skip=*)
-                # Validate before OS checks or checkout changes. Parse each field
-                # explicitly so empty fields and embedded newlines are rejected.
-                skip_list=${1#--skip=}
-                while :; do
-                    skip_step=${skip_list%%,*}
-                    case "$skip_step" in
-                        lua|core|mise|aur|main|fonts|git-apps|src|command|postinstall|apps|keyring|defaults|session|cleanup)
-                            ;;
-                        *)
-                            log ERROR "Invalid skip step '${skip_step:-<empty>}'. Valid steps: $valid_steps." >&2
-                            exit 2
-                            ;;
-                    esac
-                    if [[ -z "${skipped_steps[$skip_step]+set}" ]]; then
-                        skipped_steps[$skip_step]=1
-                        normalized_skips+="${normalized_skips:+,}$skip_step"
-                    fi
-                    if [[ "$skip_list" != *,* ]]; then
-                        break
-                    fi
-                    skip_list=${skip_list#*,}
-                done
+                # Setup validates the values. Track names only to tailor notices.
+                setup_arguments+=("$1")
+                requested_skips+="${1#--skip=},"
                 shift
                 ;;
             --skip)
-                log ERROR "Use --skip=<step[,step...]> (for example --skip=git-apps,fonts). Valid steps: $valid_steps." >&2
+                log ERROR 'Use --skip=<step[,step...]> (for example --skip=git-apps,fonts).' >&2
                 exit 2
                 ;;
             -h|--help)
@@ -90,9 +72,6 @@ main() {
         log ERROR "Invalid branch or tag name: $ref" >&2
         exit 2
     fi
-    if [[ -n "$normalized_skips" ]]; then
-        setup_arguments=("--skip=$normalized_skips")
-    fi
 
     log_file=
     log_pid=
@@ -107,12 +86,67 @@ main() {
     start_log
     welcome
     log INFO "Install folder: $install_dir"
-    log WARN 'Packages may be installed or upgraded automatically.'
 
-    step '1/4 — Check system and sudo access'
+    # Give time to cancel before authentication, checkout changes, or setup.
+    current_step='startup pause'
+    log WARN 'Back up files you want to keep; no automatic backups are created.'
+    log WARN 'Packages may be installed or upgraded automatically.'
+    log WARN 'Conflicting install paths, app configs, and Git app checkouts may be replaced.'
+    log WARN 'Shell, login, theme, and default application settings may change.'
+
+    if [[ "$requested_skips" != *,session,* ]]; then
+        log WARN 'Setup may reload the active Hyprland session.'
+    fi
+    log INFO 'Continuing in 5 seconds... Press Ctrl+C to cancel.'
+    sleep 5
+
+    step 'Check system and sudo access'
+
+    # Resolve before authentication or checkout changes. Explicit refs bypass
+    # release lookup and do not require curl.
+    if [[ "$ref" == latest ]]; then
+        if ! command -v curl >/dev/null 2>&1; then
+            fail 'Install curl to find the latest release, or choose a branch or tag with --ref.'
+        fi
+
+        local releases_url=${repo_url%.git}/releases
+        local release_url
+        release_url=$(curl -fsSL -o /dev/null -w '%{url_effective}' "$releases_url/latest") ||
+            fail 'Could not fetch the latest release. Check your connection and retry, or use --ref.'
+        case "$release_url" in
+            "$releases_url/tag/"?*)
+                # GitHub may escape characters in the tag's URL path. Decode
+                # each escape once, preserving literal percent signs in tags.
+                local encoded_tag=${release_url#"$releases_url/tag/"}
+                local hex byte
+                ref=
+                while [[ "$encoded_tag" == *%* ]]; do
+                    ref+=${encoded_tag%%\%*}
+                    encoded_tag=${encoded_tag#*%}
+                    hex=${encoded_tag:0:2}
+                    if [[ ! "$hex" =~ ^[0-9a-fA-F]{2}$ || "$hex" == 00 ]]; then
+                        fail 'Could not determine the latest release tag. Choose a branch or tag with --ref.'
+                    fi
+                    printf -v byte '%b' "\\x$hex"
+                    ref+=$byte
+                    encoded_tag=${encoded_tag:2}
+                done
+                ref+=$encoded_tag
+                ref_kind=tag
+                ;;
+            "$releases_url"|"$releases_url/")
+                ref=master
+                log WARN 'No release found; using master.'
+                ;;
+            *)
+                fail 'Could not determine the latest release tag. Choose a branch or tag with --ref.'
+                ;;
+        esac
+    fi
+
     sudo -v
 
-    step '2/4 — Prepare Git'
+    step 'Prepare Git'
     if ! command -v git >/dev/null 2>&1; then
         log INFO 'Installing Git...'
         run_tool sudo pacman -Syu --needed --noconfirm -- git
@@ -124,13 +158,13 @@ main() {
         fail "Invalid branch or tag name: $ref"
     fi
 
-    step '3/4 — Prepare Luna'
-    prepare_checkout "$install_dir" "$ref" "$repo_url"
+    step 'Prepare Luna'
+    prepare_checkout "$install_dir" "$ref" "$repo_url" "$ref_kind"
     if [[ ! -f "$install_dir/scripts/setup.sh" ]]; then
         fail "The selected version does not contain scripts/setup.sh: $ref"
     fi
 
-    step '4/4 — Install Luna'
+    step 'Install Luna'
     # Setup replaces source-link conflicts without backups.
     # Run from the checkout for a predictable cwd.
     cd -- "$install_dir"
@@ -138,14 +172,14 @@ main() {
 
     printf '\n'
     log OK 'Luna setup completed.'
-    if [[ -z "${skipped_steps[command]+set}" ]]; then
-        log INFO 'Open a new terminal and run luna --version.'
+    if [[ "$requested_skips" != *,command,* ]]; then
+        log INFO 'Run luna --version to check the installation.'
     fi
     log INFO 'Keep the install folder; Luna uses its files.'
 }
 
 prepare_checkout() {
-    local directory=$1 ref=$2 repo_url=$3
+    local directory=$1 ref=$2 repo_url=$3 ref_kind=$4
 
     # Git can discover a parent repository, so verify the selected directory is
     # the worktree root before updating it. This also supports Git worktrees.
@@ -156,11 +190,14 @@ prepare_checkout() {
             fail "LUNA_INSTALL_DIR must point to the Git checkout root: $checkout_root"
         fi
 
-        update_checkout "$directory" "$ref" "$repo_url"
+        update_checkout "$directory" "$ref" "$repo_url" "$ref_kind"
         return
     fi
 
     mkdir -p -- "$(dirname -- "$directory")"
+
+    # The destination may contain our cwd; leave it before removal so Git can run.
+    cd -- "$(dirname -- "$directory")"
 
     # Keep the existing replacement behavior for non-Git paths. Removing a
     # destination symlink leaves its external target untouched.
@@ -172,10 +209,17 @@ prepare_checkout() {
     log INFO "Downloading Luna ($ref)..."
     # Tag installs intentionally detach HEAD; Git's introductory advice is noise here.
     run_tool git -c advice.detachedHead=false clone --quiet --branch "$ref" --single-branch -- "$repo_url" "$directory"
+
+    # Clone prefers branches with the same name. Latest must use the release tag,
+    # which may not have been fetched when the branch has unrelated history.
+    if [[ "$ref_kind" == tag ]] && git -C "$directory" symbolic-ref --quiet HEAD >/dev/null; then
+        run_tool git -C "$directory" fetch --quiet --no-tags origin "+refs/tags/$ref:refs/tags/$ref"
+        run_tool git -C "$directory" switch --quiet --no-overwrite-ignore --detach "refs/tags/$ref"
+    fi
 }
 
 update_checkout() {
-    local directory=$1 ref=$2 repo_url=$3
+    local directory=$1 ref=$2 repo_url=$3 ref_kind=$4
     local origin repo_path
     origin=$(git -C "$directory" config --get remote.origin.url) || fail "The existing checkout has no origin remote: $directory"
     repo_path=${repo_url#https://}
@@ -190,8 +234,8 @@ update_checkout() {
 
     log INFO "Updating Luna ($ref)..."
 
-    # Resolve the requested name on the remote, not against potentially stale
-    # local refs. Match clone's branch-first behavior when a tag has the same name.
+    # Resolve against the remote, not stale local refs. Explicit names prefer
+    # branches; a resolved latest release must select its tag.
     local remote_refs object_id remote_ref
     local has_branch=0 has_tag=0
     remote_refs=$(git -C "$directory" ls-remote --refs origin "refs/heads/$ref" "refs/tags/$ref") || fail 'Could not read branches and tags from origin.'
@@ -206,7 +250,7 @@ update_checkout() {
         esac
     done <<< "$remote_refs"
 
-    if (( has_branch )); then
+    if (( has_branch )) && [[ "$ref_kind" != tag ]]; then
         # Fetch explicitly so checkouts cloned with --single-branch can switch
         # to another branch. Only the remote-tracking ref may move backwards.
         run_tool git -C "$directory" fetch --quiet --no-tags origin "+refs/heads/$ref:refs/remotes/origin/$ref"
@@ -261,12 +305,13 @@ Usage: bash install.sh [--ref <branch-or-tag>] [--skip=<step[,step...]>]
        curl -fsSL <installer-url> | bash -s -- [options]
 
 Options:
-    --ref <name>           Install a branch or tag (default: master).
+    --ref <name>           Install a branch or tag (default: latest release).
+                          Use latest to resolve a release; falls back to master if none exists.
     --skip=<step,...>      Skip selected setup steps.
     -h, --help             Show this help without changing anything.
 
 Setup steps:
-    lua core mise aur main fonts git-apps src command postinstall apps keyring defaults session cleanup
+    Defined and validated by scripts/setup.sh in the selected version.
     Skips do not skip dependencies automatically; provide what remaining steps need.
     System checks, Git bootstrap, and checkout preparation always run.
 
@@ -284,6 +329,8 @@ Examples:
 Logs:     $XDG_STATE_HOME/luna/ (defaults to ~/.local/state/luna/)
 
 Requires Arch Linux, a normal user with sudo access, and an interactive terminal.
+Latest release lookup requires curl.
+Shows installation warnings, then waits 5 seconds; press Ctrl+C to cancel.
 Packages may be installed or upgraded automatically.
 Updates existing Luna checkouts; stops if local edits or history conflict.
 Replaces existing non-Git install paths without a backup.
@@ -376,7 +423,7 @@ welcome() {
  /_____/\____/_/ |_/_/  |_|
 
     Welcome to the Luna installer.
-    Your desktop, your space.
+    Just the way I like it.
 
 BANNER
     if [[ "$LUNA_COLOR" == 1 ]]; then
@@ -469,7 +516,7 @@ check_system() {
     fi
 
     local tool
-    for tool in pacman sudo tee sed mktemp date mkdir rm dirname realpath; do
+    for tool in pacman sudo tee sed mktemp date mkdir rm dirname realpath sleep; do
         if ! command -v "$tool" >/dev/null 2>&1; then
             fail "Required command is missing: $tool"
         fi

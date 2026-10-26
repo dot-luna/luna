@@ -9,7 +9,7 @@ return function(common)
             end
         end
 
-        error("AUR helper missing; run scripts/setup/aur.sh first")
+        error("AUR helper missing; run scripts/setup/4-setup-aur-helper.sh first")
     end
 
     function M.validate(name)

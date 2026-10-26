@@ -44,12 +44,6 @@ return function(common, ini)
         return content
     end
 
-    local function write(path, content)
-        local file = assert(io.open(path, "w"))
-        assert(file:write(content))
-        assert(file:close())
-    end
-
     function M.apply(mode, force)
         assert(mode == "dark" or mode == "light", "Mode must be dark or light")
         local previous = preference()
@@ -93,8 +87,7 @@ return function(common, ini)
             for _, change in ipairs(changes) do
                 if change.committed then
                     if change.old then
-                        write(change.path .. ".luna-tmp", change.old)
-                        assert(os.rename(change.path .. ".luna-tmp", change.path))
+                        common.replace_file(change.path, change.old)
                     else
                         assert(os.remove(change.path))
                     end
@@ -106,7 +99,7 @@ return function(common, ini)
             for _, change in ipairs(changes) do
                 if change.needed then
                     common.run({ "mkdir", "-p", "--", change.path:match("^(.*)/") })
-                    write(change.path .. ".luna-tmp", change.content)
+                    change.staged = common.stage_file(change.path, change.content)
                 end
             end
             if change_preference then
@@ -116,7 +109,8 @@ return function(common, ini)
             assert(preference() == "prefer-" .. mode, "Desktop color-scheme was not saved")
             for _, change in ipairs(changes) do
                 if change.needed then
-                    assert(os.rename(change.path .. ".luna-tmp", change.path))
+                    assert(os.rename(change.staged, change.path))
+                    change.staged = nil
                     change.committed = true
                 end
             end
@@ -128,7 +122,9 @@ return function(common, ini)
             end
         end
         for _, change in ipairs(changes) do
-            os.remove(change.path .. ".luna-tmp")
+            if change.staged then
+                os.remove(change.staged)
+            end
         end
         assert(success, message)
         return restore

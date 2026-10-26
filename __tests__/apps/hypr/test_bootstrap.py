@@ -10,7 +10,7 @@ import unittest
 
 
 REPO = Path(__file__).resolve().parents[3]
-ENTRY = REPO / 'apps/hypr/hyprland.lua'
+ENTRY = REPO / 'apps/hypr/config/hyprland.lua'
 
 
 @unittest.skipUnless(Path('/usr/bin/lua').is_file(), 'The bootstrap requires Lua')
@@ -25,11 +25,12 @@ class BootstrapKeyringTests(unittest.TestCase):
         self.installed = self.root / "installed Hyprland's config"
         (self.installed / 'generated').mkdir(parents=True)
         shutil.copy2(ENTRY, self.installed / 'hyprland.lua')
-        generated = subprocess.run(
-            ['/usr/bin/lua', '-E', str(REPO / 'apps/hypr/scripts/generate-config.lua')],
+        subprocess.run(
+            ['/usr/bin/lua', '-E', str(REPO / 'scripts/setup/build-app.lua'),
+             str(REPO / 'apps/hypr'), str(self.installed), str(self.installed),
+             str(self.root / 'config/luna')],
             cwd=self.root, text=True, capture_output=True, check=True,
         )
-        (self.installed / 'generated/paths.lua').write_text(generated.stdout)
         (self.bin / 'readlink').symlink_to(shutil.which('readlink'))
         self.env = {
             'PATH': str(self.bin), 'HOME': str(self.root / 'home'), 'ENV': '',

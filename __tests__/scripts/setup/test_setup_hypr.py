@@ -8,6 +8,8 @@ import subprocess
 import tempfile
 import unittest
 
+from __tests__.scripts.setup.app_fixture import copy_app_setup
+
 
 REPO = Path(__file__).resolve().parents[3]
 SPEC = importlib.util.spec_from_file_location("hypr_config", REPO / "scripts/setup/hypr-config.py")
@@ -27,21 +29,15 @@ class SetupHyprTests(unittest.TestCase):
         self.config = self.home / ".config"
         self.destination = self.config / "luna/hypr"
         self.active = self.config / "hypr/hyprland.lua"
-        for name in ("scripts/setup/hypr.sh", "scripts/setup/hypr-config.py", "lib/common.sh"):
-            target = self.checkout / name
-            target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(REPO / name, target)
-        source = self.checkout / "apps/hypr"
-        source.mkdir(parents=True)
+        copy_app_setup(self.checkout)
+        source = self.checkout / "apps/hypr/config"
         for name in helper.MODULES:
             (source / (name + ".lua")).write_text("loads = (loads or 0) + 1\n" if name == "hyprland" else "-- static module\n")
-        self.generator = source / "scripts/generate-config.lua"
-        self.generator.parent.mkdir()
-        self.generator.write_text('print("return { install_dir = \\"fixture\\" }")\n')
+        self.generator = source.parent / "build.lua"
 
         self.bin = self.root / "bin"
         self.bin.mkdir()
-        for name in ("bash", "readlink", "dirname", "realpath", "mktemp", "cp", "rm", "git"):
+        for name in ("bash", "readlink", "dirname", "realpath", "mktemp", "cp", "rm", "git", "mkdir", "find"):
             (self.bin / name).symlink_to(shutil.which(name))
         self.env = {key: value for key, value in os.environ.items()
                     if not key.startswith(("LUNA_", "XDG_", "HYPRLAND_", "GIT_"))}
@@ -97,7 +93,7 @@ class SetupHyprTests(unittest.TestCase):
         self.put_active(PERSONAL)
         self.active.chmod(0o640)
         result = self.setup("--help", "extra")
-        self.assertIn("without backups", result.stderr)
+        self.assertNotIn("Back up", result.stderr)
         content = self.active.read_bytes()
         self.assertTrue(content.startswith(helper.START + b"\n"))
         self.assertTrue(content.endswith(PERSONAL))
@@ -166,7 +162,8 @@ class SetupHyprTests(unittest.TestCase):
         self.assertEqual(self.run_lua(), "1\t1")
 
         for content in (b"if false then\n" + manual + b"\nend\n",
-                        b"dofile(" + helper.lua_string(str(self.checkout / "apps/hypr/hyprland.lua")) + b")\n"):
+                        b"dofile(" + helper.lua_string(str(self.checkout / "apps/hypr/hyprland.lua")) + b")\n",
+                        b"dofile(" + helper.lua_string(str(self.checkout / "apps/hypr/config/hyprland.lua")) + b")\n"):
             self.active.write_bytes(content)
             self.setup(ok=False)
             self.assertEqual(self.active.read_bytes(), content)
@@ -265,7 +262,7 @@ class SetupHyprTests(unittest.TestCase):
         self.setup()
         paths = [self.active, *self.destination.glob("*.lua"), self.destination / "generated/paths.lua"]
         before = {path: path.read_bytes() for path in paths}
-        self.generator.write_text('print("partial"); error("bad generation")\n')
+        self.generator.write_text('return function(ctx) ctx.write("generated/paths.lua", "partial"); error("bad generation") end\n')
         self.setup(ok=False)
         self.assertEqual(before, {path: path.read_bytes() for path in paths})
 
@@ -302,7 +299,7 @@ class SetupHyprTests(unittest.TestCase):
         self.assertFalse(self.active.exists())
         (self.destination / "theme.lua").rmdir()
         self.active.parent.mkdir(parents=True)
-        self.active.symlink_to(self.checkout / "apps/hypr/hyprland.lua")
+        self.active.symlink_to(self.checkout / "apps/hypr/config/hyprland.lua")
         self.setup(ok=False)
         self.assertEqual(list(self.destination.iterdir()), [])
 
@@ -315,6 +312,20 @@ class SetupHyprTests(unittest.TestCase):
         self.assertFalse((self.destination / "hyprland.lua").is_symlink())
         self.assertEqual(personal.read_bytes(), PERSONAL)
         self.assertEqual(self.run_lua(), "1\t0")
+
+    def test_personal_link_through_an_owned_symlink_is_rejected_before_publication(self):
+        personal = self.root / "personal.lua"
+        personal.write_bytes(PERSONAL)
+        self.destination.mkdir(parents=True)
+        installed = self.destination / "hyprland.lua"
+        installed.symlink_to(personal)
+        self.active.parent.mkdir(parents=True)
+        self.active.symlink_to(installed)
+
+        self.setup(ok=False)
+        self.assertTrue(installed.is_symlink())
+        self.assertEqual(self.active.read_bytes(), PERSONAL)
+        self.assertEqual(personal.read_bytes(), PERSONAL)
 
 
 if __name__ == "__main__":

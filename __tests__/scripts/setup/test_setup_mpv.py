@@ -8,6 +8,8 @@ import subprocess
 import tempfile
 import unittest
 
+from __tests__.scripts.setup.app_fixture import copy_app_setup
+
 
 REPO = Path(__file__).resolve().parents[3]
 
@@ -20,12 +22,8 @@ class SetupMpvTests(unittest.TestCase):
         self.home = self.root / "home"
         self.home.mkdir()
         self.checkout = self.root / "checkout"
-        for name in ("scripts/setup/mpv.sh", "scripts/setup/mpv-config.py", "lib/common.sh"):
-            destination = self.checkout / name
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(REPO / name, destination)
-        self.source = self.checkout / "apps/mpv"
-        shutil.copytree(REPO / "apps/mpv", self.source)
+        copy_app_setup(self.checkout)
+        self.source = self.checkout / "apps/mpv/config"
         self.config_home = self.home / ".config"
         self.active = self.config_home / "mpv"
         self.destination = self.config_home / "luna/mpv"
@@ -189,6 +187,18 @@ end)
         (self.source / "mpv.conf").write_text("speed=2\n")
         self.assertNotEqual(self.setup().returncode, 0)
         self.assertEqual((self.destination / "mpv.conf").read_bytes(), before)
+
+    def test_personal_link_through_installed_config_is_rejected_before_publish(self):
+        self.active.mkdir(parents=True)
+        self.destination.mkdir(parents=True)
+        external = self.root / "external-mpv.conf"
+        external.write_text("# Preserve external config\n")
+        installed = self.destination / "mpv.conf"
+        installed.symlink_to(external)
+        (self.active / "mpv.conf").symlink_to(installed)
+        self.assertNotEqual(self.setup().returncode, 0)
+        self.assertTrue(installed.is_symlink())
+        self.assertEqual(external.read_text(), "# Preserve external config\n")
 
     def test_malformed_managed_block_fails_before_installing(self):
         self.active.mkdir(parents=True)

@@ -8,6 +8,8 @@ import subprocess
 import tempfile
 import unittest
 
+from __tests__.scripts.setup.app_fixture import copy_app_setup
+
 
 REPO = Path(__file__).resolve().parents[3]
 
@@ -23,25 +25,20 @@ class SetupZenTests(unittest.TestCase):
         self.destination = self.config / "luna/zen"
         self.generated = self.destination / "generated"
         self.checkout = self.root / "checkout"
-        for name in ("scripts/setup/zen.sh", "scripts/setup/zen-profile.py", "lib/common.sh"):
-            target = self.checkout / name
-            target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(REPO / name, target)
+        copy_app_setup(self.checkout)
         self.mod_helper = self.checkout / "scripts/setup/zen_mods.py"
-        self.mod_helper.write_text("def prepare_mod(profile, read_personal):\n    return []\n"
-                                   "def release_lock():\n    pass\n")
+        self.mod_helper.write_text('raise RuntimeError("Config setup must not import Mod installation")\n')
         (self.checkout / "scripts/setup/zen-extensions.sh").write_text(
             '#!/usr/bin/env bash\nprintf configured > "$HOME/extensions-configured"\n')
-        self.generator = self.checkout / "apps/zen/scripts/generate-theme.lua"
-        self.generator.parent.mkdir(parents=True)
+        self.builder = self.checkout / "apps/zen/build.lua"
         self.styles = {"chrome": "/* chrome */\n", "content": "/* content */\n",
                        "fonts": {"ui": "Luna UI", "mono": "Luna Mono"}}
-        self.generator.write_text("print([[" + json.dumps(self.styles) + "]])\n")
+        self.set_styles()
 
         # A closed PATH and fail-on-launch stub prevent host/browser interaction.
         self.bin = self.root / "bin"
         self.bin.mkdir()
-        for name in ("bash", "readlink", "dirname", "realpath"):
+        for name in ("bash", "readlink", "dirname", "realpath", "find", "mkdir"):
             (self.bin / name).symlink_to(shutil.which(name))
         (self.bin / "zen-browser").write_text('#!/bin/sh\nprintf launched > "$HOME/browser-launched"\nexit 99\n')
         (self.bin / "zen-browser").chmod(0o755)
@@ -52,6 +49,16 @@ class SetupZenTests(unittest.TestCase):
                         XDG_CACHE_HOME=str(self.root / "cache"), XDG_STATE_HOME=str(self.root / "state"),
                         XDG_DATA_DIRS=str(self.root / "system-data"),
                         XDG_CONFIG_DIRS=str(self.root / "system-config"), BASH_ENV="", NO_COLOR="1")
+
+    def set_styles(self):
+        self.builder.write_text(
+            'return function(ctx)\n'
+            '    local json = dofile(ctx.root .. "/lib/theme/json.lua")\n'
+            '    local styles = json.decode([==[' + json.dumps(self.styles) + ']==])\n'
+            '    ctx.write("generated/userChrome.css", styles.chrome)\n'
+            '    ctx.write("generated/userContent.css", styles.content)\n'
+            '    ctx.write("generated/fonts.json", json.encode(styles.fonts))\n'
+            'end\n')
 
     def setup(self, *arguments, ok=True):
         result = subprocess.run(
@@ -77,48 +84,29 @@ class SetupZenTests(unittest.TestCase):
         for path in self.personal_files(profile)[:2]:
             content = path.read_bytes()
             self.assertEqual(content.count(b"/* >>> Luna theme >>> */"), 1)
-            self.assertIn((self.generated / path.name).as_uri().encode("ascii"), content)
+            self.assertIn((self.destination / path.name).as_uri().encode("ascii"), content)
+            entry = (self.destination / path.name).read_text()
+            self.assertIn(f'@import url("generated/{path.name}");', entry)
         self.assertIn(b'user_pref("toolkit.legacyUserProfileCustomizations.stylesheets", true);',
                       (profile / "user.js").read_bytes())
 
     def test_missing_profile_still_generates_without_creating_registry(self):
         result = self.setup("--help", "ignored")
         self.assertIn("Open Zen once", result.stderr)
-        self.assertIn("without backups", result.stderr)
+        self.assertNotIn("Back up", result.stderr)
         self.assertEqual((self.generated / "userChrome.css").read_bytes(), b"/* chrome */\n")
         self.assertEqual((self.generated / "userContent.css").read_bytes(), b"/* content */\n")
         self.assertFalse((self.config / "zen").exists())
         self.assertFalse((self.home / ".zen").exists())
-        self.assertTrue((self.home / "extensions-configured").exists())
+        self.assertFalse((self.home / "extensions-configured").exists())
 
-    def test_mod_preparation_is_included_in_profile_publication_and_lock_released(self):
+    def test_config_setup_leaves_mod_and_extension_installation_to_extras(self):
         profile = self.profile()
-        self.mod_helper.write_text(
-            'import os\nfrom pathlib import Path\n'
-            'def prepare_mod(profile, read_personal):\n'
-            '    path, content, mode = read_personal(profile / "zen-themes.json")\n'
-            '    return [(path, b"{}\\n", mode)]\n'
-            'def release_lock():\n'
-            '    (Path(os.environ["HOME"]) / "lock-released").touch()\n')
+        (self.checkout / "scripts/setup/zen-extensions.sh").write_text("exit 23\n")
         self.setup()
-        self.assertEqual((profile / "zen-themes.json").read_bytes(), b"{}\n")
-        self.assertTrue((self.home / "lock-released").exists())
-
-    def test_mod_alias_cannot_replace_personal_user_js(self):
-        profile = self.profile()
-        personal = profile / "user.js"
-        personal.write_text("// keep me\n")
-        self.mod_helper.write_text(
-            'import os\nfrom pathlib import Path\n'
-            'def prepare_mod(profile, read_personal):\n'
-            '    path, content, mode = read_personal(profile / "user.js")\n'
-            '    return [(path, b"bad", mode)]\n'
-            'def release_lock():\n'
-            '    (Path(os.environ["HOME"]) / "lock-released").touch()\n')
-        self.setup(ok=False)
-        self.assertEqual(personal.read_text(), "// keep me\n")
-        self.assertFalse(self.generated.exists())
-        self.assertTrue((self.home / "lock-released").exists())
+        self.assert_connected(profile)
+        self.assertFalse((profile / "zen-themes.json").exists())
+        self.assertFalse((profile / ".parentlock").exists())
 
     def test_personal_file_alias_cannot_replace_browser_lock(self):
         profile = self.profile()
@@ -127,6 +115,18 @@ class SetupZenTests(unittest.TestCase):
         (profile / "user.js").symlink_to(lock)
         self.setup(ok=False)
         self.assertEqual(lock.read_bytes(), b"")
+        self.assertFalse(self.generated.exists())
+
+    def test_browser_lock_symlink_chain_is_rejected_before_writes(self):
+        profile = self.profile()
+        personal = self.root / "personal.js"
+        personal.write_bytes(b"// Preserve me\n")
+        lock = profile / ".parentlock"
+        lock.symlink_to(personal)
+        (profile / "user.js").symlink_to(lock)
+        self.setup(ok=False)
+        self.assertEqual(personal.read_bytes(), b"// Preserve me\n")
+        self.assertTrue(lock.is_symlink())
         self.assertFalse(self.generated.exists())
 
     def test_missing_browser_skips_profile_integration_but_installs_css(self):
@@ -139,13 +139,6 @@ class SetupZenTests(unittest.TestCase):
 
         self.env["ZEN_PROFILE_DIR"] = str(profile)
         self.setup()
-        self.assert_connected(profile)
-
-    def test_optional_extension_failure_keeps_profile_configuration(self):
-        profile = self.profile()
-        (self.checkout / "scripts/setup/zen-extensions.sh").write_text("exit 23\n")
-        result = self.setup()
-        self.assertIn("extension setup failed", result.stderr)
         self.assert_connected(profile)
 
     def test_xdg_registry_and_empty_or_unset_xdg_fallback(self):
@@ -256,14 +249,33 @@ class SetupZenTests(unittest.TestCase):
         self.setup()
         self.assertEqual(contents, (chrome / "userChrome.css").read_bytes())
 
+    def test_existing_generated_import_moves_to_entry_sheet_without_losing_personal_css(self):
+        profile = self.profile()
+        chrome = profile / "chrome"
+        chrome.mkdir()
+        path = chrome / "userChrome.css"
+        personal = b"/* My styles */\n#custom { color: red; }\n"
+        old = ('/* >>> Luna theme >>> */\n@import url("'
+               + (self.generated / "userChrome.css").as_uri()
+               + '");\n/* <<< Luna theme <<< */\n').encode("ascii")
+        path.write_bytes(old + personal)
+        self.setup()
+        self.assert_connected(profile)
+        self.assertTrue(path.read_bytes().endswith(personal))
+        self.assertNotIn((self.generated / path.name).as_uri().encode("ascii"), path.read_bytes())
+
     def test_generation_errors_and_invalid_json_preserve_existing_files(self):
         profile = self.profile()
         self.setup()
         paths = [*self.personal_files(profile), *self.generated.iterdir()]
         before = {path: path.read_bytes() for path in paths}
-        for program in ('error("bad theme")', 'print("broken json")', 'print([[{"chrome":"partial"}]])'):
+        for program in (
+            'error("bad theme")',
+            'return function(ctx) ctx.write("generated/fonts.json", "broken json") end',
+            'return function(ctx) ctx.write("generated/userChrome.css", "partial") end',
+        ):
             with self.subTest(program=program):
-                self.generator.write_text(program)
+                self.builder.write_text(program)
                 self.setup(ok=False)
                 self.assertEqual(before, {path: path.read_bytes() for path in paths})
 
@@ -272,7 +284,7 @@ class SetupZenTests(unittest.TestCase):
         personal = b'// Personal\nuser_pref("font.name.serif.x-western", "Old Font");\n'
         (profile / "user.js").write_bytes(personal)
         self.styles["fonts"] = {"ui": 'UI "face" \\ Ω', "mono": 'Mono "face" \\ Ω'}
-        self.generator.write_text("print([[" + json.dumps(self.styles) + "]])\n")
+        self.set_styles()
         self.setup()
         prefs = (profile / "user.js").read_text()
         self.assertTrue(prefs.startswith(personal.decode()))
@@ -287,7 +299,7 @@ class SetupZenTests(unittest.TestCase):
         self.setup()
         self.assertEqual((profile / "user.js").read_text(), prefs)
         self.styles["fonts"] = {"ui": "New UI", "mono": "New Mono"}
-        self.generator.write_text("print([[" + json.dumps(self.styles) + "]])\n")
+        self.set_styles()
         self.setup()
         prefs = (profile / "user.js").read_text()
         self.assertEqual(prefs.count("// >>> Luna fonts >>>"), 1)
@@ -302,7 +314,7 @@ class SetupZenTests(unittest.TestCase):
         for fonts in (None, {}, {"ui": "Missing Mono"}, {"ui": "Bad\nFont", "mono": "Mono"}):
             with self.subTest(fonts=fonts):
                 self.styles["fonts"] = fonts
-                self.generator.write_text("print([[" + json.dumps(self.styles) + "]])\n")
+                self.set_styles()
                 self.setup(ok=False)
                 self.assertEqual(before, {path: path.read_bytes() for path in paths})
 
@@ -366,6 +378,66 @@ class SetupZenTests(unittest.TestCase):
         self.assertFalse(self.generated.exists())
         self.assertFalse((chrome / "userChrome.css").exists())
 
+    def test_personal_symlink_chain_through_owned_files_is_rejected_before_publication(self):
+        profile = self.profile()
+        chrome = profile / "chrome"
+        chrome.mkdir()
+        personal = self.root / "personal.css"
+        personal.write_bytes(b"/* Keep my settings */\n")
+        self.generated.mkdir(parents=True)
+        for owned in (self.generated / "userChrome.css", self.checkout / "owned-link.css"):
+            with self.subTest(owned=owned):
+                owned.symlink_to(personal)
+                active = chrome / "userChrome.css"
+                active.symlink_to(os.path.relpath(owned, chrome))
+                self.setup(ok=False)
+                self.assertTrue(owned.is_symlink())
+                self.assertTrue(active.is_symlink())
+                self.assertEqual(personal.read_bytes(), b"/* Keep my settings */\n")
+                self.assertFalse((self.generated / "userContent.css").exists())
+                self.assertFalse((profile / "user.js").exists())
+                active.unlink()
+                owned.unlink()
+
+    def test_parent_symlink_chain_through_checkout_is_rejected(self):
+        profile = self.profile()
+        personal = self.root / "personal-styles"
+        personal.mkdir()
+        css = personal / "userChrome.css"
+        css.write_bytes(b"/* Keep my settings */\n")
+        alias = self.checkout / "styles-link"
+        alias.symlink_to(personal)
+        (profile / "chrome").symlink_to(alias)
+        self.setup(ok=False)
+        self.assertTrue(alias.is_symlink())
+        self.assertEqual(css.read_bytes(), b"/* Keep my settings */\n")
+        self.assertFalse(self.generated.exists())
+
+    def test_personal_symlink_loop_fails_before_publishing_configs(self):
+        profile = self.profile()
+        chrome = profile / "chrome"
+        chrome.mkdir()
+        active = chrome / "userChrome.css"
+        active.symlink_to("../chrome/userChrome.css")
+        result = self.setup(ok=False)
+        self.assertIn("symlink loop", result.stderr)
+        self.assertTrue(active.is_symlink())
+        self.assertFalse(self.generated.exists())
+
+    def test_external_personal_parent_symlink_still_preserves_files(self):
+        profile = self.profile()
+        personal = self.root / "personal-styles"
+        personal.mkdir()
+        css = personal / "userChrome.css"
+        css.write_bytes(b"/* Keep my settings */\n")
+        css.chmod(0o640)
+        (profile / "chrome").symlink_to(personal)
+        self.setup()
+        self.assert_connected(profile)
+        self.assertTrue((profile / "chrome").is_symlink())
+        self.assertTrue(css.read_bytes().endswith(b"/* Keep my settings */\n"))
+        self.assertEqual(css.stat().st_mode & 0o777, 0o640)
+
     def test_invalid_registry_and_missing_explicit_profile_are_optional(self):
         registry = self.config / "zen/profiles.ini"
         registry.parent.mkdir(parents=True)
@@ -377,15 +449,14 @@ class SetupZenTests(unittest.TestCase):
         self.assertIn("does not exist", self.setup().stderr)
         self.assertFalse((self.root / "missing-profile").exists())
 
-    def test_real_generator_rounding_change_replaces_css_preserving_personal_files(self):
-        shutil.copy2(REPO / "apps/zen/scripts/generate-theme.lua", self.generator)
-        shutil.copytree(REPO / "lib/theme", self.checkout / "lib/theme")
+    def test_real_builder_rounding_change_replaces_css_preserving_personal_files(self):
+        shutil.copy2(REPO / "apps/zen/build.lua", self.builder)
         profile = self.profile()
         (profile / "chrome").mkdir()
         personal = b"/* personal styles */\n#custom { color: red; }\n"
         (profile / "chrome/userChrome.css").write_bytes(personal)
         self.setup()
-        for path in self.generated.iterdir():
+        for path in self.generated.glob("*.css"):
             self.assertIn(b"border-radius: 0", path.read_bytes())
         imported = (profile / "chrome/userChrome.css").read_bytes()
         resolved = subprocess.run(
@@ -397,7 +468,7 @@ class SetupZenTests(unittest.TestCase):
         (state / "theme.json").write_text(resolved.stdout)
         (state / "theme").write_text("custom\n")
         self.setup()
-        for path in self.generated.iterdir():
+        for path in self.generated.glob("*.css"):
             self.assertNotIn(b"radius", path.read_bytes())
         self.assertEqual(imported, (profile / "chrome/userChrome.css").read_bytes())
         self.assertTrue(imported.endswith(personal))

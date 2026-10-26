@@ -21,7 +21,10 @@ class ZshrcTests(unittest.TestCase):
         self.home = self.root / "home"
         self.home.mkdir()
         self.config = self.root / "installed config/zsh"
-        shutil.copytree(REPO / "apps/zsh", self.config)
+        shutil.copytree(REPO / "apps/zsh/config", self.config)
+        # Host plugin packages must not add hooks to isolated startup tests.
+        plugins = self.config / "plugins.zsh"
+        plugins.write_text(plugins.read_text().replace("/usr/share/zsh", str(self.root / "share/zsh")))
         self.install = self.root / "installed Luna"
 
         # Setup keeps generated shell files separate from editable configuration.

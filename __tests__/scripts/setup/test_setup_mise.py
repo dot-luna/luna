@@ -27,14 +27,14 @@ class MiseSetupTests(unittest.TestCase):
         self.bin = self.root / "bin"
         self.bin.mkdir()
 
-        for name in ("scripts/setup/mise.lua", "packages/packages.mise.lua", "lib/common.lua", "lib/theme/json.lua"):
+        for name in ("scripts/setup/3-install-dev-tools.lua", "packages/packages.mise.lua", "lib/common.lua", "lib/theme/json.lua"):
             destination = self.checkout / name
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(REPO / name, destination)
         self.manifest = self.checkout / "packages/packages.mise.lua"
 
         # A restricted PATH prevents missing-helper cases from invoking the real mise.
-        for name in ("sh", "bash", "dirname", "readlink"):
+        for name in ("sh", "bash", "dirname", "readlink", "realpath"):
             executable = shutil.which(name)
             if executable:
                 (self.bin / name).symlink_to(executable)
@@ -57,7 +57,7 @@ with (root / "calls.jsonl").open("a") as output:
     output.write(json.dumps({"tool": tool, "args": args}) + "\\n")
 if tool == "activation.py":
     sys.exit(int(os.environ.get("TEST_MISE_SHELL_FAILURE", "0")))
-assert args[:2] == ["--cd", os.environ["HOME"]], args
+assert args[:2] == ["--cd", os.path.realpath(os.environ["HOME"])], args
 if args[2] == "use":
     failure = int(os.environ.get("TEST_MISE_USE_FAILURE", "0"))
     if failure:
@@ -88,9 +88,10 @@ else:
         self.config.parent.mkdir(parents=True)
         self.config.write_text('[tools]\nrust = "stable"\n\n[settings]\nexperimental = true\n')
 
-    def setup(self, *arguments):
-        return subprocess.run([str(LUA), "-E", str(self.checkout / "scripts/setup/mise.lua"), *arguments],
-                              env=self.env, cwd=self.checkout, input="", text=True,
+    def setup(self, *arguments, cwd=None, script=None):
+        script = script or self.checkout / "scripts/setup/3-install-dev-tools.lua"
+        return subprocess.run([str(LUA), "-E", str(script), *arguments],
+                              env=self.env, cwd=cwd or self.checkout, input="", text=True,
                               capture_output=True, timeout=10)
 
     def records(self):
@@ -137,6 +138,28 @@ else:
                             dict(name="python", source="mise", version="3.13"))
         self.assert_success(self.setup())
         self.assertEqual(self.records()[0]["args"][-2:], ["node@22.3.0", "python@3.13"])
+
+    def test_entry_point_supports_basename_and_external_symlink_invocations(self):
+        self.assert_success(self.setup(cwd=self.checkout / "scripts/setup", script="3-install-dev-tools.lua"))
+        linked_script = self.root / "linked mise.lua"
+        linked_script.symlink_to(self.checkout / "scripts/setup/3-install-dev-tools.lua")
+        self.assert_success(self.setup(cwd=self.home, script=linked_script))
+
+    def test_invalid_home_paths_stop_before_installing(self):
+        file_path = self.root / "not-a-home"
+        file_path.write_text("Keep this file\n")
+        for home in ("", "relative/home", "/", "//", "/tmp/..", str(file_path), str(self.root / "missing-home")):
+            with self.subTest(home=home):
+                self.env["HOME"] = home
+                self.assert_failed(self.setup())
+                self.assertEqual(self.records(), [])
+
+    def test_home_symlink_uses_the_real_home_for_mise(self):
+        alias = self.root / "home alias"
+        alias.symlink_to(self.home, target_is_directory=True)
+        self.env["HOME"] = str(alias)
+        self.assert_success(self.setup())
+        self.assertEqual(self.records()[0]["args"][:2], ["--cd", str(self.home)])
 
     def test_whole_manifest_is_validated_before_any_installation(self):
         valid = dict(name="node", source="mise", version="lts")
@@ -223,8 +246,8 @@ else:
         self.assertIn("normal user", result.stderr)
         self.assertEqual(self.records(), [])
 
-    def test_missing_mise_or_bash_stops_before_any_installation(self):
-        for name in ("mise", "bash"):
+    def test_missing_required_command_stops_before_any_installation(self):
+        for name in ("mise", "bash", "realpath"):
             with self.subTest(name=name):
                 tool = self.bin / name
                 hidden = self.bin / (name + "-hidden")

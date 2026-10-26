@@ -27,7 +27,7 @@ class ZshPluginTests(unittest.TestCase):
 
         # Redirect the fixed package prefix in temporary copies, not production settings.
         for name in ("completion.zsh", "plugins.zsh"):
-            source = (REPO / "apps/zsh" / name).read_text()
+            source = (REPO / "apps/zsh/config" / name).read_text()
             (self.config / name).write_text(source.replace("/usr/share/zsh", str(self.share)))
         self.env = {
             "HOME": str(self.home),

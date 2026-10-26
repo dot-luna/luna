@@ -9,8 +9,24 @@ import unittest
 
 
 REPO = Path(__file__).resolve().parents[2]
-STEPS = ("lua", "core", "mise", "aur", "main", "fonts", "git-apps", "src",
-         "command", "postinstall", "apps", "keyring", "defaults", "session", "cleanup")
+STEP_SCRIPTS = {
+    "lua": "1-setup-lua.sh",
+    "core": "2-install-core-deps.sh",
+    "mise": "3-install-dev-tools.lua",
+    "aur": "4-setup-aur-helper.sh",
+    "main": "5-install-app-packages.sh",
+    "fonts": "6-install-fonts.sh",
+    "git-apps": "7-install-git-apps.lua",
+    "command": "8-install-luna-command.sh",
+    "postinstall": "9-setup-default-theme.sh",
+    "apps": "10-setup-app-configs.lua",
+    "keyring": "11-setup-gnome-keyring.sh",
+    "src": "12-link-sources.sh",
+    "defaults": "13-set-default-apps.sh",
+    "app-extras": "14-setup-app-extras.sh",
+    "session": "15-reload-hyprland.sh",
+}
+STEPS = tuple(STEP_SCRIPTS)
 
 
 @unittest.skipUnless(Path("/usr/bin/lua").is_file(), "The runner requires /usr/bin/lua")
@@ -33,12 +49,11 @@ class SetupRunnerTests(unittest.TestCase):
         self.env.pop("TEST_FAIL_STEP", None)
 
         # No production child script runs: these fixtures only record arguments.
-        for name in ("lua", "aur", "src", "command", "postinstall", "apps",
-                     "keyring", "defaults", "session", "cleanup"):
-            (self.steps / f"{name}.sh").write_text('''#!/usr/bin/env bash
-set -euo pipefail
-step=${0##*/}
-step=${step%.sh}
+        for name, filename in STEP_SCRIPTS.items():
+            if filename.endswith(".lua"):
+                continue
+            (self.steps / filename).write_text(
+                f"#!/usr/bin/env bash\nset -euo pipefail\nstep={name}\n" + '''
 {
     printf '%s' "$step"
     for argument in "$@"; do
@@ -50,17 +65,17 @@ if [[ "${TEST_FAIL_STEP:-}" == "$step" ]]; then
     exit 29
 fi
 ''')
-        (self.steps / "install-deps.lua").write_text('''
+        lua_fixture = '''
 local output = assert(io.open(os.getenv("TEST_SETUP_CALLS"), "a"))
 output:write(table.concat(arg, "\\t"), "\\n")
 output:close()
 if os.getenv("TEST_FAIL_STEP") == arg[1] then
     os.exit(29)
 end
-''')
-        for name in ("mise", "git-apps"):
-            (self.steps / f"{name}.lua").write_text(
-                f'table.insert(arg, 1, "{name}")\n' + (self.steps / "install-deps.lua").read_text())
+'''
+        for name in ("mise", "git-apps", "apps"):
+            (self.steps / STEP_SCRIPTS[name]).write_text(
+                f'table.insert(arg, 1, "{name}")\n' + lua_fixture)
 
     def setup(self, *arguments):
         return subprocess.run(["bash", str(self.checkout / "scripts/setup.sh"), *arguments],
@@ -72,14 +87,15 @@ end
             return []
         return [line.split("\t") for line in self.calls.read_text().splitlines()]
 
-    def test_steps_run_in_order_with_cleanup_after_session_reload(self):
+    def test_steps_run_in_order_ending_with_session_reload(self):
         result = self.setup()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(self.recorded_calls(), [[step] for step in STEPS])
         self.assertIn("Install application configurations", result.stdout)
         self.assertIn("Configure GNOME Keyring", result.stdout)
         self.assertIn("Configure default applications", result.stdout)
-        self.assertIn("Clean up replaced applications", result.stdout)
+        self.assertIn("15/15 — Apply Hyprland configuration", result.stdout)
+        self.assertNotIn("Clean up replaced applications", result.stdout)
         self.assertNotIn(["nvidia"], self.recorded_calls())
 
     def test_failed_critical_steps_stop_later_work_and_propagate_status(self):
@@ -99,8 +115,8 @@ end
             "fonts": "Font setup failed; continuing.",
             "git-apps": "Git app setup failed; continuing.",
             "postinstall": "Bundled theme setup failed; continuing.",
+            "app-extras": "Optional app extras failed; continuing.",
             "session": "Session reload failed; log out and back in to apply the configuration.",
-            "cleanup": "Application cleanup failed; continuing.",
         }
         for failed, warning in warnings.items():
             with self.subTest(failed=failed):
@@ -119,9 +135,9 @@ end
 
     def test_skip_lists_accumulate_without_reordering_or_forwarding_arguments(self):
         self.env["TEST_FAIL_STEP"] = "core"
-        skipped = {"lua", "core", "mise", "fonts", "git-apps", "apps", "keyring", "defaults", "cleanup"}
+        skipped = {"lua", "core", "mise", "fonts", "git-apps", "apps", "keyring", "defaults"}
         result = self.setup("--skip=git-apps,fonts,mise,core,lua,git-apps",
-                            "--skip=apps,fonts,keyring,defaults,cleanup")
+                            "--skip=apps,fonts,keyring,defaults")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(self.recorded_calls(), [[step] for step in STEPS if step not in skipped])
         for step in skipped:
@@ -136,9 +152,11 @@ end
             self.assertIn(f"Skipping {step}.", result.stdout)
 
     def test_invalid_skip_lists_fail_before_any_step(self):
-        for argument in ("--skip", "--skip=", "--skip=unknown", "--skip=fonts,",
+        for argument in ("--skip", "--skip=", "--skip=unknown", "--skip=future-step", "--skip=fonts,",
                          "--skip=,fonts", "--skip=fonts,,mise", "--skip= fonts",
-                         "--skip=fonts, mise", "--skip=fonts,\nmise"):
+                         "--skip=fonts, mise", "--skip=fonts,\nmise", "--skip=fonts\nmise",
+                         "--skip=FONTS", "--skip=../main", "--skip=git", "--skip=all",
+                         "--skip=git-apps=1", "--skip=cleanup"):
             with self.subTest(argument=argument):
                 self.calls.unlink(missing_ok=True)
                 result = self.setup("--skip=session", argument)

@@ -177,14 +177,15 @@ class HyprlandThemeTests(unittest.TestCase):
         self.env.pop('HYPRLAND_INSTANCE_SIGNATURE', None)
         self.installed = self.root / 'installed hypr'
         self.installed.mkdir()
-        for source in (REPO / 'apps/hypr').glob('*.lua'):
+        for source in (REPO / 'apps/hypr/config').glob('*.lua'):
             shutil.copy2(source, self.installed / source.name)
         (self.installed / 'generated').mkdir()
-        generated = subprocess.run(
-            ['/usr/bin/lua', '-E', str(REPO / 'apps/hypr/scripts/generate-config.lua')],
+        subprocess.run(
+            ['/usr/bin/lua', '-E', str(REPO / 'scripts/setup/build-app.lua'),
+             str(REPO / 'apps/hypr'), str(self.installed), str(self.installed),
+             str(self.root / 'config/luna')],
             cwd=self.root, env=self.env, text=True, capture_output=True, check=True,
         )
-        (self.installed / 'generated/paths.lua').write_text(generated.stdout)
         self.entry = self.installed / 'hyprland.lua'
         self.publish()
 

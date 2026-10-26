@@ -28,7 +28,7 @@ class ZshToolsTests(unittest.TestCase):
             "ZDOTDIR": str(self.home),
             "PATH": str(self.bin),
             "TERM": "xterm",
-            "LUNA_TEST_MODULES": str(REPO / "apps/zsh"),
+            "LUNA_TEST_MODULES": str(REPO / "apps/zsh/config"),
             "LUNA_TEST_LOG": str(self.log),
         }
 

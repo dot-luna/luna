@@ -143,11 +143,6 @@ return function(common, validate, wallpapers, download, mode, resolved)
             assert(file:close())
             return value
         end
-        local function write(path, value)
-            local file = assert(io.open(path, "w"))
-            assert(file:write(value))
-            assert(file:close())
-        end
         local previous = read(resolved.path)
         local selected = read(selection)
         if selected == name .. "\n" and previous == content and not force then
@@ -156,22 +151,23 @@ return function(common, validate, wallpapers, download, mode, resolved)
             return
         end
         common.run({ "mkdir", "-p", "--", config })
-        local restore, published
+        local restore, published, staged_output, staged_selection
         local success, failure = pcall(function()
             -- Stage both files before changing desktop preferences or publishing output.
-            write(resolved.path .. ".tmp", content)
-            write(selection .. ".tmp", name .. "\n")
+            staged_output = common.stage_file(resolved.path, content)
+            staged_selection = common.stage_file(selection, name .. "\n")
             restore = mode.apply(exports.colors.mode, force)
-            assert(os.rename(resolved.path .. ".tmp", resolved.path))
+            assert(os.rename(staged_output, resolved.path))
+            staged_output = nil
             published = true
-            assert(os.rename(selection .. ".tmp", selection))
+            assert(os.rename(staged_selection, selection))
+            staged_selection = nil
         end)
         if not success then
             local restored, message = pcall(function()
                 if published then
                     if previous then
-                        write(resolved.path .. ".tmp", previous)
-                        assert(os.rename(resolved.path .. ".tmp", resolved.path))
+                        common.replace_file(resolved.path, previous)
                     else
                         assert(os.remove(resolved.path))
                     end
@@ -184,8 +180,12 @@ return function(common, validate, wallpapers, download, mode, resolved)
                 common.error("Could not fully restore theme settings: " .. tostring(message))
             end
         end
-        os.remove(selection .. ".tmp")
-        os.remove(resolved.path .. ".tmp")
+        if staged_selection then
+            os.remove(staged_selection)
+        end
+        if staged_output then
+            os.remove(staged_output)
+        end
         assert(success, failure)
         common.info("Selected theme: " .. name .. " (" .. exports.colors.mode .. " system appearance)")
     end

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Called by mise.lua after installing tools to activate them in new terminals.
+# Called by 3-install-dev-tools.lua after installing tools to activate them in new terminals.
 set -euo pipefail
 
 script_path=$(readlink -f -- "${BASH_SOURCE[0]}")
@@ -19,7 +19,7 @@ case "$shell_name" in
         ;;
     zsh)
         # Zsh keeps activation and generated completions in Luna's modular config.
-        bash "$(luna_script_dir "${BASH_SOURCE[0]}")/zsh.sh"
+        bash "${script_path%/*}/zsh.sh"
         exit 0
         ;;
     *)
@@ -40,25 +40,11 @@ if [[ -f "$shell_config" ]] && grep -Fxq -- "$block_start" "$shell_config"; then
     exit 0
 fi
 
-# Stage existing content and mode before replacing the startup file atomically.
-# Replace a final symlink itself so its external target remains unchanged.
-mkdir -p -- "${shell_config%/*}"
-temporary_config=$(mktemp "${shell_config}.luna.XXXXXX")
-trap 'if [[ -n "${temporary_config:-}" ]]; then rm -f -- "$temporary_config"; fi' EXIT
-if [[ -f "$shell_config" ]]; then
-    cat -- "$shell_config" > "$temporary_config"
-    chmod --reference="$shell_config" -- "$temporary_config"
+# Preserve personal content and permissions when adding the managed block.
+luna_append_config_block "$shell_config" "$block_start" "$block_end" <<'EOF'
+if [[ $- == *i* ]] && command -v mise >/dev/null 2>&1; then
+    eval "$(mise activate bash)"
 fi
-
-{
-    printf '\n%s\n' "$block_start"
-    printf 'if [[ $- == *i* ]] && command -v mise >/dev/null 2>&1; then\n'
-    printf '    eval "$(mise activate %s)"\n' "$shell_name"
-    printf 'fi\n'
-    printf '%s\n' "$block_end"
-} >> "$temporary_config"
-
-mv -fT -- "$temporary_config" "$shell_config"
-temporary_config=
+EOF
 luna_success "Configured mise activation: $shell_config"
 luna_info 'Open a new terminal to use your mise tools.'

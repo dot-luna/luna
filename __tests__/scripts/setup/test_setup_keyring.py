@@ -24,7 +24,7 @@ class SetupKeyringTests(unittest.TestCase):
         self.bin.mkdir()
         self.calls_file = self.root / 'calls.jsonl'
         self.bash = shutil.which('bash')
-        for name in ('scripts/setup/keyring.sh', 'lib/common.sh'):
+        for name in ('scripts/setup/11-setup-gnome-keyring.sh', 'lib/common.sh'):
             destination = self.checkout / name
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(REPO / name, destination)
@@ -61,7 +61,7 @@ sys.exit(int(failure))
 
     def setup(self, *arguments):
         return subprocess.run(
-            [self.bash, str(self.checkout / 'scripts/setup/keyring.sh'), *arguments],
+            [self.bash, str(self.checkout / 'scripts/setup/11-setup-gnome-keyring.sh'), *arguments],
             cwd=self.root, env=self.env, input='', capture_output=True, text=True, timeout=10,
         )
 
@@ -81,7 +81,7 @@ sys.exit(int(failure))
             self.expected_helper(),
             ['systemctl', '--user', 'enable', 'gnome-keyring-daemon.socket'],
         ])
-        self.assertIn('Back up files you want to keep', result.stderr)
+        self.assertNotIn('Back up', result.stderr)
         self.assertIn('GNOME Keyring configured.', result.stdout)
         self.assertIn('sign in with your password', result.stdout)
         self.assertEqual(list(self.home.iterdir()), [])

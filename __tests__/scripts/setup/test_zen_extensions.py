@@ -225,7 +225,7 @@ class ZenExtensionTests(unittest.TestCase):
             "/fixture/sudo", "/usr/bin/python3", str(REPO / "scripts/setup/zen-extensions.py"),
             "apply", str(self.install), str(self.manifest),
         ], check=False)
-        self.assertIn("Back up policies", self.error.getvalue())
+        self.assertNotIn("Back up", self.error.getvalue())
         self.assertIn("restart Zen", self.output.getvalue())
         self.assertFalse(self.policy.parent.exists())
 

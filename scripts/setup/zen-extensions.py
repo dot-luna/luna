@@ -179,7 +179,7 @@ def configure(install, manifest):
     if os.geteuid() != 0 and sudo is None:
         warn("sudo is unavailable; rerun setup with sudo available to install the extension policy.")
         return
-    warn("Back up policies you want to keep; setup updates native Zen policies without backups.")
+
     try:
         if os.geteuid() == 0:
             apply(install, manifest)

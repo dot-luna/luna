@@ -2,6 +2,11 @@
 
 Look in `.agents/skills/` for project skills and apply those relevant to the task.
 
+Prefer GTK/GNOME applications or Luna's own UI. Avoid KDE applications and desktop
+components wherever possible; do not introduce new KDE apps. Replace existing KDE
+components when a working alternative is available. `polkit-kde-agent` is temporary
+until Luna has its own polkit UI.
+
 Put all tests in `__tests__/`, mirroring the tested source file's
 directory. For example, `install.sh` uses `__tests__/test_install.py`, while a
 file in `scripts/` uses `__tests__/scripts/`.

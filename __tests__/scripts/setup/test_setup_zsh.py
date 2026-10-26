@@ -8,6 +8,8 @@ import subprocess
 import tempfile
 import unittest
 
+from __tests__.scripts.setup.app_fixture import copy_app_setup
+
 
 REPO = Path(__file__).resolve().parents[3]
 STATIC_FILES = ("zshrc", "completion.zsh", "tools.zsh", "plugins.zsh")
@@ -23,11 +25,8 @@ class SetupZshTests(unittest.TestCase):
         self.home = self.root / "home"
         self.home.mkdir()
         self.checkout = self.root / "checkout"
-        for name in ("scripts/setup/zsh.sh", "scripts/setup/zsh-config.py", "lib/common.sh"):
-            destination = self.checkout / name
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(REPO / name, destination)
-        shutil.copytree(REPO / "apps/zsh", self.checkout / "apps/zsh")
+        copy_app_setup(self.checkout)
+
 
         # A restricted PATH prevents accidentally running the developer's mise.
         self.bin = self.root / "bin"
@@ -93,7 +92,7 @@ else:
         destination = destination or self.destination
         for name in STATIC_FILES:
             self.assertEqual((destination / name).read_bytes(),
-                             (self.checkout / "apps/zsh" / name).read_bytes())
+                             (self.checkout / "apps/zsh/config" / name).read_bytes())
             self.assertFalse((destination / name).is_symlink())
         self.assertTrue((destination / "generated/env.zsh").is_file())
         for name in RETIRED_FILES:
@@ -304,7 +303,7 @@ export LUNA_TEST_KEYMAP="$(bindkey -lL main)"
         retired.write_text("# Still needed until installation succeeds\n")
         config = self.home / ".zshrc"
         startup = config.read_bytes()
-        (self.checkout / "apps/zsh/tools.zsh").unlink()
+        (self.checkout / "apps/zsh/config/tools.zsh").unlink()
         result = self.setup()
         self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
         for name, content in previous.items():
@@ -415,6 +414,28 @@ export LUNA_TEST_KEYMAP="$(bindkey -lL main)"
         for name in ("env.zsh", "mise-completion.zsh"):
             self.assertFalse((generated / name).is_symlink())
         self.assertEqual(self.source_shell()["LUNA_MISE_TEST_COMPLETION"], "ready")
+
+    def test_entry_symlink_is_replaced_before_connecting_its_personal_target(self):
+        personal = self.home / ".zshrc"
+        original = b"# Keep personal startup\n"
+        personal.write_bytes(original)
+        self.destination.mkdir(parents=True)
+        (self.destination / "zshrc").symlink_to(personal)
+        self.assert_installed(self.setup())
+        self.assertTrue(personal.read_bytes().endswith(original))
+        self.assertFalse((self.destination / "zshrc").is_symlink())
+        self.assertEqual(self.source_shell()["LUNA_INSTALL_DIR"], str(self.checkout))
+
+    def test_personal_link_through_installed_entry_is_rejected_before_publish(self):
+        external = self.root / "external.zshrc"
+        external.write_text("# Preserve external config\n")
+        self.destination.mkdir(parents=True)
+        installed = self.destination / "zshrc"
+        installed.symlink_to(external)
+        (self.home / ".zshrc").symlink_to(installed)
+        self.assertNotEqual(self.setup().returncode, 0)
+        self.assertTrue(installed.is_symlink())
+        self.assertEqual(external.read_text(), "# Preserve external config\n")
 
     def test_generated_directory_symlink_is_rejected_before_changes(self):
         self.destination.mkdir(parents=True)

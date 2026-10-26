@@ -56,6 +56,18 @@ function M.step(message)
     log(io.stdout, "STEP", message)
 end
 
+-- Reject sparse or keyed manifests before ipairs could silently skip entries.
+function M.assert_list(value, label)
+    assert(type(value) == "table", label .. " must be a list")
+    local length, count = #value, 0
+    for key in pairs(value) do
+        assert(type(key) == "number" and key % 1 == 0 and key >= 1 and key <= length,
+            label .. " must be a contiguous list")
+        count = count + 1
+    end
+    assert(count == length, label .. " must be a contiguous list")
+end
+
 -- Protect each argument from shell expansion, including embedded apostrophes.
 function M.quote(value)
     return "'" .. value:gsub("'", "'\\''") .. "'"
@@ -106,6 +118,37 @@ function M.capture(arguments, quiet)
     local ok, _, code = pipe:close()
 
     return output, ok == true, code
+end
+
+-- Stage beside the destination for atomic renames, without reusing existing paths.
+function M.stage_file(path, content)
+    local temporary, created = M.capture({ "mktemp", "--", path .. ".luna-XXXXXX" })
+    assert(created, "Cannot stage file: " .. path)
+    temporary = temporary:gsub("\n$", "")
+    local file
+    local ok, message = pcall(function()
+        file = assert(io.open(temporary, "w"))
+        assert(file:write(content))
+        assert(file:close())
+        file = nil
+    end)
+    if not ok then
+        if file then
+            pcall(file.close, file)
+        end
+        os.remove(temporary)
+        error(message, 0)
+    end
+    return temporary
+end
+
+function M.replace_file(path, content)
+    local temporary = M.stage_file(path, content)
+    local ok, message = os.rename(temporary, path)
+    if not ok then
+        os.remove(temporary)
+    end
+    assert(ok, message)
 end
 
 function M.available(name)

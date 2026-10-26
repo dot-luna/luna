@@ -8,6 +8,8 @@ import tempfile
 import tomllib
 import unittest
 
+from __tests__.scripts.setup.app_fixture import copy_app_setup
+
 
 REPO = Path(__file__).resolve().parents[3]
 
@@ -20,11 +22,8 @@ class SetupStarshipTests(unittest.TestCase):
         self.home = self.root / "home"
         self.home.mkdir()
         self.checkout = self.root / "checkout"
-        for name in ("scripts/setup/starship.sh", "lib/common.sh", "apps/starship/starship.toml"):
-            target = self.checkout / name
-            target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(REPO / name, target)
-        self.source = self.checkout / "apps/starship/starship.toml"
+        copy_app_setup(self.checkout)
+        self.source = self.checkout / "apps/starship/config/starship.toml"
         self.config_home = self.home / ".config"
         self.destination = self.config_home / "luna/starship/starship.toml"
         self.env = dict(os.environ, HOME=str(self.home), XDG_CONFIG_HOME=str(self.config_home))

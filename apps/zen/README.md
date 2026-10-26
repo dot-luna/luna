@@ -2,14 +2,18 @@
 
 Run `bash /path/to/luna/scripts/setup/zen.sh`, or use Luna's normal `apps`
 setup step. Back up personal files you want to keep first; setup creates no
-automatic backups. Close Zen before setup so Better Find Bar can be installed.
-Setup does not launch or restart the browser.
+automatic backups. The `apps` step only copies configuration, builds theme files,
+and connects the existing profile. Setup does not launch or restart the browser.
+For optional extensions and Better Find Bar, close Zen and run
+`bash /path/to/luna/scripts/setup/14-setup-app-extras.sh`.
 
 ## Theme and fonts
 
-`scripts/generate-theme.lua` resolves Luna's current theme and personal font
-choices. Setup writes styles under `$LUNA_CONFIG_DIR/zen/generated` and imports
-them from the selected profile's `userChrome.css` and `userContent.css`.
+`app.lua` declares the configuration directory, builder, and profile connection.
+`build.lua` substitutes Luna's current theme and personal font choices into the
+CSS files in `templates/`. The entry sheets in `config/` already import those
+generated styles. Setup installs them under `$LUNA_CONFIG_DIR/zen` and imports the
+entry sheets from the selected profile's `userChrome.css` and `userContent.css`.
 Personal CSS, symlinks, and file permissions are preserved.
 
 The browser UI uses Luna's UI font. A managed block in `user.js` also sets
@@ -24,7 +28,9 @@ leaves native corner styles alone.
 
 ## Extensions
 
-`extensions.json` selects uBlock Origin, Dark Reader, and Bitwarden. Setup merges
+The later `app-extras` step installs extensions and Mods; it can be skipped
+independently of app configuration. `extensions.json` selects uBlock Origin,
+Dark Reader, and Bitwarden. This optional step merges
 their Mozilla Add-ons download URLs into `Extensions.Install` in
 `/etc/zen/policies/policies.json`. Zen installs them when it next starts with
 network access. No account, Bitwarden sign-in, or extension settings are seeded.
@@ -45,7 +51,8 @@ See Mozilla's [Extensions policy](https://firefox-admin-docs.mozilla.org/referen
 
 ## Better Find Bar
 
-Better Find Bar is the only Mod that Luna adds. Setup downloads its assets from
+Close Zen before running `app-extras`. Better Find Bar is the only Mod that Luna
+adds. This optional step downloads its assets from
 the official Zen Mod store, merges its entry into `zen-themes.json`, and rebuilds
 Zen's Mod stylesheet cache while preserving other enabled Mods. Missing Mod
 preference defaults are seeded once in `prefs.js`; existing preferences win and
@@ -63,4 +70,4 @@ existing `~/.zen` root over `$XDG_CONFIG_HOME/zen`. It does not create a new pro
 Use `ZEN_PROFILE_DIR=/absolute/profile/path` to select an existing profile when
 discovery is ambiguous. Without a profile, generated theme files and native
 extension policies can still be installed; open Zen once, close it, and rerun
-setup to connect the profile styles, fonts, and Mod.
+setup to connect the profile styles and fonts, then install the optional Mod.

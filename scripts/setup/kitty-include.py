@@ -36,17 +36,27 @@ def config_lines(content):
         yield pending
 
 
-def prepend_include(config_path, installed_path):
+def plan_include(config_path, installed_path, allow_missing=False):
     config = Path(config_path).absolute()
     installed = Path(installed_path).absolute()
-    target = config.resolve()
-    installed_target = installed.resolve()
+    target = config.parent.resolve() / config.name
+    installed_target = installed.parent.resolve() / installed.name if allow_missing else installed.resolve()
     repo = Path(__file__).resolve().parents[2]
 
     # Keep symlinks intact, but never edit a source or generated config through one.
-    if target.is_relative_to(repo) or target.is_relative_to(installed_target.parent):
-        raise ValueError("The active Kitty config points into Luna's source or generated configs")
-    if not installed.is_file():
+    seen = set()
+    while True:
+        if target.is_relative_to(repo) or target.is_relative_to(installed_target.parent):
+            raise ValueError("The active Kitty config points into Luna's source or generated configs")
+        if target in seen:
+            raise ValueError("The active Kitty config contains a symlink loop")
+        seen.add(target)
+        if not target.is_symlink():
+            break
+        link = target.readlink()
+        target = link if link.is_absolute() else target.parent / link
+        target = target.parent.resolve() / target.name
+    if not allow_missing and not installed.is_file():
         raise ValueError("Install Luna's Kitty config before adding its include")
     if any(character in str(installed) for character in "\r\n"):
         raise ValueError("Kitty include paths cannot contain line breaks")
@@ -66,18 +76,26 @@ def prepend_include(config_path, installed_path):
             included = Path(expand_include(match[1]))
             if not included.is_absolute():
                 included = config.parent / included
-            if included.resolve() == installed_target:
+            if (included.parent.resolve() / included.name == installed_target
+                    or included.resolve() == installed_target):
                 return
 
     # Includes consume the whole unquoted path, including spaces. Escape dollars
     # for Kitty rather than for a shell, and retain the original bytes verbatim.
     prefix = os.fsencode("include " + str(installed).replace("$", "$$") + "\n")
+    return target, prefix + content, mode
+
+
+def prepend_include(config_path, installed_path):
+    planned = plan_include(config_path, installed_path)
+    if planned is None:
+        return
+    target, content, mode = planned
     target.parent.mkdir(parents=True, exist_ok=True)
     temporary = None
     try:
         with tempfile.NamedTemporaryFile(dir=target.parent, prefix=".kitty.conf.luna-", delete=False) as output:
             temporary = Path(output.name)
-            output.write(prefix)
             output.write(content)
             os.fchmod(output.fileno(), mode)
         os.replace(temporary, target)

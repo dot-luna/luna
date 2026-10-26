@@ -43,9 +43,21 @@ def with_defaults(content, defaults):
 
 
 def read_personal(path, installed, repo):
-    target = path.resolve()
-    if target.is_relative_to(repo) or target.is_relative_to(installed.resolve()):
-        raise ValueError(f"Personal mpv config points into Luna's source or installed configs: {path}")
+    # Publishing replaces installed symlinks, so reject aliases through that
+    # directory even when their current final target is an external file.
+    target = path.parent.resolve() / path.name
+    seen = set()
+    while True:
+        if target.is_relative_to(repo) or target.is_relative_to(installed.resolve()):
+            raise ValueError(f"Personal mpv config points into Luna's source or installed configs: {path}")
+        if target in seen:
+            raise ValueError(f"Personal mpv config contains a symlink loop: {path}")
+        seen.add(target)
+        if not target.is_symlink():
+            break
+        link = target.readlink()
+        target = link if link.is_absolute() else target.parent / link
+        target = target.parent.resolve() / target.name
     try:
         return target, target.read_bytes(), stat.S_IMODE(target.stat().st_mode)
     except FileNotFoundError:
@@ -66,7 +78,7 @@ def replace_file(path, content, mode):
             temporary.unlink(missing_ok=True)
 
 
-def install(source_path, destination_path):
+def plan(source_path, destination_path):
     source = Path(source_path)
     installed = Path(destination_path)
     repo = Path(__file__).resolve().parents[2]
@@ -110,17 +122,22 @@ def install(source_path, destination_path):
         if path.is_file() and re.search(rb"(?m)^\s*input-conf\s*=", path.read_bytes()):
             custom_input = True
 
-    for path, content, mode in copies:
-        replace_file(path, content, mode)
+    writes = list(copies)
     for path, previous, updated, mode in (
         (config_target, config_content, config_updated, config_mode),
         (input_target, input_content, input_updated, input_mode),
     ):
         if previous != updated:
-            replace_file(path, updated, mode)
+            writes.append((path, updated, mode))
     if custom_input:
         print("Warning: Personal mpv input-conf settings override Luna's volume bindings; "
               "add the bindings to your selected input file if needed.", file=sys.stderr)
+    return writes
+
+
+def install(source_path, destination_path):
+    for path, content, mode in plan(source_path, destination_path):
+        replace_file(path, content, mode)
 
 
 if __name__ == "__main__":

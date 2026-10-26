@@ -22,11 +22,11 @@ class SetupPostinstallTests(unittest.TestCase):
         self.home = self.root / "home with spaces"
         self.home.mkdir()
         self.checkout = self.root / "checkout with spaces"
-        for name in ("scripts/setup/postinstall.sh", "lib/common.sh"):
+        for name in ("scripts/setup/9-setup-default-theme.sh", "lib/common.sh"):
             target = self.checkout / name
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(REPO / name, target)
-        self.script = self.checkout / "scripts/setup/postinstall.sh"
+        self.script = self.checkout / "scripts/setup/9-setup-default-theme.sh"
         self.bundle = self.checkout / "themes/bundled/tokyo-night"
         self.bundle.mkdir(parents=True)
         (self.bundle / "colors.lua").write_text("-- Fixture bundled colors\n")
@@ -289,7 +289,19 @@ else:
                         XDG_STATE_HOME=str(self.root / "state"))
         self.env.pop("DBUS_SESSION_BUS_ADDRESS", None)
 
-        result = self.setup(script=REPO / "scripts/setup/postinstall.sh")
+        # Old predictable staging names may belong to the user. Applying the
+        # theme must leave these links and their external target untouched.
+        personal = self.root / "personal-settings"
+        personal.write_text("Keep personal settings\n")
+        staging_links = [self.config_home() / name for name in (
+            "luna/theme.json.tmp", "luna/theme.tmp", "luna/theme-mode.luna-tmp",
+            "gtk-3.0/settings.ini.luna-tmp", "gtk-4.0/settings.ini.luna-tmp",
+        )]
+        for link in staging_links:
+            link.parent.mkdir(parents=True, exist_ok=True)
+            link.symlink_to(personal)
+
+        result = self.setup(script=REPO / "scripts/setup/9-setup-default-theme.sh")
         self.assert_success(result)
         colors = self.installed_theme() / "colors.lua"
         self.assertEqual(colors.read_bytes(), (REPO / "themes/bundled/tokyo-night/colors.lua").read_bytes())
@@ -310,7 +322,7 @@ else:
         self.selection().write_text("another-theme\n")
         resolved.write_text('{"name": "another-theme"}\n')
         (self.root / "gsettings-state").write_text("prefer-light")
-        self.assert_success(self.setup(script=REPO / "scripts/setup/postinstall.sh"))
+        self.assert_success(self.setup(script=REPO / "scripts/setup/9-setup-default-theme.sh"))
         self.assertEqual(colors.read_bytes(), (REPO / "themes/bundled/tokyo-night/colors.lua").read_bytes())
         self.assertFalse(marker.exists())
         self.assertEqual((other / "colors.lua").read_text(), "-- Unrelated theme\n")
@@ -321,6 +333,11 @@ else:
         self.assertEqual(sorted(path.name for path in self.installed_theme().parent.iterdir()),
                          ["other-theme", "tokyo-night"])
         self.assertEqual(list(self.home.rglob("*.luna-backup*")), [])
+        self.assertEqual(personal.read_text(), "Keep personal settings\n")
+        self.assertTrue(all(link.is_symlink() for link in staging_links))
+        for name in ("luna/theme.json", "luna/theme", "luna/theme-mode",
+                     "gtk-3.0/settings.ini", "gtk-4.0/settings.ini"):
+            self.assertFalse((self.config_home() / name).is_symlink())
 
 
 if __name__ == "__main__":

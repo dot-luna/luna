@@ -212,7 +212,7 @@ def apply_defaults(config_home, manifest):
 
     if not choices:
         return
-    warn("Back up files you want to keep; default application preferences are updated without backups.")
+
     terminal = choices.pop("terminal", None)
     if terminal:
         set_terminal(config_home, terminal)

@@ -17,8 +17,9 @@ import unittest
 REPO = Path(__file__).resolve().parents[1]
 INSTALLER = REPO / "install.sh"
 ORIGIN = "https://github.com/dot-luna/luna.git"
+RELEASES = "https://github.com/dot-luna/luna/releases"
 SETUP_STEPS = ("lua", "core", "mise", "aur", "main", "fonts", "git-apps", "src",
-               "command", "postinstall", "apps", "keyring", "defaults", "session", "cleanup")
+               "command", "postinstall", "apps", "keyring", "defaults", "session")
 
 
 @unittest.skipIf(os.geteuid() == 0, "The installer requires a real non-root user")
@@ -54,10 +55,11 @@ class InstallerTests(unittest.TestCase):
             NO_COLOR="1",
         )
         for name in ("XDG_STATE_HOME", "LUNA_INSTALL_DIR", "TEST_BOOTSTRAP_GIT", "TEST_SETUP_STATUS",
-                     "TEST_SETUP_COLOR", "TEST_TOOL_LOCALE"):
+                     "TEST_SETUP_COLOR", "TEST_TOOL_LOCALE", "TEST_RELEASE_URL",
+                     "TEST_CURL_STATUS", "TEST_MISSING_CURL", "TEST_INTERRUPT_SLEEP"):
             self.env.pop(name, None)
 
-        # Override only OS discovery and Git availability; never mutate the host.
+        # Override only OS discovery and tool availability; never mutate the host.
         (self.root / "bash-env").write_text('''
 source() {
     if [[ "$1" == /etc/os-release ]]; then
@@ -70,12 +72,15 @@ command() {
     if [[ "$1" == -v && "${2:-}" == git && "${TEST_BOOTSTRAP_GIT:-}" == 1 && ! -f "$TEST_ROOT/git-installed" ]]; then
         return 1
     fi
+    if [[ "$1" == -v && "${2:-}" == curl && "${TEST_MISSING_CURL:-}" == 1 ]]; then
+        return 1
+    fi
     builtin command "$@"
 }
 ''')
 
         backend = f"#!{sys.executable}\n" + '''
-import json, os, pathlib, sys
+import json, os, pathlib, signal, sys
 root = pathlib.Path(os.environ["TEST_ROOT"])
 tool = pathlib.Path(sys.argv[0]).name
 args = sys.argv[1:]
@@ -87,6 +92,22 @@ if tool == "git":
         print("Fixture " + transfer + " locale: " + os.environ["LC_ALL"], flush=True)
         print("\\x1b[31mFixture Unicode café — काठमाडौं\\x1b[0m", flush=True)
     os.execv(os.environ["TEST_GIT"], ["git", *args])
+elif tool == "curl":
+    if args != ["-fsSL", "-o", "/dev/null", "-w", "%{url_effective}",
+                "https://github.com/dot-luna/luna/releases/latest"]:
+        sys.exit("Unexpected curl command: " + repr(args))
+    status = int(os.environ.get("TEST_CURL_STATUS", "0"))
+    if status:
+        print("Fixture release request failed", file=sys.stderr)
+        sys.exit(status)
+    print(os.environ.get("TEST_RELEASE_URL", "https://github.com/dot-luna/luna/releases/tag/v1.2.3"), end="")
+elif tool == "sleep":
+    if args != ["5"]:
+        sys.exit("Unexpected sleep command: " + repr(args))
+    print("Fixture installer pause", flush=True)
+    if os.environ.get("TEST_INTERRUPT_SLEEP") == "1":
+        os.kill(os.getppid(), signal.SIGINT)
+        sys.exit(130)
 elif tool == "sudo":
     if args == ["-v"]:
         sys.exit(0)
@@ -98,7 +119,7 @@ elif tool == "pacman":
         sys.exit("Unexpected pacman command: " + repr(args))
     (root / "git-installed").touch()
 '''
-        for name in ("sudo", "pacman", "git"):
+        for name in ("sudo", "pacman", "git", "curl", "sleep"):
             path = self.bin / name
             path.write_text(backend)
             path.chmod(0o755)
@@ -152,7 +173,7 @@ sys.exit(int(os.environ.get("TEST_SETUP_STATUS", "0")))
                      "-c", "user.email=installer@example.invalid", "commit", "--quiet", "-m", "Update " + name)
         return self.git_run("-C", str(repository), "rev-parse", "HEAD")
 
-    def run_installer(self, *args, terminal=True):
+    def run_installer(self, *args, terminal=True, cwd=None):
         master = slave = None
         options = {"start_new_session": True}
         if terminal:
@@ -167,7 +188,7 @@ sys.exit(int(os.environ.get("TEST_SETUP_STATUS", "0")))
         # The script arrives through a pipe, exactly as in curl ... | bash -s -- ... .
         try:
             with subprocess.Popen([self.bash, "-s", "--", *args], env=self.env,
-                                  cwd=self.root, stdin=subprocess.PIPE,
+                                  cwd=self.root if cwd is None else cwd, stdin=subprocess.PIPE,
                                   stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                   **options) as process:
                 if master is not None:
@@ -206,8 +227,13 @@ sys.exit(int(os.environ.get("TEST_SETUP_STATUS", "0")))
         self.assertNotIn("[OK] Luna setup completed.", result.stdout)
 
     def test_default_clone_and_logs_preserve_terminal_input(self):
+        self.commit_file(self.remote, "unreleased-file", "Only on master\n")
         self.assert_success(self.run_installer())
-        self.assertEqual(self.git_run("-C", str(self.destination), "branch", "--show-current"), "master")
+        self.assertEqual(self.git_run("-C", str(self.destination), "branch", "--show-current"), "")
+        self.assertEqual(self.git_run("-C", str(self.destination), "describe", "--tags", "--exact-match"),
+                         "v1.2.3")
+        self.assertFalse((self.destination / "unreleased-file").exists())
+        self.assertEqual(len(self.calls("curl")), 1)
         self.assertEqual(self.git_run("-C", str(self.destination), "config", "remote.origin.url"), ORIGIN)
         self.assertEqual(self.setups(), [{"cwd": str(self.destination), "args": [],
                                          "tty": True, "answer": "yes",
@@ -218,6 +244,182 @@ sys.exit(int(os.environ.get("TEST_SETUP_STATUS", "0")))
         log = logs[0].read_text()
         self.assertIn("Fixture setup stdout", log)
         self.assertIn("Fixture setup stderr", log)
+
+    def test_explicit_latest_selects_release_instead_of_newer_master(self):
+        self.commit_file(self.remote, "unreleased-file", "Only on master\n")
+        self.assert_success(self.run_installer("--ref", "latest"))
+        self.assertEqual(self.git_run("-C", str(self.destination), "describe", "--tags", "--exact-match"),
+                         "v1.2.3")
+        self.assertFalse((self.destination / "unreleased-file").exists())
+        self.assertEqual(len(self.calls("curl")), 1)
+
+    def test_startup_warnings_and_pause_precede_install_actions(self):
+        self.env["TEST_BOOTSTRAP_GIT"] = "1"
+        result = self.run_installer()
+        self.assert_success(result)
+        backup_warning = "Back up files you want to keep; no automatic backups are created."
+        pause_notice = "Continuing in 5 seconds... Press Ctrl+C to cancel."
+        self.assertLess(result.stdout.index(backup_warning), result.stdout.index(pause_notice))
+        for notice in ("Packages may be installed or upgraded", "reload the active Hyprland session"):
+            self.assertLess(result.stdout.index(notice), result.stdout.index(pause_notice))
+        self.assertNotIn("Cleanup may remove", result.stdout)
+        self.assertLess(result.stdout.index(pause_notice), result.stdout.index("Fixture installer pause"))
+        self.assertEqual(self.calls("sleep"), [["sleep", "5"]])
+        calls = [json.loads(line)[0] for line in self.calls_file.read_text().splitlines()]
+        for tool in ("curl", "sudo", "pacman", "git"):
+            self.assertLess(calls.index("sleep"), calls.index(tool))
+
+    def test_interrupting_startup_pause_preserves_destination_before_install_actions(self):
+        self.destination.mkdir(parents=True)
+        (self.destination / "personal-file").write_text("Keep existing directory\n")
+        self.env.update(TEST_BOOTSTRAP_GIT="1", TEST_INTERRUPT_SLEEP="1")
+        result = self.run_installer()
+        self.assert_refused(result)
+        self.assertEqual(result.returncode, 130, result.stdout)
+        self.assertIn("Back up files you want to keep", result.stdout)
+        self.assertEqual((self.destination / "personal-file").read_text(), "Keep existing directory\n")
+        self.assertFalse((self.destination / ".git").exists())
+        self.assertFalse((self.root / "git-installed").exists())
+        self.assertEqual(self.calls("sleep"), [["sleep", "5"]])
+        for tool in ("curl", "sudo", "pacman", "git"):
+            self.assertEqual(self.calls(tool), [])
+        self.assertEqual(self.setups(), [])
+
+    def test_skipped_session_omits_only_its_startup_notice(self):
+        result = self.run_installer("--skip=session")
+        self.assert_success(result)
+        self.assertNotIn("reload the active Hyprland session", result.stdout)
+        self.assertIn("Packages may be installed or upgraded", result.stdout)
+        self.assertIn("Back up files you want to keep", result.stdout)
+
+    def test_latest_rerun_updates_to_new_release_and_preserves_local_files_and_config(self):
+        self.assert_success(self.run_installer())
+        self.git_run("-C", str(self.destination), "config", "luna.fixture", "Keep local configuration")
+        (self.destination / "personal-file").write_text("Keep local file\n")
+        head = self.commit_file(self.remote, "release-update", "New release contents\n")
+        self.git_run("-C", str(self.remote), "tag", "-a", "v1.3.0", "-m", "Next release")
+        self.commit_file(self.remote, "unreleased-file", "Only on master\n")
+        self.env["TEST_RELEASE_URL"] = RELEASES + "/tag/v1.3.0"
+
+        self.assert_success(self.run_installer())
+        self.assertEqual(self.git_run("-C", str(self.destination), "rev-parse", "HEAD"), head)
+        self.assertEqual(self.git_run("-C", str(self.destination), "branch", "--show-current"), "")
+        self.assertEqual((self.destination / "personal-file").read_text(), "Keep local file\n")
+        self.assertFalse((self.destination / "unreleased-file").exists())
+        self.assertEqual(self.git_run("-C", str(self.destination), "config", "luna.fixture"), "Keep local configuration")
+        self.assertEqual(len(self.setups()), 2)
+        self.assertEqual(len(self.calls("curl")), 2)
+        self.assertEqual(len([call for call in self.calls("git") if "clone" in call]), 1)
+
+    def test_latest_release_tag_wins_over_same_named_branch_on_clone_and_rerun(self):
+        released = self.git_run("-C", str(self.remote), "rev-parse", "refs/tags/v1.2.3")
+        setup_script = (self.remote / "scripts/setup.sh").read_text()
+
+        # An unrelated branch keeps clone from fetching the release tag implicitly.
+        self.git_run("-C", str(self.remote), "switch", "--orphan", "v1.2.3")
+        self.commit_file(self.remote, "scripts/setup.sh", setup_script)
+        self.commit_file(self.remote, "branch-only", "Not part of the release\n")
+
+        for _ in range(2):
+            self.assert_success(self.run_installer())
+            self.assertEqual(self.git_run("-C", str(self.destination), "rev-parse", "HEAD"), released)
+            self.assertEqual(self.git_run("-C", str(self.destination), "branch", "--show-current"), "")
+            self.assertFalse((self.destination / "branch-only").exists())
+        self.assertEqual(len(self.setups()), 2)
+        self.assertEqual(len([call for call in self.calls("git") if "clone" in call]), 1)
+
+    def test_latest_switches_existing_same_named_branch_to_release_tag(self):
+        released = self.git_run("-C", str(self.remote), "rev-parse", "refs/tags/v1.2.3")
+        self.git_run("-C", str(self.remote), "switch", "-c", "v1.2.3")
+        branch_head = self.commit_file(self.remote, "branch-only", "Not part of the release\n")
+        self.assert_success(self.run_installer("--ref", "v1.2.3"))
+        self.assertEqual(self.git_run("-C", str(self.destination), "rev-parse", "HEAD"), branch_head)
+
+        self.assert_success(self.run_installer())
+        self.assertEqual(self.git_run("-C", str(self.destination), "rev-parse", "HEAD"), released)
+        self.assertEqual(self.git_run("-C", str(self.destination), "branch", "--show-current"), "")
+        self.assertEqual(self.git_run("-C", str(self.destination), "rev-parse", "refs/heads/v1.2.3"), branch_head)
+        self.assertFalse((self.destination / "branch-only").exists())
+        self.assertEqual(len(self.setups()), 2)
+        self.assertEqual(len([call for call in self.calls("git") if "clone" in call]), 1)
+
+    def test_latest_decodes_percent_encoded_release_tag_on_clone_and_rerun(self):
+        tag = "release/v1.2.3+test%build"
+        released = self.commit_file(self.remote, "release-update", "Encoded tag contents\n")
+        self.git_run("-C", str(self.remote), "tag", "-a", tag, "-m", "Encoded release fixture")
+        self.commit_file(self.remote, "unreleased-file", "Only on master\n")
+        self.env["TEST_RELEASE_URL"] = RELEASES + "/tag/release%2Fv1.2.3%2Btest%25build"
+
+        for _ in range(2):
+            self.assert_success(self.run_installer())
+            self.assertEqual(self.git_run("-C", str(self.destination), "rev-parse", "HEAD"), released)
+            self.assertEqual(self.git_run("-C", str(self.destination), "branch", "--show-current"), "")
+            self.assertEqual(self.git_run("-C", str(self.destination), "describe", "--tags", "--exact-match"), tag)
+            self.assertFalse((self.destination / "unreleased-file").exists())
+        self.assertEqual(len(self.setups()), 2)
+        self.assertEqual(len([call for call in self.calls("git") if "clone" in call]), 1)
+
+    def test_no_release_falls_back_to_master_and_updates_existing_checkout(self):
+        for suffix in ("", "/"):
+            with self.subTest(suffix=suffix):
+                self.env["TEST_RELEASE_URL"] = RELEASES + suffix
+                head = self.commit_file(self.remote, "master-update", "Current master" + suffix + "\n")
+                result = self.run_installer()
+                self.assert_success(result)
+                self.assertIn("[WARN] No release found; using master.", result.stdout)
+                self.assertEqual(self.git_run("-C", str(self.destination), "branch", "--show-current"), "master")
+                self.assertEqual(self.git_run("-C", str(self.destination), "rev-parse", "HEAD"), head)
+        self.assertEqual(len(self.setups()), 2)
+        self.assertEqual(len([call for call in self.calls("git") if "clone" in call]), 1)
+
+    def test_release_lookup_errors_preserve_checkout_before_authentication_or_bootstrap(self):
+        self.assert_success(self.run_installer("--ref", "master"))
+        (self.destination / "personal-file").write_text("Keep local file\n")
+        head = self.git_run("-C", str(self.destination), "rev-parse", "HEAD")
+        before = self.git_run("-C", str(self.destination), "status", "--porcelain")
+        self.env["TEST_BOOTSTRAP_GIT"] = "1"
+        scenarios = (
+            ({"TEST_MISSING_CURL": "1"}, "Install curl"),
+            ({"TEST_CURL_STATUS": "22"}, "Could not fetch the latest release"),
+            ({"TEST_RELEASE_URL": ""}, "Could not determine the latest release tag"),
+            ({"TEST_RELEASE_URL": RELEASES + "/latest"}, "Could not determine the latest release tag"),
+            ({"TEST_RELEASE_URL": RELEASES + "/tag/"}, "Could not determine the latest release tag"),
+            ({"TEST_RELEASE_URL": RELEASES + "/tag/v1.2.3%"}, "Could not determine the latest release tag"),
+            ({"TEST_RELEASE_URL": RELEASES + "/tag/v1.2.3%2"}, "Could not determine the latest release tag"),
+            ({"TEST_RELEASE_URL": RELEASES + "/tag/v1.2.3%GG"}, "Could not determine the latest release tag"),
+            ({"TEST_RELEASE_URL": RELEASES + "/tag/v1.2.3%00"}, "Could not determine the latest release tag"),
+            ({"TEST_RELEASE_URL": "https://example.invalid/releases/tag/v1.2.3"},
+             "Could not determine the latest release tag"),
+        )
+        for overrides, message in scenarios:
+            with self.subTest(overrides=overrides):
+                for name in ("TEST_MISSING_CURL", "TEST_CURL_STATUS", "TEST_RELEASE_URL"):
+                    self.env.pop(name, None)
+                self.env.update(overrides)
+                self.calls_file.write_text("")
+                result = self.run_installer()
+                self.assert_refused(result)
+                self.assertIn(message, result.stdout)
+                self.assertEqual(self.git_run("-C", str(self.destination), "rev-parse", "HEAD"), head)
+                self.assertEqual(self.git_run("-C", str(self.destination), "status", "--porcelain"), before)
+                self.assertEqual((self.destination / "personal-file").read_text(), "Keep local file\n")
+                self.assertEqual(self.calls("sudo"), [])
+                self.assertEqual(self.calls("pacman"), [])
+                self.assertEqual(self.calls("git"), [])
+                self.assertFalse((self.root / "git-installed").exists())
+                self.assertEqual(len(self.setups()), 1)
+
+    def test_release_request_failure_preserves_nonrepository_destination(self):
+        self.destination.mkdir(parents=True)
+        (self.destination / "personal-file").write_text("Keep existing directory\n")
+        self.env["TEST_CURL_STATUS"] = "7"
+        self.assert_refused(self.run_installer())
+        self.assertEqual((self.destination / "personal-file").read_text(), "Keep existing directory\n")
+        self.assertFalse((self.destination / ".git").exists())
+        self.assertEqual(self.calls("sudo"), [])
+        self.assertEqual(self.calls("pacman"), [])
+        self.assertEqual(self.calls("git"), [])
+        self.assertEqual(self.setups(), [])
 
     def test_empty_luna_install_dir_uses_and_exports_default_checkout(self):
         self.env["LUNA_INSTALL_DIR"] = ""
@@ -230,16 +432,44 @@ sys.exit(int(os.environ.get("TEST_SETUP_STATUS", "0")))
         result = self.run_installer("--skip=git-apps")
         self.assert_success(result)
         self.assertEqual(self.setups()[0]["args"], ["--skip=git-apps"])
-        self.assertIn("Open a new terminal and run luna --version.", result.stdout)
+        self.assertIn("Run luna --version to check the installation.", result.stdout)
         self.assertTrue(any("clone" in call for call in self.calls("git")))
 
-    def test_repeated_skip_lists_are_deduplicated_in_first_seen_order(self):
+    def test_repeated_skip_lists_are_forwarded_unchanged_in_order(self):
         result = self.run_installer("--skip=git-apps,fonts", "--ref", "feature/installer",
-                                    "--skip=fonts,mise,git-apps", "--skip=apps,mise,keyring,defaults,cleanup,keyring")
+                                    "--skip=fonts,mise,git-apps", "--skip=apps,mise,keyring,defaults,keyring")
         self.assert_success(result)
-        self.assertEqual(self.setups()[0]["args"], ["--skip=git-apps,fonts,mise,apps,keyring,defaults,cleanup"])
+        self.assertEqual(self.setups()[0]["args"], ["--skip=git-apps,fonts", "--skip=fonts,mise,git-apps",
+                                                  "--skip=apps,mise,keyring,defaults,keyring"])
         self.assertEqual(self.git_run("-C", str(self.destination), "branch", "--show-current"),
                          "feature/installer")
+
+    def test_future_and_malformed_skip_values_are_forwarded_to_selected_setup(self):
+        arguments = ("--skip=future-step", "--skip=", "--skip=,fonts", "--skip=fonts,",
+                     "--skip=fonts,,mise", "--skip=fonts,unknown", "--skip=fonts mise",
+                     "--skip=fonts\nmise", "--skip=FONTS", "--skip=../main",
+                     "--skip=git", "--skip=all", "--skip=git-apps=1")
+        self.assert_success(self.run_installer(*arguments))
+        self.assertEqual(self.setups()[0]["args"], list(arguments))
+
+    def test_selected_setup_validates_skip_values_before_running_children(self):
+        # Use the real selected runner without any child scripts, so this cannot
+        # perform setup work even if validation unexpectedly lets a value through.
+        self.commit_file(self.remote, "scripts/setup.sh", (REPO / "scripts/setup.sh").read_text())
+        self.commit_file(self.remote, "lib/common.sh", (REPO / "lib/common.sh").read_text())
+
+        for argument in ("--skip=future-step", "--skip=fonts,,mise", "--skip=cleanup"):
+            with self.subTest(argument=argument):
+                result = self.run_installer("--ref", "master", argument)
+                self.assert_refused(result)
+                self.assertEqual(result.returncode, 2, result.stdout)
+                self.assertIn("Invalid step in --skip", result.stdout)
+                self.assertNotIn("1/14 — Prepare Lua", result.stdout)
+                self.assertNotIn("No such file or directory", result.stdout)
+                self.assertEqual((self.destination / "scripts/setup.sh").read_text(),
+                                 (REPO / "scripts/setup.sh").read_text())
+                self.assertEqual(self.setups(), [])
+        self.assertEqual(len([call for call in self.calls("git") if "clone" in call]), 1)
 
     def test_skipping_every_setup_step_keeps_bootstrap_and_avoids_command_advice(self):
         self.env["TEST_BOOTSTRAP_GIT"] = "1"
@@ -250,7 +480,7 @@ sys.exit(int(os.environ.get("TEST_SETUP_STATUS", "0")))
         self.assertEqual(self.calls("pacman"), [["pacman", "-Syu", "--needed", "--noconfirm", "--", "git"]])
         self.assertIn(["sudo", "-v"], self.calls("sudo"))
         self.assertTrue(any("clone" in call for call in self.calls("git")))
-        self.assertNotIn("Open a new terminal and run luna --version.", result.stdout)
+        self.assertNotIn("Run luna --version to check the installation.", result.stdout)
 
     def test_custom_luna_install_dir_creates_parents_and_preserves_default_checkout(self):
         self.assert_success(self.run_installer())
@@ -274,11 +504,11 @@ sys.exit(int(os.environ.get("TEST_SETUP_STATUS", "0")))
     def test_custom_existing_checkout_is_reused_without_losing_local_files(self):
         custom = self.root / "coding checkout/luna"
         self.env["LUNA_INSTALL_DIR"] = str(custom)
-        self.assert_success(self.run_installer())
+        self.assert_success(self.run_installer("--ref", "master"))
         (custom / "personal-file").write_text("Old checkout\n")
         head = self.commit_file(self.remote, "remote-update", "Updated upstream\n")
 
-        self.assert_success(self.run_installer())
+        self.assert_success(self.run_installer("--ref", "master"))
         self.assertEqual((custom / "personal-file").read_text(), "Old checkout\n")
         self.assertEqual(self.git_run("-C", str(custom), "rev-parse", "HEAD"), head)
         self.assertEqual(len(self.setups()), 2)
@@ -294,7 +524,7 @@ sys.exit(int(os.environ.get("TEST_SETUP_STATUS", "0")))
         self.env["LUNA_INSTALL_DIR"] = str(custom) + "/"
         head = self.commit_file(self.remote, "remote-update", "Updated upstream\n")
 
-        self.assert_success(self.run_installer())
+        self.assert_success(self.run_installer("--ref", "master"))
         self.assertTrue(custom.is_symlink())
         self.assertEqual(self.git_run("-C", str(external), "rev-parse", "HEAD"), head)
         self.assertEqual((external / "personal-file").read_text(), "Keep external edits\n")
@@ -319,8 +549,25 @@ sys.exit(int(os.environ.get("TEST_SETUP_STATUS", "0")))
         self.assertEqual([path.name for path in external.iterdir()], ["personal-file"])
         self.assertFalse(self.destination.exists())
 
+    def test_install_from_inside_nonrepository_destination_survives_replacement(self):
+        for relative in (".", "nested/folder"):
+            with self.subTest(relative=relative):
+                directory = self.root / ("install-from-root" if relative == "." else "install-from-descendant")
+                working_directory = directory / relative
+                working_directory.mkdir(parents=True)
+                (directory / "old-file").write_text("Replace this non-Git directory\n")
+                self.env["LUNA_INSTALL_DIR"] = str(directory)
+
+                self.assert_success(self.run_installer(cwd=working_directory))
+                self.assertTrue((directory / ".git").is_dir())
+                self.assertFalse((directory / "old-file").exists())
+                self.assertEqual(self.setups()[-1]["cwd"], str(directory))
+                self.assertEqual(self.git_run("-C", str(directory), "describe", "--tags", "--exact-match"),
+                                 "v1.2.3")
+        self.assertEqual(len(self.setups()), 2)
+
     def test_custom_linked_worktree_updates_without_changing_the_main_checkout(self):
-        self.assert_success(self.run_installer())
+        self.assert_success(self.run_installer("--ref", "master"))
         original = self.git_run("-C", str(self.destination), "rev-parse", "HEAD")
         worktree = self.root / "coding worktree"
         self.git_run("-C", str(self.destination), "worktree", "add", "-b", "feature/installer", str(worktree))
@@ -370,15 +617,19 @@ mv() {
                 self.assertEqual(self.setups(), [])
 
     def test_selected_branch(self):
+        self.env["TEST_MISSING_CURL"] = "1"
         self.assert_success(self.run_installer("--ref", "feature/installer"))
         self.assertEqual(self.git_run("-C", str(self.destination), "branch", "--show-current"),
                          "feature/installer")
+        self.assertEqual(self.calls("curl"), [])
 
     def test_selected_tag_reuses_detached_checkout(self):
+        self.env["TEST_MISSING_CURL"] = "1"
         self.assert_success(self.run_installer("--ref", "v1.2.3"))
         self.assertEqual(self.git_run("-C", str(self.destination), "branch", "--show-current"), "")
         self.assertEqual(self.git_run("-C", str(self.destination), "describe", "--tags", "--exact-match"),
                          "v1.2.3")
+        self.assertEqual(self.calls("curl"), [])
         self.assert_success(self.run_installer("--ref", "v1.2.3"))
         self.assertEqual(len(self.setups()), 2)
         self.assertEqual(len([call for call in self.calls("git") if "clone" in call]), 1)
@@ -422,13 +673,13 @@ mv() {
         self.assertEqual(self.setups(), [])
 
     def test_repeated_install_fast_forwards_without_recloning_or_losing_config(self):
-        self.assert_success(self.run_installer())
+        self.assert_success(self.run_installer("--ref", "master"))
         head = self.git_run("-C", str(self.destination), "rev-parse", "HEAD")
         self.git_run("-C", str(self.destination), "config", "luna.fixture", "Keep local configuration")
         (self.remote / "new-version").write_text("A later remote commit\n")
         self.git_run("-C", str(self.remote), "add", ".")
         self.git_run("-C", str(self.remote), "commit", "--quiet", "-m", "Advance remote")
-        self.assert_success(self.run_installer())
+        self.assert_success(self.run_installer("--ref", "master"))
         self.assertNotEqual(self.git_run("-C", str(self.destination), "rev-parse", "HEAD"), head)
         self.assertEqual((self.destination / "new-version").read_text(), "A later remote commit\n")
         self.assertEqual(len(self.setups()), 2)
@@ -439,7 +690,7 @@ mv() {
                              for action in ("reset", "clean", "stash")))
 
     def test_nonconflicting_tracked_staged_and_untracked_edits_survive_update(self):
-        self.assert_success(self.run_installer())
+        self.assert_success(self.run_installer("--ref", "master"))
         changed = self.destination / "scripts/setup.sh"
         contents = changed.read_text() + "# Personal modification\n"
         changed.write_text(contents)
@@ -448,7 +699,7 @@ mv() {
         self.git_run("-C", str(self.destination), "add", "staged-file")
         before = self.git_run("-C", str(self.destination), "status", "--porcelain")
         head = self.commit_file(self.remote, "new-version", "Unrelated upstream addition\n")
-        self.assert_success(self.run_installer())
+        self.assert_success(self.run_installer("--ref", "master"))
         self.assertEqual((self.destination / "untracked-file").read_text(), "Keep untracked\n")
         self.assertEqual((self.destination / "staged-file").read_text(), "Keep staged\n")
         self.assertEqual(self.git_run("-C", str(self.destination), "status", "--porcelain"), before)
@@ -458,7 +709,7 @@ mv() {
 
     def test_conflicting_tracked_edits_refuse_update_without_losing_changes(self):
         self.commit_file(self.remote, "settings", "Original\n")
-        self.assert_success(self.run_installer())
+        self.assert_success(self.run_installer("--ref", "master"))
         head = self.git_run("-C", str(self.destination), "rev-parse", "HEAD")
         (self.destination / "settings").write_text("Local changes\n")
         self.commit_file(self.remote, "settings", "Upstream changes\n")
@@ -468,32 +719,32 @@ mv() {
                 if staged:
                     self.git_run("-C", str(self.destination), "add", "settings")
                 before = self.git_run("-C", str(self.destination), "status", "--porcelain")
-                self.assert_refused(self.run_installer())
+                self.assert_refused(self.run_installer("--ref", "master"))
                 self.assertEqual((self.destination / "settings").read_text(), "Local changes\n")
                 self.assertEqual(self.git_run("-C", str(self.destination), "rev-parse", "HEAD"), head)
                 self.assertEqual(self.git_run("-C", str(self.destination), "status", "--porcelain"), before)
                 self.assertEqual(len(self.setups()), 1)
 
     def test_untracked_collision_refuses_update_without_removing_local_file(self):
-        self.assert_success(self.run_installer())
+        self.assert_success(self.run_installer("--ref", "master"))
         head = self.git_run("-C", str(self.destination), "rev-parse", "HEAD")
         (self.destination / "collision").write_text("Keep local file\n")
         self.commit_file(self.remote, "collision", "Upstream file\n")
 
-        self.assert_refused(self.run_installer())
+        self.assert_refused(self.run_installer("--ref", "master"))
         self.assertEqual((self.destination / "collision").read_text(), "Keep local file\n")
         self.assertEqual(self.git_run("-C", str(self.destination), "rev-parse", "HEAD"), head)
         self.assertEqual(len(self.setups()), 1)
 
     def test_ignored_collision_refuses_fast_forward_without_removing_local_file(self):
-        self.assert_success(self.run_installer())
+        self.assert_success(self.run_installer("--ref", "master"))
         head = self.git_run("-C", str(self.destination), "rev-parse", "HEAD")
         with (self.destination / ".git/info/exclude").open("a") as excludes:
             excludes.write("\nignored-settings\n")
         (self.destination / "ignored-settings").write_text("Keep ignored local settings\n")
         self.commit_file(self.remote, "ignored-settings", "Upstream settings\n")
 
-        self.assert_refused(self.run_installer())
+        self.assert_refused(self.run_installer("--ref", "master"))
         self.assertEqual((self.destination / "ignored-settings").read_text(), "Keep ignored local settings\n")
         self.assertEqual(self.git_run("-C", str(self.destination), "rev-parse", "HEAD"), head)
         self.assertEqual(len(self.setups()), 1)
@@ -503,7 +754,7 @@ mv() {
         self.commit_file(self.remote, "ignored-settings", "Upstream settings\n")
         self.git_run("-C", str(self.remote), "branch", "existing-feature")
         self.git_run("-C", str(self.remote), "tag", "release-with-settings")
-        self.assert_success(self.run_installer())
+        self.assert_success(self.run_installer("--ref", "master"))
         self.git_run("-C", str(self.destination), "fetch", "--no-tags", "origin",
                      "refs/heads/existing-feature:refs/heads/existing-feature")
         head = self.git_run("-C", str(self.destination), "rev-parse", "HEAD")
@@ -521,14 +772,14 @@ mv() {
 
     def test_branch_autostash_config_does_not_hide_conflicting_edits(self):
         self.commit_file(self.remote, "settings", "Original\n")
-        self.assert_success(self.run_installer())
+        self.assert_success(self.run_installer("--ref", "master"))
         head = self.git_run("-C", str(self.destination), "rev-parse", "HEAD")
         self.git_run("-C", str(self.destination), "config", "branch.master.mergeoptions", "--autostash")
         (self.destination / "settings").write_text("Keep local changes\n")
         before = self.git_run("-C", str(self.destination), "status", "--porcelain")
         self.commit_file(self.remote, "settings", "Upstream changes\n")
 
-        self.assert_refused(self.run_installer())
+        self.assert_refused(self.run_installer("--ref", "master"))
         self.assertEqual((self.destination / "settings").read_text(), "Keep local changes\n")
         self.assertEqual(self.git_run("-C", str(self.destination), "rev-parse", "HEAD"), head)
         self.assertEqual(self.git_run("-C", str(self.destination), "status", "--porcelain"), before)
@@ -536,20 +787,20 @@ mv() {
         self.assertEqual(len(self.setups()), 1)
 
     def test_local_commits_are_preserved_when_already_ahead_of_remote(self):
-        self.assert_success(self.run_installer())
+        self.assert_success(self.run_installer("--ref", "master"))
         head = self.commit_file(self.destination, "local-commit", "Local work\n")
-        self.assert_success(self.run_installer())
+        self.assert_success(self.run_installer("--ref", "master"))
         self.assertEqual(self.git_run("-C", str(self.destination), "rev-parse", "HEAD"), head)
         self.assertEqual((self.destination / "local-commit").read_text(), "Local work\n")
         self.assertEqual(len(self.setups()), 2)
 
     def test_diverged_history_refuses_update_and_preserves_local_commits_and_config(self):
-        self.assert_success(self.run_installer())
+        self.assert_success(self.run_installer("--ref", "master"))
         head = self.commit_file(self.destination, "local-commit", "Local work\n")
         self.git_run("-C", str(self.destination), "config", "luna.fixture", "Keep local configuration")
         self.commit_file(self.remote, "remote-commit", "Remote work\n")
 
-        self.assert_refused(self.run_installer())
+        self.assert_refused(self.run_installer("--ref", "master"))
         self.assertEqual(self.git_run("-C", str(self.destination), "rev-parse", "HEAD"), head)
         self.assertEqual((self.destination / "local-commit").read_text(), "Local work\n")
         self.assertFalse((self.destination / "remote-commit").exists())
@@ -575,13 +826,13 @@ mv() {
         self.assertEqual(len(self.setups()), 1)
 
     def test_github_ssh_origins_are_preserved_and_updated(self):
-        self.assert_success(self.run_installer())
+        self.assert_success(self.run_installer("--ref", "master"))
         for origin in ("git@github.com:dot-luna/luna.git", "ssh://git@github.com/dot-luna/luna.git"):
             with self.subTest(origin=origin):
                 self.git_run("config", "--global", "--add", f"url.{self.remote.as_uri()}.insteadOf", origin)
                 self.git_run("-C", str(self.destination), "remote", "set-url", "origin", origin)
                 head = self.commit_file(self.remote, "remote-origin", origin + "\n")
-                self.assert_success(self.run_installer())
+                self.assert_success(self.run_installer("--ref", "master"))
                 self.assertEqual(self.git_run("-C", str(self.destination), "config", "remote.origin.url"), origin)
                 self.assertEqual(self.git_run("-C", str(self.destination), "rev-parse", "HEAD"), head)
         self.assertEqual(len([call for call in self.calls("git") if "clone" in call]), 1)
@@ -599,7 +850,7 @@ mv() {
         self.assertFalse(any("clone" in call for call in self.calls("git")))
 
     def test_different_branch_is_fetched_despite_single_branch_clone(self):
-        self.assert_success(self.run_installer())
+        self.assert_success(self.run_installer("--ref", "master"))
         self.git_run("-C", str(self.remote), "checkout", "feature/installer")
         head = self.commit_file(self.remote, "feature-file", "Branch-specific content\n")
         self.assert_success(self.run_installer("--ref", "feature/installer"))
@@ -612,7 +863,7 @@ mv() {
 
     def test_checkout_switches_from_branch_to_tag_and_back(self):
         head = self.commit_file(self.remote, "latest-master", "After tagged release\n")
-        self.assert_success(self.run_installer())
+        self.assert_success(self.run_installer("--ref", "master"))
         self.assert_success(self.run_installer("--ref", "v1.2.3"))
         self.assertEqual(self.git_run("-C", str(self.destination), "branch", "--show-current"), "")
         self.assertEqual(self.git_run("-C", str(self.destination), "describe", "--tags", "--exact-match"),
@@ -668,10 +919,10 @@ mv() {
         self.assertEqual(len(self.setups()), 1)
 
     def test_selected_version_missing_setup_stops_before_running_setup(self):
-        self.assert_success(self.run_installer())
+        self.assert_success(self.run_installer("--ref", "master"))
         self.git_run("-C", str(self.remote), "rm", "scripts/setup.sh")
         self.git_run("-C", str(self.remote), "commit", "--quiet", "-m", "Version without setup")
-        result = self.run_installer()
+        result = self.run_installer("--ref", "master")
         self.assert_refused(result)
         self.assertIn("scripts/setup.sh", result.stdout)
         self.assertEqual(len(self.setups()), 1)
@@ -769,6 +1020,7 @@ mv() {
         result = self.run_installer(terminal=False)
         self.assert_refused(result)
         self.assertIn("interactive terminal", result.stdout)
+        self.assertEqual(self.calls("sleep"), [])
         self.assertEqual(self.calls("sudo"), [])
         self.assertEqual(self.calls("pacman"), [])
         self.assertFalse(self.destination.exists())
@@ -781,8 +1033,7 @@ mv() {
                 self.assertEqual(result.returncode, 0, result.stdout)
                 self.assertIn("--ref", result.stdout)
                 self.assertIn("--skip=git-apps,fonts,mise", result.stdout)
-                for step in SETUP_STEPS:
-                    self.assertIn(step, result.stdout)
+                self.assertIn("scripts/setup.sh", result.stdout)
         for args in (("--ref",), ("--unknown",), ("--ref", ""),
                      ("--ref", "-bad"), ("--ref", "bad..ref"), ("--ref", "refs/heads/master"),
                      ("--skip-git-apps",), ("--skip-fonts",)):
@@ -791,28 +1042,25 @@ mv() {
                 self.assert_refused(result)
                 self.assertEqual(result.returncode, 2, result.stdout)
         self.assertEqual(list(self.home.iterdir()), [])
+        self.assertEqual(self.calls("sleep"), [])
+        self.assertEqual(self.calls("curl"), [])
         self.assertEqual(self.calls("sudo"), [])
         self.assertEqual(self.calls("git"), [])
 
-    def test_invalid_skip_values_fail_before_system_checks_or_authentication(self):
+    def test_bare_skip_fails_before_system_checks_or_authentication(self):
         # A valid call would fail HOME validation; invalid flags must fail earlier.
         self.env["HOME"] = "relative home"
         self.env["TEST_BOOTSTRAP_GIT"] = "1"
-        for args in (("--skip",), ("--skip", "git-apps"), ("--skip=",),
-                     ("--skip=,fonts",), ("--skip=fonts,",), ("--skip=fonts,,mise",),
-                     ("--skip=fonts,unknown",), ("--skip=fonts mise",),
-                     ("--skip=fonts\nmise",), ("--skip=FONTS",), ("--skip=../main",),
-                     ("--skip=git",), ("--skip=all",), ("--skip=git-apps=1",)):
+        for args in (("--skip",), ("--skip", "git-apps")):
             with self.subTest(args=args):
                 result = self.run_installer(*args, terminal=False)
                 self.assert_refused(result)
                 self.assertEqual(result.returncode, 2, result.stdout)
-                self.assertIn("Valid steps:", result.stdout)
                 self.assertNotIn("HOME must", result.stdout)
-                if args[0] == "--skip":
-                    self.assertIn("Use --skip=", result.stdout)
+                self.assertIn("Use --skip=", result.stdout)
         self.assertEqual(list(self.home.iterdir()), [])
         self.assertFalse((self.root / "relative home").exists())
+        self.assertEqual(self.calls("sleep"), [])
         self.assertEqual(self.calls("sudo"), [])
         self.assertEqual(self.calls("pacman"), [])
         self.assertEqual(self.calls("git"), [])
