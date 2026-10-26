@@ -7,6 +7,10 @@ components wherever possible; do not introduce new KDE apps. Replace existing KD
 components when a working alternative is available. `polkit-kde-agent` is temporary
 until Luna has its own polkit UI.
 
+TODO: Review how Luna should handle `~/.config/hypr/hyprqt6engine.conf`.
+This Qt theme config remains from the old setup; check whether it is still used
+before deciding whether to manage it through Luna or remove it.
+
 Build a modern, responsive UI with subtle, polished animations and useful
 interactive feedback. Keep it lightweight; avoid visual clutter and excessive
 motion. Provide full keyboard control for important and frequently used flows.

@@ -1,37 +1,71 @@
+-- Loaded by bindings.lua, which supplies the shared shortcut-registration helper.
 return function(bind)
-    -- Number keys select workspaces 1–9; 0 selects 10. Shift moves and follows.
+    -- Register these three shortcuts for each workspace: keys 1–9 select 1–9,
+    -- and 0 selects 10. Workspace numbers are shared across all monitors.
     for workspace = 1, 10 do
         local key = tostring(workspace % 10)
+
+        -- Super + number: switch to that workspace, focusing its monitor if needed.
         bind("SUPER + " .. key, hl.dsp.focus({ workspace = workspace }), "Switch to workspace " .. workspace)
+
+        -- Super + Shift + number: move the focused window there and switch to it.
         bind("SUPER + SHIFT + " .. key, hl.dsp.window.move({ workspace = workspace, follow = true }),
             "Move window to workspace " .. workspace .. " and follow")
+
+        -- Super + Shift + Alt + number: send the focused window there while
+        -- keeping your current workspace and monitor in view.
         bind("SUPER + SHIFT + ALT + " .. key, hl.dsp.window.move({ workspace = workspace, follow = false }),
             "Move window silently to workspace " .. workspace)
     end
 
-    -- Cycle existing workspaces on this monitor without changing their assignments.
+    -- Super + Tab: cycle to the next existing workspace on the current monitor.
+    -- Wrap around at the end without creating a workspace or moving it between monitors.
     bind("SUPER + Tab", hl.dsp.focus({ workspace = "m+1" }), "Next workspace on this monitor")
+
+    -- Super + Shift + Tab: cycle through this monitor's existing workspaces in reverse.
     bind("SUPER + SHIFT + Tab", hl.dsp.focus({ workspace = "m-1" }), "Previous workspace on this monitor")
+
+    -- Hold Super and scroll down: go to the next existing workspace on this monitor.
     bind("SUPER + mouse_down", hl.dsp.focus({ workspace = "m+1" }), "Next workspace on this monitor")
+
+    -- Hold Super and scroll up: go to the previous existing workspace on this monitor.
     bind("SUPER + mouse_up", hl.dsp.focus({ workspace = "m-1" }), "Previous workspace on this monitor")
+
+    -- Super + Ctrl + Tab: return to the workspace last visited on this monitor,
+    -- rather than choosing the previous workspace by number.
     bind("SUPER + CTRL + Tab", hl.dsp.focus({ workspace = "previous_per_monitor" }), "Return to former workspace")
+
+    -- Ctrl + Alt + Tab: focus the next monitor in Hyprland's monitor order,
+    -- leaving its currently displayed workspace selected.
     bind("CTRL + ALT + Tab", hl.dsp.focus({ monitor = "+1" }), "Focus next monitor")
+
+    -- Ctrl + Alt + Shift + Tab: focus the previous monitor in that same order.
     bind("CTRL + ALT + SHIFT + Tab", hl.dsp.focus({ monitor = "-1" }), "Focus previous monitor")
 
     -- Move only the window; moving whole numbered workspaces would conflict with
     -- workspaces.lua, which distributes Luna's shared 1–10 set across monitors.
     for _, direction in ipairs({ "left", "right", "up", "down" }) do
+        -- Super + Ctrl + Shift + arrow: move the focused window to the monitor
+        -- in that physical direction and follow it to that monitor's active workspace.
         bind("SUPER + CTRL + SHIFT + " .. direction, hl.dsp.window.move({ monitor = direction:sub(1, 1), follow = true }),
             "Move window to monitor " .. direction .. " and follow")
     end
 
+    -- Super + S: show or hide the scratchpad above the current workspace.
+    -- This is a separate workspace for temporarily parking windows, not a new app.
     bind("SUPER + S", hl.dsp.workspace.toggle_special("luna-scratchpad"), "Toggle scratchpad")
+
+    -- Super + Alt + S: send the focused window to the scratchpad without following.
+    -- Use Super + S to see it, then a numbered move shortcut to move it back out.
     bind("SUPER + ALT + S", hl.dsp.window.move({ workspace = "special:luna-scratchpad", follow = false }),
         "Move window to scratchpad")
 
     local dropdown = "luna-terminal"
+    -- Remember whether Kitty is starting and whether the latest keypress wants it visible.
     local launching, show_when_ready, launch_timer = false, false, nil
 
+    -- Kitty opens asynchronously. Show its workspace and focus the new terminal
+    -- only if the latest keypress still asks for it to be visible.
     hl.on("window.open", function(window)
         if window.class ~= "luna-dropdown" then
             return
@@ -53,6 +87,9 @@ return function(bind)
         end
     end)
 
+    -- Super + backtick (`), called "grave" here: show or hide a dedicated Kitty terminal.
+    -- Start it on first use or after it closes; otherwise reuse the same window.
+    -- Hiding it keeps its shell session running in its own special workspace.
     bind("SUPER + grave", function()
         for _, window in ipairs(hl.get_windows()) do
             if window.mapped and window.class == "luna-dropdown" then

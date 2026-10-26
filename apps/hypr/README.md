@@ -104,9 +104,10 @@ This step supports Turing or newer NVIDIA hardware and asks for confirmation bef
 
 | Shortcut | Action |
 | --- | --- |
-| Super + Return | Open Kitty |
-| Super + Shift + Return | Open Zen |
+| Super + Return | Open the default terminal through xdg-terminal-exec |
+| Super + Shift + Return | Open the default browser for HTTPS links |
 | Super + W | Close the active window |
+| Super + Shift + W | Close all windows on the focused workspace (or its open scratchpad) |
 | Super + F | Toggle edge-to-edge monitor fullscreen for the focused window |
 | Super + Alt + F | Toggle maximized window |
 | Super + Ctrl + F | Toggle app fullscreen inside the window's current geometry |

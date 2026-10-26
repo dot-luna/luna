@@ -4,6 +4,7 @@
 return function(bind)
     local initial_scales = {}
 
+    -- Convert physical resolution into desktop space, accounting for rotated outputs.
     local function size(monitor, scale)
         local width, height = monitor.width, monitor.height
         if monitor.transform % 2 == 1 then
@@ -12,6 +13,7 @@ return function(bind)
         return width / scale, height / scale
     end
 
+    -- Accept only scales that keep whole logical pixels and avoid neighboring screens.
     local function fits(monitor, scale)
         local width, height = size(monitor, scale)
         -- Hyprland requires whole logical pixels after scaling.
@@ -32,6 +34,7 @@ return function(bind)
         return true
     end
 
+    -- Take the nearest valid scale in the requested direction without wrapping at a limit.
     local function scale_monitor(direction)
         local monitor = hl.get_active_monitor()
         -- Mirrored outputs share geometry; leave both ends of a mirror pair alone.
@@ -62,13 +65,23 @@ return function(bind)
         end
     end
 
+    -- Super + /: enlarge the focused monitor's UI using the next valid scale.
+    -- Skip mirrored outputs and scales that overlap another display; reload to restore.
     bind("SUPER + slash", function() scale_monitor(1) end, "Increase focused monitor scaling")
+
+    -- Super + Alt + /: reduce the focused monitor's UI scale to fit more content.
+    -- The original scale remains a candidate, but current monitor positions must allow it.
     bind("SUPER + ALT + slash", function() scale_monitor(-1) end, "Decrease focused monitor scaling")
+
+    -- Super + Ctrl + Z: increase desktop zoom by 0.5, capped at 3x.
+    -- This changes cursor zoom, not monitor scale, and needs an active monitor.
     bind("SUPER + CTRL + Z", function()
         if hl.get_active_monitor() then
             hl.config({ cursor = { zoom_factor = math.min(3, hl.get_config("cursor.zoom_factor") + 0.5) } })
         end
     end, "Zoom in on the desktop")
+
+    -- Super + Ctrl + Alt + Z: reset desktop zoom to its normal 1x size.
     bind("SUPER + CTRL + ALT + Z", function()
         hl.config({ cursor = { zoom_factor = 1 } })
     end, "Reset desktop zoom")

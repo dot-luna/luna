@@ -3,6 +3,8 @@ return function(bind)
     local saved = {}
     local layouts = {}
 
+    -- Save the current values on the first press; the next press restores them.
+    -- Each toggle remembers its own settings, so gaps and opacity remain independent.
     local function toggle(name, values)
         if saved[name] then
             hl.config(saved[name])
@@ -17,6 +19,9 @@ return function(bind)
         hl.config(values)
     end
 
+    -- Super + Ctrl + L: switch this numbered workspace between dwindle and scrolling.
+    -- Later presses toggle the override off/on; named and special workspaces stay untouched.
+    -- Only create overrides for these two layouts; reloading restores the configured layout.
     bind("SUPER + CTRL + L", function()
         local workspace = hl.get_active_workspace()
         -- Range selectors keep overrides independent of monitor assignment rules.
@@ -35,10 +40,15 @@ return function(bind)
         end
     end, "Toggle workspace between dwindle and scrolling")
 
+    -- Super + Shift + Backspace: remove inner and outer window gaps globally.
+    -- Press again to restore the previous gap sizes, including different sizes per edge.
     bind("SUPER + SHIFT + BackSpace", function()
         toggle("gaps", { ["general.gaps_in"] = 0, ["general.gaps_out"] = 0 })
     end, "Toggle window gaps")
 
+    -- Super + Backspace: make the global window opacity settings fully opaque.
+    -- If already opaque, use 90% opacity for normal windows and keep fullscreen opaque.
+    -- Press again to restore the previous values; app-specific opacity rules still apply.
     bind("SUPER + BackSpace", function()
         local active = hl.get_config("decoration.active_opacity")
         local inactive = hl.get_config("decoration.inactive_opacity")
@@ -51,6 +61,9 @@ return function(bind)
         })
     end, "Toggle window transparency")
 
+    -- Super + Ctrl + Backspace: give a lone tiled window square proportions in dwindle.
+    -- If already square, remove the constraint instead; the next press restores the saved ratio.
+    -- This global setting does not change scrolling layout behavior.
     bind("SUPER + CTRL + BackSpace", function()
         local ratio = hl.get_config("layout.single_window_aspect_ratio")
         toggle("aspect", { ["layout.single_window_aspect_ratio"] = ratio[1] == 1 and ratio[2] == 1

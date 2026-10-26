@@ -14,6 +14,7 @@ MODULE = REPO / "apps/hypr/config/bindings/windows.lua"
 API = r'''
 local bindings, dispatched = {}, {}
 local windows, focused, after_dispatch = {}, nil, nil
+local active_workspace, special_workspace = nil, nil
 
 local function dispatcher(kind)
     return function(options) return { kind = kind, options = options or {} } end
@@ -21,6 +22,17 @@ end
 
 hl = {
     get_active_window = function() return focused end,
+    get_active_workspace = function() return active_workspace end,
+    get_active_special_workspace = function() return special_workspace end,
+    get_windows = function(filter)
+        local result = {}
+        for _, candidate in ipairs(windows) do
+            if candidate.workspace == filter.workspace and candidate.mapped == filter.mapped then
+                table.insert(result, candidate)
+            end
+        end
+        return result
+    end,
     dsp = { window = {}, group = {}, focus = dispatcher("focus"), layout = dispatcher("layout") },
 }
 for _, name in ipairs({ "close", "fullscreen", "fullscreen_state", "float", "pseudo", "swap", "move",
@@ -48,7 +60,9 @@ function hl.dispatch(action)
             focused = candidates[index and ((index - 1 + offset) % #candidates + 1) or 1]
         end
     elseif window then
-        if action.kind == "fullscreen_state" then
+        if action.kind == "close" then
+            window.close_requests = (window.close_requests or 0) + 1
+        elseif action.kind == "fullscreen_state" then
             if options.action == "toggle" then
                 window.fullscreen = window.fullscreen == options.internal and 0 or options.internal
                 window.fullscreen_client = window.fullscreen_client == options.client and 0 or options.client
@@ -84,7 +98,7 @@ local function press(keys)
 end
 
 local function window(floating, pinned, fullscreen, client)
-    return { floating = floating or false, pinned = pinned or false,
+    return { mapped = true, floating = floating or false, pinned = pinned or false,
         fullscreen = fullscreen or 0, fullscreen_client = client or 0, width = 800, height = 600 }
 end
 '''
@@ -99,6 +113,71 @@ class WindowBindingTests(unittest.TestCase):
             result = subprocess.run(["/usr/bin/lua", "-E", "-", str(MODULE)], input=API + script,
                                     cwd=directory, env=env, text=True, capture_output=True, timeout=5)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_close_workspace_without_a_workspace_or_windows_does_nothing(self):
+        self.lua('''
+press("SUPER + SHIFT + W")
+assert(#dispatched == 0)
+active_workspace = { id = 1 }
+local other = window()
+other.workspace = { id = 2 }
+windows, focused = { other }, other
+press("SUPER + SHIFT + W")
+assert(#dispatched == 0, "An empty workspace must not fall back to closing the focused window")
+press("SUPER + W")
+assert(other.close_requests == 1, "The original single-window shortcut still closes its target")
+''')
+
+    def test_close_workspace_keeps_original_targets_when_focus_changes(self):
+        self.lua('''
+local workspace, other_workspace = { id = 1 }, { id = 2 }
+active_workspace = workspace
+local tiled, floating, fullscreen, grouped, pinned = window(), window(true), window(false, false, 2), window(), window(true, true)
+grouped.hidden = true
+local targets = { tiled, floating, fullscreen, grouped, pinned }
+for _, target in ipairs(targets) do
+    target.workspace = workspace
+    table.insert(windows, target)
+end
+local other, unmapped, detached, opened_later = window(), window(), window(), window()
+other.workspace = other_workspace
+unmapped.workspace, unmapped.mapped = workspace, false
+opened_later.workspace = workspace
+for _, target in ipairs({ other, unmapped, detached }) do table.insert(windows, target) end
+focused = tiled
+after_dispatch = function()
+    active_workspace, focused = other_workspace, other
+    if #dispatched == 1 then table.insert(windows, opened_later) end
+end
+press("SUPER + SHIFT + W")
+assert(#dispatched == #targets)
+for _, target in ipairs(targets) do assert(target.close_requests == 1) end
+for _, target in ipairs({ other, unmapped, detached, opened_later }) do
+    assert(not target.close_requests, "Only windows in the original workspace snapshot may close")
+end
+for _, action in ipairs(dispatched) do
+    assert(action.kind == "close" and action.options.window and not action.options.force,
+        "Request a normal close from explicit windows so apps can present save dialogs")
+end
+''')
+
+    def test_close_workspace_targets_open_scratchpad_and_skips_disappeared_windows(self):
+        self.lua('''
+active_workspace, special_workspace = { id = 1 }, { id = -99, special = true }
+local normal, scratchpad, sibling, detached = window(), window(), window(), window()
+normal.workspace = active_workspace
+scratchpad.workspace, sibling.workspace, detached.workspace = special_workspace, special_workspace, special_workspace
+windows, focused = { normal, scratchpad, sibling, detached }, scratchpad
+after_dispatch = function()
+    -- The app may close its other windows immediately; an expired native handle
+    -- returns nil fields. Neither case should fall back to the newly focused app.
+    sibling.mapped, detached.mapped = false, nil
+    special_workspace, focused = nil, normal
+end
+press("SUPER + SHIFT + W")
+assert(scratchpad.close_requests == 1 and #dispatched == 1)
+assert(not normal.close_requests and not sibling.close_requests and not detached.close_requests)
+''')
 
     def test_sticky_toggle_handles_empty_desktop_and_existing_window_states(self):
         self.lua('''
