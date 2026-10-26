@@ -16,7 +16,7 @@
 - `apps/hypr/config/bindings/appearance.lua`: workspace layout, gaps, transparency and single-window proportions.
 - `apps/hypr/config/bindings/desktop.lua`: Luna menus, lock, notifications and capture shortcuts.
 - `apps/hypr/config/bindings/media.lua`: volume, brightness and media keys.
-- `apps/hypr/config/animations.lua`: sets animation timings and horizontal workspace slides.
+- `apps/hypr/config/animations.lua`: defines spring motion, short fades and workspace transitions.
 - `apps/hypr/config/workspaces.lua`: distributes numbered workspaces across monitors.
 - `apps/hypr/app.lua`: declares the config directory, builder, and personal Lua include.
 - `apps/hypr/build.lua`: fills `templates/paths.lua` with the checkout path in `generated/paths.lua`.
@@ -61,7 +61,13 @@ The entry point supplies theme appearance, animation defaults, and the shortcuts
 
 ## Animations
 
-Windows animate in 200 ms, fades in 150 ms, layers in 180 ms, and workspaces in 220 ms. Other animations inherit a 250 ms default. Workspaces slide horizontally in the direction determined by workspace order.
+Windows open with a gentle spring from 94% of their final size and close with a quick 120 ms shrink. Tiling, keyboard resizing and desktop zoom use a firmer spring with almost no bounce. Manual resize animation is enabled so keyboard resize steps use that motion too.
+
+Normal workspaces slide horizontally and fade over 15% of the screen width, following workspace order. Scratchpads and the drop-down terminal use a vertical slide/fade over 15% of the screen height, with a faster 140 ms exit. Workspace motion uses the firmer spring to keep repeated keyboard navigation responsive.
+
+Border and focus transitions take 100–120 ms. Panels and menus fade in over 160 ms and out over 100 ms; their transparent fullscreen dismissal surfaces stay in place. Animating individual cards inside Luna's menus would require separate QML changes.
+
+Spring timing comes from mass, stiffness and dampening, rather than a fixed duration. Both springs use mass 1: `lunaSoft` uses stiffness 500 and dampening 38, while `lunaMotion` uses stiffness 800 and dampening 56. Higher stiffness speeds up movement; higher dampening reduces bounce. Hyprland requires a positive `speed` for spring entries, but does not use it as their duration. Bezier-based fades still use deciseconds, where `speed = 1` means 100 ms.
 
 ## Multiple monitors
 
