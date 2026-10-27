@@ -11,4 +11,8 @@ return function(bind, launcher)
     -- Resolve its desktop entry on every press so changes to your default apply immediately.
     bind("SUPER + SHIFT + Return", hl.dsp.exec_cmd('gtk-launch -- "$(xdg-mime query default x-scheme-handler/https)"'),
         "Open default browser")
+
+    -- The launcher and dedicated calculator key open the same GNOME application.
+    bind("SUPER + SHIFT + Q", hl.dsp.exec_cmd("gtk-launch -- org.gnome.Calculator.desktop"), "Open calculator")
+    bind("XF86Calculator", hl.dsp.exec_cmd("gtk-launch -- org.gnome.Calculator.desktop"), "Open calculator")
 end

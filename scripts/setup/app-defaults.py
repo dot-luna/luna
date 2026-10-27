@@ -141,7 +141,7 @@ def verify(arguments, expected, label, quiet=False):
 
 
 def verify_mime_defaults(choices, media_defaults):
-    """Verify every selection, summarizing broad audio/video choices in one line."""
+    """Verify every selection, summarizing each image/audio/video wildcard in one line."""
     remaining = dict(choices)
     for pattern, desktop_id in media_defaults.items():
         mime_types = [mime_type for mime_type, selected in choices.items()
@@ -153,7 +153,7 @@ def verify_mime_defaults(choices, media_defaults):
             if not verify(["xdg-mime", "query", "default", mime_type], desktop_id, "", quiet=True):
                 unverified.append(mime_type)
             remaining.pop(mime_type)
-        label = f"Default {pattern.split('/')[0]} player"
+        label = "Default image viewer" if pattern == "image/*" else f"Default {pattern.split('/')[0]} player"
         if unverified:
             warn(f"{label} preferences saved, but could not verify {len(unverified)} MIME defaults. "
                  f"Check xdg-mime query default {unverified[0]}.")
@@ -196,7 +196,7 @@ def apply_defaults(config_home, manifest):
             if not shutil.which("xdg-terminal-exec"):
                 warn("Default terminal skipped: xdg-terminal-exec is unavailable.")
                 continue
-        if key in ("audio/*", "video/*"):
+        if key in ("image/*", "audio/*", "video/*"):
             supported = sorted({mime_type for mime_type in application.get_supported_types() or []
                                 if mime_type.startswith(key[:-1])
                                 and re.fullmatch(r"[\w!#$&^_.+\-]+/[\w!#$&^_.+\-]+", mime_type, re.ASCII)})

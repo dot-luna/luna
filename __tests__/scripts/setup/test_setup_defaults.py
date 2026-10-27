@@ -53,7 +53,7 @@ sys.exit(int(os.environ.get("TEST_TERMINAL_STATUS", "0")))
                         XDG_CACHE_HOME=str(self.root / "cache"), GIO_USE_VFS="local",
                         BASH_ENV="", NO_COLOR="1")
         for name in ("TEST_TERMINAL_ID", "TEST_TERMINAL_STATUS", "TEST_FILE_MANAGER_ID", "TEST_FILE_MANAGER_STATUS",
-                     "TEST_MEDIA_FAILURE_TYPE", "TEST_FLAC_ID"):
+                     "TEST_MEDIA_FAILURE_TYPE", "TEST_FLAC_ID", "TEST_PNG_ID"):
             self.env.pop(name, None)
 
     def add_desktop(self, desktop_id, command, categories="", extra=""):
@@ -90,6 +90,20 @@ elif sys.argv[3] == "audio/flac":
     print(os.environ.get("TEST_FLAC_ID", "mpv.desktop"))
 else:
     print("mpv.desktop")
+''')
+        (self.bin / "xdg-mime").chmod(0o755)
+
+    def add_imv(self, mime_types="image/jpeg;image/png;image/webp;audio/mpeg;application/pdf;text/plain;"):
+        (self.bin / "imv").write_text("#!/bin/sh\nexit 99\n")
+        (self.bin / "imv").chmod(0o755)
+        self.add_desktop("imv.desktop", "imv %F", "Graphics;",
+                         f"NoDisplay=true\nMimeType={mime_types}\n")
+        (self.bin / "xdg-mime").write_text(f"#!{sys.executable}\n" + '''
+import os, pathlib, sys
+assert len(sys.argv) == 4 and sys.argv[1:3] == ["query", "default"]
+with pathlib.Path(os.environ["HOME"], "image-queries").open("a") as output:
+    output.write(sys.argv[3] + "\\n")
+print(os.environ.get("TEST_PNG_ID", "imv.desktop") if sys.argv[3] == "image/png" else "imv.desktop")
 ''')
         (self.bin / "xdg-mime").chmod(0o755)
 
@@ -446,6 +460,74 @@ else:
                 self.assertNotIn("audio/flac=mpv.desktop;", mime.read_text())
                 self.assertIn("audio/mpeg=mpv.desktop;", mime.read_text())
 
+    def test_imv_uses_advertised_images_despite_nodisplay_and_preserves_other_defaults(self):
+        self.add_imv()
+        self.config_home.mkdir(parents=True)
+        mime = self.config_home / "mimeapps.list"
+        mime.write_text("[Default Applications]\nimage/png=old.desktop;\n"
+                        "image/unsupported=other.desktop;\naudio/mpeg=player.desktop;\n"
+                        "application/pdf=reader.desktop;\ntext/plain=editor.desktop;\n"
+                        "[Added Associations]\nimage/png=old.desktop;\n"
+                        "[Removed Associations]\nimage/png=imv.desktop;blocked.desktop;\n")
+
+        result = self.setup()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Default image viewer set to imv.desktop", result.stdout)
+        images = {"image/jpeg", "image/png", "image/webp"}
+        self.assertEqual(set((self.home / "image-queries").read_text().splitlines()), images)
+        for name in ("mimeapps.list", "hyprland-mimeapps.list"):
+            content = (self.config_home / name).read_text()
+            for mime_type in images:
+                self.assertIn(f"{mime_type}=imv.desktop;", content)
+            self.assertNotIn("/*", content)
+        content = mime.read_text()
+        for preference in ("image/unsupported=other.desktop;", "audio/mpeg=player.desktop;",
+                           "application/pdf=reader.desktop;", "text/plain=editor.desktop;"):
+            self.assertIn(preference, content)
+        self.assertIn("image/png=imv.desktop;old.desktop;", content)
+        self.assertIn("[Removed Associations]\nimage/png=blocked.desktop;", content)
+
+    def test_exact_image_choice_overrides_wildcard_and_unavailable_choice_preserves_it(self):
+        self.add_imv()
+        self.add_desktop("special.desktop", "/bin/true %U", "Graphics;", "MimeType=image/png;\n")
+        self.add_desktop("hidden.desktop", "/bin/true %U", "Graphics;", "Hidden=true\nMimeType=image/png;\n")
+        self.env["TEST_PNG_ID"] = "special.desktop"
+        for desktop_id in ("special.desktop", "missing.desktop", "hidden.desktop"):
+            with self.subTest(desktop_id=desktop_id):
+                self.manifest.write_text('return { '
+                                         f'["image/png"] = "{desktop_id}", ["image/*"] = "imv.desktop" }}\n')
+                (self.home / "image-queries").unlink(missing_ok=True)
+                result = self.setup()
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                if desktop_id == "special.desktop":
+                    self.assertIn("Default image/png set to special.desktop", result.stdout)
+                else:
+                    self.assertIn(f"{desktop_id} is unavailable", result.stderr)
+                    self.assertNotIn("image/png", (self.home / "image-queries").read_text())
+                for name in ("mimeapps.list", "hyprland-mimeapps.list"):
+                    content = (self.config_home / name).read_text()
+                    self.assertIn("image/png=special.desktop;", content)
+                    self.assertNotIn("image/png=imv.desktop;", content)
+                    self.assertIn("image/jpeg=imv.desktop;", content)
+
+    def test_image_defaults_skip_missing_or_invalid_support_metadata_without_changes(self):
+        self.add_imv()
+        self.manifest.write_text('return { ["image/*"] = "imv.desktop" }\n')
+        self.config_home.mkdir(parents=True)
+        mime = self.config_home / "mimeapps.list"
+        original = b"[Default Applications]\nimage/png=old.desktop;\napplication/pdf=reader.desktop;\n"
+        mime.write_bytes(original)
+        for metadata in ("MimeType=image/*;image/bad=value;audio/mpeg;application/pdf;\n", ""):
+            with self.subTest(metadata=metadata):
+                self.add_desktop("imv.desktop", "imv %F", "Graphics;", "NoDisplay=true\n" + metadata)
+                result = self.setup()
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn("advertises no supported types", result.stderr)
+                self.assertNotIn("Default image viewer set", result.stdout)
+                self.assertEqual(mime.read_bytes(), original)
+                self.assertFalse((self.config_home / "hyprland-mimeapps.list").exists())
+                self.assertFalse((self.home / "image-queries").exists())
+
     def test_invalid_manifest_fails_before_any_preference_is_changed(self):
         self.add_nautilus()
         self.config_home.mkdir(parents=True)
@@ -456,7 +538,7 @@ else:
         before = {path: (path.read_bytes(), path.stat().st_mtime_ns) for path in self.config_home.iterdir()}
         for source in ("return false", 'return { terminal = "kitty.desktop", browser = "other.desktop" }',
                        'return { terminal = "kitty.desktop", ["inode/directory"] = 4 }',
-                       'return { ["image/*"] = "mpv.desktop" }',
+                       'return { ["application/*"] = "mpv.desktop" }',
                        'return { ["audio/m*"] = "mpv.desktop" }',
                        'return { ["*/*"] = "mpv.desktop" }',
                        'return { terminal = "$(touch INJECTED).desktop" }', "return {"):
@@ -490,6 +572,47 @@ else:
         self.assertIn("org.gnome.Nautilus.desktop is unavailable", result.stderr)
         self.assertIn("Default terminal set to kitty.desktop", result.stdout)
         self.assertFalse((self.config_home / "mimeapps.list").exists())
+
+    @unittest.skipUnless(shutil.which("xdg-mime") and shutil.which("gio"), "xdg-mime and gio are required")
+    def test_real_mime_lookup_uses_imv_evince_and_zed_while_html_stays_in_browser(self):
+        self.add_imv("image/jpeg;image/png;")
+        for desktop_id, mime_types in (
+                ("org.gnome.Evince.desktop", "application/pdf;"),
+                ("dev.zed.Zed.desktop", "text/plain;application/json;"),
+                ("zen.desktop", "text/html;application/xhtml+xml;")):
+            self.add_desktop(desktop_id, "/bin/true %U", extra=f"MimeType={mime_types}\n")
+        (self.bin / "xdg-mime").unlink()
+        (self.bin / "xdg-mime").symlink_to(shutil.which("xdg-mime"))
+        self.env.update(PATH=f"{self.bin}:/usr/bin:/bin", LC_ALL="C")
+        # Use the real MIME inheritance database without exposing system applications.
+        system_data = Path(self.env["XDG_DATA_DIRS"])
+        system_data.mkdir()
+        (system_data / "mime").symlink_to("/usr/share/mime", target_is_directory=True)
+        self.config_home.mkdir(parents=True)
+        (self.config_home / "mimeapps.list").write_text(
+            "[Default Applications]\ntext/html=zen.desktop;\napplication/xhtml+xml=zen.desktop;\n"
+            "text/plain=old.desktop;\nimage/png=old.desktop;\napplication/pdf=old.desktop;\n")
+
+        result = self.setup()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Default image viewer set to imv.desktop", result.stdout)
+        for mime_type, desktop_id in (
+                ("image/jpeg", "imv.desktop"), ("image/png", "imv.desktop"),
+                ("application/pdf", "org.gnome.Evince.desktop"),
+                ("text/plain", "dev.zed.Zed.desktop"), ("text/x-python", "dev.zed.Zed.desktop"),
+                ("text/x-lua", "dev.zed.Zed.desktop"), ("text/x-shellscript", "dev.zed.Zed.desktop"),
+                ("application/json", "dev.zed.Zed.desktop"),
+                ("text/html", "zen.desktop"), ("application/xhtml+xml", "zen.desktop")):
+            with self.subTest(mime_type=mime_type):
+                query = subprocess.run([shutil.which("gio"), "mime", mime_type], env=self.env,
+                                       capture_output=True, text=True, timeout=5)
+                self.assertEqual(query.returncode, 0, query.stderr)
+                self.assertIn(desktop_id, query.stdout.splitlines()[0])
+                # Direct lookups do not use GIO's MIME inheritance fallback.
+                direct = subprocess.run([str(self.bin / "xdg-mime"), "query", "default", mime_type],
+                                        env=self.env, capture_output=True, text=True, timeout=5)
+                self.assertEqual(direct.returncode, 0, direct.stderr)
+                self.assertEqual(direct.stdout.strip(), desktop_id)
 
     @unittest.skipUnless(shutil.which("xdg-mime") and shutil.which("gio"), "xdg-mime and gio are required")
     def test_real_mime_lookup_uses_mpv_for_audio_and_video(self):

@@ -104,6 +104,16 @@ return {
         { name = "zsh", source = "pacman", purpose = "Interactive shell" },
         { name = "seahorse", source = "pacman", purpose = "Manage stored passwords and keyrings graphically" },
 
+        -- Everyday image viewing, document reading, and calculations.
+        { name = "imv", source = "pacman", purpose = "Default image viewer" },
+        { name = "evince", source = "pacman", purpose = "Default PDF reader" },
+        { name = "gnome-calculator", source = "pacman", purpose = "Desktop calculator" },
+
+        -- Archive tools supplement the tar and compression utilities provided by Arch.
+        { name = "zip", source = "pacman", purpose = "Create ZIP archives from the terminal" },
+        { name = "unzip", source = "pacman", purpose = "Extract ZIP archives from the terminal" },
+        { name = "7zip", source = "pacman", purpose = "Create 7z archives and extract additional formats, including RAR" },
+
         -- Interactive suggestions, completion, navigation, and file previews.
         { name = "zsh-autosuggestions", source = "pacman", purpose = "Suggest commands from shell history" },
         { name = "zsh-syntax-highlighting", source = "pacman", purpose = "Highlight commands while typing" },

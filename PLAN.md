@@ -51,14 +51,14 @@ represent proposed work, including improvements to existing features.
 
 ### 1. Everyday applications and defaults — Add
 
-- [ ] Choose default image, PDF, archive, text, and calculator applications.
-- [ ] Add their packages and file associations, keeping Kitty, Zen, Nautilus,
+- [x] Choose imv for images, Evince for PDFs, Zed for ordinary text, and GNOME
+  Calculator. Use CLI tools for archives: tar, zip/unzip, and 7zip.
+- [x] Add their packages and file associations, keeping Kitty, Zen, Nautilus,
   Zed, and mpv for their existing roles.
-- [ ] Make default selection consistent across file opening, launchers, and
+- [x] Make default selection consistent across file opening, launchers, and
   shortcuts.
-- [ ] Cover the intended image and document MIME types. The current defaults
-  installer only expands audio/video wildcards; image associations need explicit
-  types or deliberate support in the installer.
+- [x] Cover supported image formats through desktop-entry MIME types, PDFs,
+  ordinary text, and common structured text formats.
 
 ### 2. File management — Improve
 
@@ -257,10 +257,10 @@ list.
 
 | Role | Preferred direction | Optional additions or upstream ideas |
 | --- | --- | --- |
-| Images | Loupe | imv for a minimal keyboard-driven viewer |
-| PDF reading | Papers | Keep one default reader |
+| Images | imv | Keep one default viewer |
+| PDF reading | Evince | Keep one default reader |
 | PDF editing | PDF Arranger | Study Signed for signature/text placement |
-| Archives | File Roller | Integrate archive actions with the file manager |
+| Archives | tar, zip/unzip, and 7zip | Keep archive handling in CLI tools |
 | Files | Keep Nautilus and Yazi | Sushi, GVFS, thumbnails, removable-drive handling |
 | Storage | GNOME Disks | Baobab or Disktree for disk usage |
 | Calculator and time | GNOME Calculator; keep Luna's calendar | GNOME Clocks; study Omacalc |

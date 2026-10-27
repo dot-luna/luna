@@ -21,9 +21,9 @@ local ok, result = pcall(function()
     assert(type(manifest) == "table", "Expected a key-value table")
     for key, value in pairs(manifest) do
         assert(type(key) == "string"
-            and (key == "terminal" or key == "audio/*" or key == "video/*"
+            and (key == "terminal" or key == "image/*" or key == "audio/*" or key == "video/*"
                 or key:match("^[%w!#$&^_.+%-]+/[%w!#$&^_.+%-]+$")),
-            "Keys must be terminal, a MIME type, audio/* or video/*")
+            "Keys must be terminal, a MIME type, image/*, audio/* or video/*")
         assert(type(value) == "string" and value:match("^[%w_][%w_.+%-]*%.desktop$"),
             "Values must be desktop entry IDs ending in .desktop")
     end

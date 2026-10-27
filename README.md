@@ -60,7 +60,7 @@ For SDDM, setup preserves existing PAM configuration and adds missing optional G
 
 Run `bash /path/to/luna/scripts/setup/11-setup-gnome-keyring.sh` to configure keyring integration separately. `--skip=keyring` skips this configuration step. Package installation and Luna's Hyprland startup hook remain separate from that skip choice.
 
-Default app choices live in `default/apps.lua`, using desktop entry IDs as values:
+Default app choices live in `default/apps.lua`, using desktop entry IDs as values. This excerpt shows the main roles; the full manifest also lists common source-code types:
 
 ```lua
 return {
@@ -70,18 +70,31 @@ return {
     ["x-scheme-handler/https"] = "zen.desktop",
     ["text/html"] = "zen.desktop",
     ["application/xhtml+xml"] = "zen.desktop",
+    ["image/*"] = "imv.desktop",
+    ["application/pdf"] = "org.gnome.Evince.desktop",
+    ["text/plain"] = "dev.zed.Zed.desktop",
+    ["text/markdown"] = "dev.zed.Zed.desktop",
+    ["application/x-zerosize"] = "dev.zed.Zed.desktop",
+    ["application/json"] = "dev.zed.Zed.desktop",
+    ["application/toml"] = "dev.zed.Zed.desktop",
+    ["application/yaml"] = "dev.zed.Zed.desktop",
+    ["application/xml"] = "dev.zed.Zed.desktop",
     ["audio/*"] = "mpv.desktop",
     ["video/*"] = "mpv.desktop",
 }
 ```
 
-The `terminal` key selects the preferred terminal for [xdg-terminal-exec](https://github.com/Vladimir-csp/xdg-terminal-exec). Other keys are MIME types or URL schemes such as `inode/directory` or `x-scheme-handler/https`. The special `audio/*` and `video/*` keys expand to matching types advertised by the installed application's desktop entry; exact MIME entries override these choices. The `defaults` step reads this manifest; edit it to change the choices without editing setup scripts. Unavailable applications warn and skip independently; invalid manifests or required file update failures stop the step.
+The `terminal` key selects the preferred terminal for [xdg-terminal-exec](https://github.com/Vladimir-csp/xdg-terminal-exec). Other keys are MIME types or URL schemes such as `inode/directory` or `x-scheme-handler/https`. The special `image/*`, `audio/*`, and `video/*` keys expand to matching types advertised by the installed application's desktop entry; exact MIME entries override these choices. The `defaults` step reads this manifest; edit it to change the choices without editing setup scripts. Unavailable applications warn and skip independently; invalid manifests or required file update failures stop the step.
 
 The terminal preference is written to `$XDG_CONFIG_HOME/xdg-terminals.list` and `hyprland-xdg-terminals.list`, plus any existing user lists for desktops in `XDG_CURRENT_DESKTOP`. The config directory defaults to `~/.config`; it is independent of `LUNA_CONFIG_DIR`. Other list contents, permissions, and symlinks are preserved. Reruns restore the selected terminal's priority without repeatedly adding entries.
 
-MIME preferences are written to `mimeapps.list`, `hyprland-mimeapps.list`, and existing current-desktop lists under `$XDG_CONFIG_HOME`, preserving unrelated associations. The bundled manifest selects Nautilus for folders, Zen for HTTP/HTTPS links and HTML/XHTML files, and mpv for its supported audio/video MIME types. Check them with `xdg-mime query default inode/directory`, `xdg-mime query default x-scheme-handler/https`, `xdg-mime query default audio/mpeg`, and `xdg-mime query default video/mp4`.
+MIME preferences are written to `mimeapps.list`, `hyprland-mimeapps.list`, and existing current-desktop lists under `$XDG_CONFIG_HOME`, preserving unrelated associations. The bundled manifest selects Nautilus for folders, Zen for HTTP/HTTPS links and HTML/XHTML files, imv for its supported image types, Evince for PDFs, Zed for ordinary text, common source code, and structured text files, and mpv for its supported audio/video types. Common source types have explicit preferences so command-line lookups and GIO file opening agree. Check selections with `xdg-mime query default image/png`, `xdg-mime query default application/pdf`, or `xdg-mime query default text/plain`.
 
-Use `--skip=defaults` to keep your terminal, browser, file-manager, and media-player preferences, or run `bash /path/to/luna/scripts/setup/13-set-default-apps.sh` to apply them separately. Check the selected terminal with `xdg-terminal-exec --print-id`; launch it with `xdg-terminal-exec`. This preference applies to callers using that mechanism. Luna's existing Kitty-specific launcher dialogs still launch Kitty directly.
+Use `--skip=defaults` to keep your existing application preferences, or run `bash /path/to/luna/scripts/setup/13-set-default-apps.sh` to apply them separately. Check the selected terminal with `xdg-terminal-exec --print-id`; launch it with `xdg-terminal-exec`. This preference applies to callers using that mechanism. Luna's existing Kitty-specific launcher dialogs still launch Kitty directly.
+
+Open GNOME Calculator from the app launcher, with **Super + Shift + Q**, or with the keyboard's calculator key. imv opens image files through the default association; its desktop entry intentionally stays out of the app launcher.
+
+Archives use CLI tools: `tar` and Arch's compression utilities, plus the bundled `zip`, `unzip`, and `7zip` packages. For example, extract with `tar -xf archive.tar.gz`, `unzip archive.zip`, or `7z x archive.7z` (also usable for RAR files).
 
 `luna terminal` and **Super + Enter** open the default terminal in the focused terminal's shell folder, falling back to home when another app is focused or the folder cannot be identified. Kitty's focused tab and pane are detected through its local socket; restart Kitty after installing the updated config to enable that lookup. See the [terminal command](src/luna-cli/terminal/README.md).
 
