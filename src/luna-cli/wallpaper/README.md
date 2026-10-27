@@ -12,8 +12,8 @@ luna wallpaper add --force ~/Pictures/mountain.jpg
 luna wallpaper add 'https://example.com/mountain.jpg' ~/Pictures/forest.png
 ```
 
-- Supports PNG, JPEG, WebP, BMP, and SVG.
-- Copies images into one library; folders include subfolders only with `-r`.
+- Supports local images, animated images, and videos; playback depends on Qt/mpv codecs.
+- Copies media into one library; folders include subfolders only with `-r`.
 - Skips identical files. Conflicting filenames require renaming or `--force`.
 - Accepts multiple HTTP(S) URLs alongside local files and folders. Use direct image links.
 - Uses curl, installing it through pacman if missing (sudo for normal users).
@@ -30,8 +30,8 @@ luna wallpaper random
 luna wallpaper current
 ```
 
-- Quickshell displays the image on all monitors, cropping to fill each screen.
-- Selection is saved after successful image loading.
+- Quickshell renders on the first available monitor using the TOML fit setting.
+- Selection is saved in `[wallpaper].source` after successful media loading, preserving comments and other options.
 - `random` avoids the current image when other images are available.
 - `current` prints the saved selection, even when the renderer is stopped.
 
@@ -52,9 +52,12 @@ luna wallpaper remove mountain.jpg forest.png
 
 ```sh
 luna wallpaper start
+luna wallpaper restart
 ```
 
 - Add this command to your compositor's startup commands to restore the saved wallpaper on login.
 - Repeated starts reuse Luna's running Quickshell instance.
-- Saved selection: `$XDG_CONFIG_HOME/luna/wallpaper`, defaulting to `~/.config/luna/wallpaper`.
-- Requires a Wayland compositor with layer shell support, Quickshell, `file`, and `xdg-utils`.
+- `restart` rereads the config and replaces old/new Luna wallpaper instances without stopping other Quickshell apps.
+- Config: `$LUNA_WALLPAPER_CONFIG`, otherwise `$XDG_CONFIG_HOME/luna/wallpaper.toml` (default `~/.config/luna/wallpaper.toml`). See [available options](../../wallpaper/config.toml).
+- Installation creates the user config. Standalone starts migrate the old `luna/wallpaper` selection only when TOML is absent.
+- Requires Wayland layer shell, Quickshell, TOMLKit, `file`, and `ffmpeg`; videos also require `mpvpaper`. Library `open` uses `xdg-utils`.

@@ -1,52 +1,51 @@
-# Sample for the planned wallpaper configuration; the renderer does not read it yet.
-# Planned user file: $XDG_CONFIG_HOME/luna/wallpaper.toml, or ~/.config/luna/wallpaper.toml.
-# Select a different file with LUNA_WALLPAPER_CONFIG=/path/to/wallpaper.toml.
-# Luna supplies defaults for omitted options. Settings and manual edits use the same file.
+# Available configuration options for Luna's wallpaper.
+# Reference for the user-managed TOML file; the app does not load or copy this file automatically.
+# Location: $XDG_CONFIG_HOME/luna/wallpaper.toml; XDG_CONFIG_HOME defaults to ~/.config.
+# LUNA_WALLPAPER_CONFIG=/path/to/wallpaper.toml overrides this location.
+# Missing or unsupported option values use their defaults; unknown options are ignored.
+# Settings and manual edits use the same file.
+# Config is read once at startup. Restart the wallpaper app after editing it.
 
 [wallpaper]
-# Use an absolute media path, or a path relative to the user configuration file.
+# Use an absolute media path; "" (the default) selects only the background color.
+# Media type is detected from its contents, so no type option is needed.
 source = "/path/to/wallpaper.jpg"
-# auto detects the media type; explicit choices: image, animated, video.
-# Examples: static PNG/JPEG, animated GIF/WebP, and MP4/WebM video.
-# Actual format and codec support will depend on the playback backend.
-type = "auto"
-# fill crops to cover; fit keeps the whole image; stretch ignores aspect ratio.
-# center uses the original size; tile repeats the image.
-fit = "fill"
-# Visible around media that does not cover its output.
+
+# Values:
+# fill: preserve aspect ratio and crop to cover the output.
+# fit: preserve aspect ratio and show the whole image, leaving space where needed.
+# stretch: fill the output without preserving aspect ratio.
+# center (default): keep the original size, centered; crop anything outside the output.
+# tile: repeat images at their original size; videos use center instead.
+fit = "center"
+
+# Values: a hex color in #RRGGBB format; defaults to #000000 and fills uncovered areas.
 background_color = "#000000"
-# Empty means all connected outputs. Otherwise, list connector names such as eDP-1.
-outputs = []
 
 [playback]
-# These options apply to animated images and videos; audio applies only to videos.
-loop = true
-muted = true
-paused = false
-# Suspend playback while its output is disabled or asleep.
+# Values: true suspends animated/video playback while its output is disabled or
+# asleep and resumes it when active; false keeps playback running. Default: true.
 pause_when_output_inactive = true
-# auto prefers hardware decoding when available; software forces CPU decoding.
-decoding = "auto"
 
 [transition]
-# none switches immediately; fade blends between wallpapers.
+# Values: none switches immediately; fade (default) blends images. Videos switch immediately.
 type = "fade"
+
+# Values: integer milliseconds from 0 to 2147483647; default 200. Zero switches immediately.
+# Ignored when type = "none".
 duration_ms = 200
 
-# Optional overrides use compositor output names and inherit omitted global values.
-# Uncomment an example to give that output different media or display settings.
+# Currently only the first available monitor uses the global settings.
+# Per-monitor overrides are reserved for future support and are ignored for now.
+# They use compositor connector names and accept the same values as global options.
 # [outputs."eDP-1".wallpaper]
 # source = "/path/to/laptop-wallpaper.png"
-# type = "image"
 # fit = "fit"
 # background_color = "#101010"
 #
 # [outputs."DP-1".wallpaper]
 # source = "/path/to/live-wallpaper.webm"
-# type = "video"
 # fit = "fill"
 #
 # [outputs."DP-1".playback]
-# loop = true
-# muted = true
-# paused = false
+# pause_when_output_inactive = true

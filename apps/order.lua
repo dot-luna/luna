@@ -3,6 +3,7 @@
 return {
     "kitty",
     "mpv",
+    "luna-wallpaper",
     "starship",
     "zsh",
     "zen",

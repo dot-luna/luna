@@ -7,6 +7,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import threading
+import tomllib
 import unittest
 
 
@@ -22,8 +23,10 @@ class WallpaperTests(unittest.TestCase):
         self.bin = self.root / 'bin'
         self.bin.mkdir()
         self.library = self.root / 'data/luna/wallpapers'
-        self.selection = self.root / 'config/luna/wallpaper'
+        self.selection = self.root / 'config/luna/wallpaper.toml'
+        self.legacy = self.root / 'config/luna/wallpaper'
         self.env = dict(os.environ, PATH=str(self.bin) + ':' + os.environ['PATH'],
+                        HOME=str(self.root / 'home'), LUNA_WALLPAPER_CONFIG='',
                         XDG_DATA_HOME=str(self.root / 'data'),
                         XDG_CONFIG_HOME=str(self.root / 'config'),
                         WAYLAND_DISPLAY='test', TEST_ROOT=str(self.root))
@@ -35,6 +38,12 @@ with (root / 'commands').open('a') as out:
     out.write(json.dumps(sys.argv[1:]) + '\\n')
 if sys.argv[-1] == 'status':
     print('error' if (root / 'fail').exists() else 'ready')
+elif sys.argv[1:4] == ['list', '-a', '-j']:
+    print((root / 'instances').read_text() if (root / 'instances').exists() else '[]')
+elif sys.argv[1:3] == ['kill', '-i']:
+    path = root / 'instances'
+    remaining = [item for item in json.loads(path.read_text()) if item['id'] != sys.argv[3]]
+    path.write_text(json.dumps(remaining))
 '''
         for tool in ('qs', 'xdg-open'):
             path = self.bin / tool
@@ -50,6 +59,12 @@ if sys.argv[-1] == 'status':
                                 env=self.env, input=answer, capture_output=True, text=True)
         self.assertEqual(result.returncode == 0, ok, result.stdout + result.stderr)
         return result.stdout
+
+    def saved_source(self, path=None):
+        return tomllib.loads((path or self.selection).read_text())['wallpaper']['source']
+
+    def commands(self):
+        return [json.loads(line) for line in (self.root / 'commands').read_text().splitlines()]
 
     def test_library_and_explorer(self):
         self.assertEqual(self.cli('dir').strip(), str(self.library))
@@ -95,14 +110,186 @@ if sys.argv[-1] == 'status':
         self.assertIn('* ' + saved, self.cli('list'))
         self.cli('remove', self.a.name, ok=False, answer='y\n')
         self.cli('random')
-        self.assertEqual(self.selection.read_text().strip(), str(self.library / self.b.name))
+        self.assertEqual(self.saved_source(), str(self.library / self.b.name))
+        before = self.selection.read_bytes()
         (self.root / 'fail').touch()
         self.cli('set', self.a, ok=False)
-        self.assertEqual(self.selection.read_text().strip(), str(self.library / self.b.name))
+        self.assertEqual(self.selection.read_bytes(), before)
+        self.assertEqual(self.commands()[-1][-2:], ['set', str(self.library / self.b.name)])
         (self.root / 'fail').unlink()
         self.cli('set', self.a)
-        self.assertEqual(self.selection.read_text().strip(), str(self.a))
+        self.assertEqual(self.saved_source(), str(self.a))
         self.cli('start')
+
+    def test_toml_comments_options_and_symlink_are_preserved(self):
+        target = self.root / "user settings 'quoted'.toml"
+        original = '''# My wallpaper settings
+[wallpaper]
+source = "/old.svg" # Current image
+fit = "fit"
+background_color = "#123456"
+
+[outputs."DP-1".wallpaper]
+source = "/reserved.png"
+
+[custom]
+future = true # Keep unknown options
+'''
+        target.write_text(original)
+        target.chmod(0o640)
+        self.selection.parent.mkdir(parents=True)
+        self.selection.symlink_to(target)
+        self.cli('set', self.a)
+        self.assertTrue(self.selection.is_symlink())
+        self.assertEqual(self.saved_source(), str(self.a))
+        self.assertEqual(target.stat().st_mode & 0o777, 0o640)
+        after = target.read_text()
+        for text in ('# My wallpaper settings', '# Current image', 'fit = "fit"',
+                     'background_color = "#123456"', '[outputs."DP-1".wallpaper]',
+                     'source = "/reserved.png"', 'future = true # Keep unknown options'):
+            self.assertIn(text, after)
+        self.assertEqual(list(target.parent.glob('.wallpaper-*')), [])
+
+    def test_explicit_config_and_empty_environment_fallbacks(self):
+        explicit = self.root / "config with ' quotes/wallpaper.toml"
+        self.env['LUNA_WALLPAPER_CONFIG'] = str(explicit)
+        self.cli('set', self.a)
+        self.assertEqual(self.saved_source(explicit), str(self.a))
+        self.assertFalse(self.selection.exists())
+        self.assertEqual(self.cli('current').strip(), str(self.a))
+
+        self.env.update(LUNA_WALLPAPER_CONFIG='', XDG_CONFIG_HOME='', XDG_DATA_HOME='')
+        self.cli('set', self.b)
+        default = self.root / 'home/.config/luna/wallpaper.toml'
+        self.assertEqual(self.saved_source(default), str(self.b))
+        self.assertEqual(self.cli('dir').strip(), str(self.root / 'home/.local/share/luna/wallpapers'))
+
+    def test_legacy_selection_migrates_only_without_toml(self):
+        self.legacy.parent.mkdir(parents=True)
+        self.legacy.write_text(str(self.a) + '\n')
+        self.assertEqual(self.cli('current').strip(), str(self.a))
+        self.assertFalse(self.selection.exists())
+        self.cli('start')
+        self.assertEqual(self.saved_source(), str(self.a))
+        self.assertEqual(self.legacy.read_text(), str(self.a) + '\n')
+        self.selection.write_text('[wallpaper]\nsource = ""\n')
+        self.cli('current', ok=False)
+        self.cli('start')
+        self.assertEqual(self.saved_source(), '')
+
+    def test_bad_config_or_failed_media_never_replaces_user_data(self):
+        self.selection.parent.mkdir(parents=True)
+        self.selection.write_text('[wallpaper\nsource = broken')
+        before = self.selection.read_bytes()
+        self.cli('set', self.a, ok=False)
+        self.assertEqual(self.selection.read_bytes(), before)
+        self.assertFalse((self.root / 'commands').exists())
+
+        # Start still lets the shell report malformed TOML and show its dark fallback.
+        self.cli('start')
+        self.assertIn('--daemonize', self.commands()[-1])
+        self.assertEqual(self.selection.read_bytes(), before)
+
+        self.selection.unlink()
+        (self.root / 'fail').touch()
+        self.cli('set', self.a, ok=False)
+        self.assertFalse(self.selection.exists())
+        self.assertEqual(self.commands()[-1][-2:], ['set', ''])
+
+    def test_repo_reference_is_not_rewritten_through_symlink(self):
+        reference = REPO / 'src/wallpaper/config.toml'
+        before = reference.read_bytes()
+        self.selection.parent.mkdir(parents=True)
+        self.selection.symlink_to(reference)
+        previous = self.cli('current').strip()
+        self.cli('set', self.a, ok=False)
+        self.assertEqual(reference.read_bytes(), before)
+        self.assertTrue(self.selection.is_symlink())
+        self.assertEqual(self.commands()[-1][-2:], ['set', previous])
+
+    def test_restart_stops_only_old_and_new_wallpaper_instances(self):
+        instances = [
+            {'id': 'old-wallpaper', 'config_path': str(REPO / 'src/wallpaper/shell.qml')},
+            {'id': 'new-wallpaper', 'config_path': str(REPO / 'src/wallpaper/src/shell.qml')},
+            {'id': 'bar', 'config_path': str(REPO / 'src/luna-bar/shell.qml')},
+            {'id': 'other-wallpaper', 'config_path': '/other/checkout/src/wallpaper/shell.qml'},
+        ]
+        (self.root / 'instances').write_text(json.dumps(instances))
+        self.cli('restart')
+        commands = self.commands()
+        self.assertEqual([c for c in commands if c[0] == 'kill'],
+                         [['kill', '-i', 'old-wallpaper'], ['kill', '-i', 'new-wallpaper']])
+        self.assertEqual(json.loads((self.root / 'instances').read_text()), instances[2:])
+        self.assertEqual(commands[-1][0], '-p')
+        self.assertEqual(Path(commands[-1][1]).resolve(), REPO / 'src/wallpaper/src/shell.qml')
+        self.assertIn('--no-duplicate', commands[-1])
+
+    def test_local_animations_videos_and_mislabeled_images(self):
+        gif = self.root / 'animation.gif'
+        gif.write_bytes(b'GIF89a\x01\x00\x01\x00\x80\x00\x00\x00\x00\x00\xff\xff\xff'
+                        b',\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02D\x01\x00;')
+        video = self.root / 'movie.mp4'
+        video.write_bytes(b'\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom')
+        mislabeled = self.root / 'image.blob'
+        mislabeled.write_text(SVG)
+        self.cli('add', gif, video)
+        for media in (gif, video, mislabeled):
+            self.cli('set', media)
+            self.assertEqual(self.saved_source(), str(media))
+
+    def test_imported_media_stays_accessible_without_a_known_extension(self):
+        media = [self.root / 'extensionless', self.root / 'image.blob']
+        for path in media:
+            path.write_text(SVG)
+        self.cli('add', *media)
+
+        # MIME-validated imports must remain addressable by every library command.
+        listing = self.cli('list')
+        for path in media:
+            self.assertIn(path.name, listing)
+            self.cli('set', path.name)
+            self.assertEqual(self.saved_source(), str(self.library / path.name))
+        self.cli('random')
+        self.assertEqual(self.saved_source(), str(self.library / media[0].name))
+        self.cli('set', self.a)
+        self.cli('remove', *(path.name for path in media), answer='y\n')
+        self.assertEqual(list(self.library.iterdir()), [])
+
+    def test_renderer_deadlines_allow_slow_loading_and_remain_bounded(self):
+        # Stub process calls in Lua so the full timeout path takes no wall-clock minute.
+        script = '''
+local source = "/previous.svg"
+local status_calls, sleeps, writes, reverted = 0, 0, 0, false
+local mode = "slow"
+local common = {
+    available = function() return true end,
+    info = function() end,
+    run = function(args) if args[1] == "sleep" then sleeps = sleeps + 1 end end,
+    capture = function(args)
+        if args[#args] == "status" then
+            status_calls = status_calls + 1
+            return mode == "slow" and status_calls == 400 and "ready" or "loading", true
+        end
+        if args[#args - 1] == "set" and args[#args] == source then reverted = true end
+        return "", true
+    end,
+}
+local config = {
+    current = function() return source end,
+    migrate = function() error("apply must not rewrite config before media succeeds") end,
+    write = function() writes = writes + 1 end,
+}
+local backend = dofile(arg[1])(common, "/fake/shell.qml", config)
+backend.apply("/new.mp4")
+assert(status_calls == 400 and writes == 1 and sleeps == 399)
+mode, status_calls, sleeps, writes = "timeout", 0, 0, 0
+local ok = pcall(backend.apply, "/broken.mp4")
+assert(not ok and status_calls == 600 and sleeps == 600 and writes == 0 and reverted)
+'''
+        result = subprocess.run(['/usr/bin/lua', '-E', '-',
+                                 str(REPO / 'src/luna-cli/wallpaper/backend.lua')],
+                                input=script, env=self.env, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_url_downloads_and_cleanup(self):
         class Handler(BaseHTTPRequestHandler):

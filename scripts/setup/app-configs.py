@@ -104,7 +104,7 @@ def validate(app, config):
         preflight_file(destination, name)
     for connection in app["connections"]:
         kind = connection.get("type")
-        if kind not in ("kitty", "lua", "shell", "mpv", "zen"):
+        if kind not in ("kitty", "lua", "shell", "mpv", "zen", "wallpaper"):
             raise ValueError(f"Unknown app connection type: {kind}")
         if kind in ("kitty", "lua", "shell"):
             relative(connection["source"])
@@ -140,6 +140,8 @@ def connections(app, staging, destination):
                 writes.append(planned)
         elif kind == "mpv":
             writes.extend(helper("mpv-config").plan(staging, destination))
+        elif kind == "wallpaper":
+            writes.extend(helper("wallpaper-config").plan(staging, destination))
         elif kind == "zen":
             styles = {
                 "chrome": (staging / "generated/userChrome.css").read_text(),

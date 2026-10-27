@@ -7,6 +7,7 @@ only the listed apps, in that order:
 return {
     "kitty",
     "mpv",
+    "luna-wallpaper",
     "starship",
     "zsh",
     "zen",
@@ -94,6 +95,12 @@ target filename; `file_env` overrides the whole target path.
 | `shell` | A quoted `source` line, used by Zsh. |
 | `mpv` | Managed defaults in native config and bindings files; respects `MPV_HOME` and legacy paths. |
 | `zen` | Existing-profile discovery, CSS imports, and managed font/preferences in `user.js`. |
+| `wallpaper` | Seed a missing personal TOML from the selected theme; preserve existing user settings. |
+
+Luna wallpaper defaults live in `apps/luna-wallpaper/config/wallpaper.toml`.
+Setup creates `$XDG_CONFIG_HOME/luna/wallpaper.toml` (or `$LUNA_WALLPAPER_CONFIG`)
+once, keeping a legacy wallpaper selection when present. Later installs refresh
+the defaults under `$LUNA_CONFIG_DIR/luna-wallpaper/` and keep the personal file.
 
 mpv and Zen use their existing format-specific adapters without `source` or
 `target` fields. Starship has no connection: Zsh selects its installed config

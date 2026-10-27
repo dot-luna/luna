@@ -1,21 +1,22 @@
--- Wallpaper CLI commands share one library and one selection across all monitors.
+-- Wallpaper CLI commands share one media library and the renderer's user TOML config.
 return function(common, module_dir)
     local download = dofile(module_dir .. "/download.lua")(common)
     local files = dofile(module_dir .. "/files.lua")(common, download)
     local renderer = module_dir .. "/../../wallpaper/src/shell.qml"
-    local backend = dofile(module_dir .. "/backend.lua")(common, renderer)
+    local config = dofile(module_dir .. "/config.lua")(common, module_dir)
+    local backend = dofile(module_dir .. "/backend.lua")(common, renderer, config)
     local M = {}
 
     function M.register(parser)
         local wallpaper = parser:command("wallpaper w", "Manage wallpapers and Quickshell rendering.")
         wallpaper:require_command(false)
 
-        local add = wallpaper:command("add", "Add image URLs, local files, or folders to the library.")
-        add:argument("targets", "HTTP(S) URLs, image files, or folders"):args("+")
+        local add = wallpaper:command("add", "Add image URLs, local media, or folders to the library.")
+        add:argument("targets", "HTTP(S) image URLs, media files, or folders"):args("+")
         add:flag("-r --recursive", "Include subfolders")
         add:flag("--force", "Replace existing library images")
 
-        local set = wallpaper:command("set", "Apply an image by library name or file path.")
+        local set = wallpaper:command("set", "Apply wallpaper media by library name or file path.")
         set:argument("image")
 
         local remove = wallpaper:command("remove", "Preview and remove library images.")
@@ -27,6 +28,7 @@ return function(common, module_dir)
         wallpaper:command("dir", "Print the wallpaper library directory.")
         wallpaper:command("open", "Open the library in the default file explorer.")
         wallpaper:command("start", "Start the wallpaper renderer and restore the saved selection.")
+        wallpaper:command("restart", "Restart only Luna's wallpaper renderer and reread its config.")
         return wallpaper
     end
 
@@ -70,6 +72,8 @@ return function(common, module_dir)
             backend.apply(path)
         elseif options.start then
             backend.start()
+        elseif options.restart then
+            backend.restart()
         elseif options.remove then
             local paths, seen = {}, {}
             for _, name in ipairs(options.names) do

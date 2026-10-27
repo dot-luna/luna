@@ -234,7 +234,7 @@ end
         self.assertEqual((installed / "generated/options.conf").read_text(), "option=complete\n")
 
     def test_current_apps_config_step_never_runs_system_or_browser_extras(self):
-        # Restore the production order and all six app descriptors for this smoke test.
+        # Restore the production order and app descriptors for this smoke test.
         copy_app_setup(self.checkout)
         # Old installers and optional extras must never run from the config step.
         for name in ("hypr.sh", "kitty.sh", "mpv.sh", "starship.sh", "zsh.sh", "zen.sh", "zen-extensions.sh"):
@@ -264,7 +264,7 @@ end
         result = self.setup()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual({path.name for path in self.destination.parent.iterdir()},
-                         {"hypr", "kitty", "mpv", "starship", "zen", "zsh"})
+                         {"hypr", "kitty", "mpv", "luna-wallpaper", "wallpaper.toml", "starship", "zen", "zsh"})
         self.assertTrue((profile / "chrome/userChrome.css").is_file())
         self.assertFalse((self.home / "extra-ran").exists())
         self.assertFalse((self.home / "command-ran").exists())

@@ -1,0 +1,22 @@
+# Luna wallpaper defaults. Setup fills the selected theme's media and background.
+# The first install copies these settings to $XDG_CONFIG_HOME/luna/wallpaper.toml
+# (or $LUNA_WALLPAPER_CONFIG). Later installs keep that personal file unchanged.
+# Edit the personal file, then restart the wallpaper app to apply changes.
+
+[wallpaper]
+# Absolute media path; an empty string shows only the background color.
+source = "{{source}}"
+# fill crops; fit shows all; stretch changes aspect; center keeps original size;
+# tile repeats images (videos use center). Default: center.
+fit = "center"
+# #RRGGBB, initially taken from the selected theme.
+background_color = "{{background}}"
+
+[playback]
+# Pause animation/video while the output is inactive; true or false.
+pause_when_output_inactive = true
+
+[transition]
+# none or fade; videos switch immediately. Duration is milliseconds, 0–2147483647.
+type = "fade"
+duration_ms = 200

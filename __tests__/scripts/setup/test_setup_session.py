@@ -1,4 +1,4 @@
-"""Exercise session reload using fake compositor commands, never the live desktop."""
+"""Exercise session reload and wallpaper restart with fakes, never the live desktop."""
 
 import json
 import os
@@ -32,7 +32,7 @@ class SetupSessionTests(unittest.TestCase):
         self.env = dict(os.environ, PATH=str(self.bin), HOME=str(self.root / "home"),
                         TEST_SESSION_ROOT=str(self.root), BASH_ENV="", NO_COLOR="1",
                         HYPRLAND_INSTANCE_SIGNATURE="fixture-session")
-        for name in ("TEST_RELOAD_STATUS", "TEST_TIMEOUT_STATUS"):
+        for name in ("TEST_RELOAD_STATUS", "TEST_TIMEOUT_STATUS", "TEST_WALLPAPER_STATUS", "WAYLAND_DISPLAY"):
             self.env.pop(name, None)
         backend = f"#!{sys.executable}\n" + '''
 import json, os, pathlib, sys
@@ -66,6 +66,21 @@ sys.exit(int(os.environ.get("TEST_RELOAD_STATUS", "0")))
     def calls(self):
         path = self.root / "calls.jsonl"
         return [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
+
+    def enable_wallpaper(self):
+        """Provide a checkout-local CLI recorder; no real Quickshell process is available."""
+        self.env["WAYLAND_DISPLAY"] = "fixture-wayland"
+        command = self.bin / "qs"
+        command.write_text("#!/bin/sh\nexit 99\n")
+        command.chmod(0o755)
+        cli = self.checkout / "src/luna-cli/main.lua"
+        cli.parent.mkdir(parents=True)
+        cli.write_text('''local path = os.getenv("TEST_SESSION_ROOT") .. "/wallpaper-calls"
+local output = assert(io.open(path, "a"))
+output:write(table.concat(arg, " "), "\\n")
+output:close()
+os.exit(tonumber(os.getenv("TEST_WALLPAPER_STATUS") or "0"))
+''')
 
     def test_active_session_reloads_without_input_and_streams_output(self):
         result = self.setup()
@@ -119,6 +134,46 @@ sys.exit(int(os.environ.get("TEST_RELOAD_STATUS", "0")))
             ["timeout", "--kill-after=2s", "10s", "hyprctl", "reload"],
             ["hyprctl", "reload"],
         ])
+
+    def test_active_session_restarts_wallpaper_using_this_checkout(self):
+        self.enable_wallpaper()
+        result = self.setup("ignored")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Wallpaper renderer restarted", result.stdout)
+        self.assertEqual((self.root / "wallpaper-calls").read_text(), "wallpaper restart\n")
+        self.assertEqual(self.calls()[-1], ["hyprctl", "reload"])
+
+    def test_wallpaper_failure_warns_without_failing_setup(self):
+        self.enable_wallpaper()
+        self.env["TEST_WALLPAPER_STATUS"] = "1"
+        result = self.setup()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("luna wallpaper restart", result.stderr)
+        self.assertNotIn("Wallpaper renderer restarted", result.stdout)
+
+    def test_wallpaper_starts_even_when_hyprland_reload_fails(self):
+        self.enable_wallpaper()
+        self.env["TEST_RELOAD_STATUS"] = "1"
+        result = self.setup()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("could not be reloaded", result.stderr)
+        self.assertEqual((self.root / "wallpaper-calls").read_text(), "wallpaper restart\n")
+
+    def test_no_wayland_display_skips_wallpaper_restart(self):
+        self.enable_wallpaper()
+        self.env["WAYLAND_DISPLAY"] = ""
+        result = self.setup()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("next desktop login", result.stdout)
+        self.assertFalse((self.root / "wallpaper-calls").exists())
+
+    def test_missing_renderer_skips_wallpaper_restart(self):
+        self.enable_wallpaper()
+        (self.bin / "qs").unlink()
+        result = self.setup()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("next desktop login", result.stdout)
+        self.assertFalse((self.root / "wallpaper-calls").exists())
 
 
 if __name__ == "__main__":

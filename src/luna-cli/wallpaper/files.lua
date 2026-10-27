@@ -2,19 +2,23 @@
 return function(common, download)
     local M = {}
     local home = assert(os.getenv("HOME"), "HOME is required")
-    M.directory = (os.getenv("XDG_DATA_HOME") or home .. "/.local/share") .. "/luna/wallpapers"
-    local extensions = { png = true, jpg = true, jpeg = true, webp = true, bmp = true, svg = true }
+    local data_home = os.getenv("XDG_DATA_HOME")
+    M.directory = (data_home and data_home ~= "" and data_home or home .. "/.local/share") .. "/luna/wallpapers"
+    local extensions = { png = true, jpg = true, jpeg = true, webp = true, bmp = true, svg = true,
+        gif = true, apng = true, avif = true, mp4 = true, m4v = true, webm = true,
+        mkv = true, mov = true, avi = true, ogv = true }
 
     local function supported(path)
         return extensions[path:lower():match("%.(%w+)$")] == true
     end
 
     function M.validate(path)
-        assert(common.succeeds({ "test", "-f", path }), "Image file not found: " .. path)
-        assert(not path:find("[\r\n]"), "Wallpaper paths cannot contain line breaks")
-        assert(supported(path), "Supported formats: PNG, JPEG, WebP, BMP, SVG")
+        assert(common.succeeds({ "test", "-f", path }), "Media file not found: " .. path)
+        assert(not path:find("[%z\1-\31]"), "Wallpaper paths cannot contain control characters")
+        -- Inspect actual bytes so set accepts images, animations, and videos regardless
+        -- of their extension. Folder scanning uses common extensions to skip other files.
         local mime, ok = common.capture({ "file", "--brief", "--mime-type", "--", path })
-        assert(ok and mime:match("^image/"), "Not an image: " .. path)
+        assert(ok and (mime:match("^image/") or mime:match("^video/")), "Not image or video media: " .. path)
     end
 
     function M.absolute(path)
@@ -23,7 +27,9 @@ return function(common, download)
         return output:gsub("\n$", "")
     end
 
-    local function scan(directory, recursive)
+    -- Folder imports filter common suffixes. The library includes every imported
+    -- file, since direct imports are validated by content and may have no suffix.
+    local function scan(directory, recursive, filter_extensions)
         local arguments = { "find", directory }
         if not recursive then
             table.insert(arguments, "-maxdepth")
@@ -36,7 +42,7 @@ return function(common, download)
         assert(ok, "Cannot scan folder: " .. directory)
         local paths = {}
         for path in output:gmatch("([^%z]+)%z") do
-            if supported(path) then
+            if not filter_extensions or supported(path) then
                 table.insert(paths, path)
             end
         end
@@ -73,7 +79,7 @@ return function(common, download)
             local source = M.absolute(input)
             local paths = { source }
             if common.succeeds({ "test", "-d", source }) then
-                paths = scan(source, options.recursive)
+                paths = scan(source, options.recursive, true)
                 assert(#paths > 0, "No supported images in folder: " .. input)
             end
 

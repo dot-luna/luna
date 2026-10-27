@@ -38,6 +38,7 @@ return {
         { name = "yazi", source = "pacman", purpose = "Terminal file manager" },
         { name = "nautilus", source = "pacman", purpose = "Graphical file manager" },
         { name = "mpv", source = "pacman", purpose = "Video and audio player" },
+        { name = "ffmpeg", source = "pacman", purpose = "Identify wallpaper media formats with ffprobe" },
 
         -- Desktop compositor, app portals, and custom Quickshell UI.
         { name = "hyprland", source = "pacman", purpose = "Wayland desktop compositor" },
@@ -129,6 +130,7 @@ return {
         { name = "github-cli", source = "pacman", purpose = "GitHub repository workflows" },
 
         -- AUR packages require a separate build/helper installation step.
+        { name = "mpvpaper", source = "aur", purpose = "Render video wallpapers with mpv on Wayland" },
         { name = "fzf-tab", source = "aur", purpose = "Select Zsh completions with a fuzzy menu" },
         { name = "zen-browser-bin", source = "aur", purpose = "Zen Browser prebuilt release" },
         { name = "t3code-nightly-bin", source = "aur", purpose = "T3 Code desktop app, prebuilt nightly release" },
