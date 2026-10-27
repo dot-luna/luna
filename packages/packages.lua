@@ -50,10 +50,7 @@ return {
         { name = "quickshell", source = "pacman", purpose = "Runtime for a custom bar, launcher, and desktop UI" },
         { name = "qt6-svg", source = "pacman", purpose = "Render SVG icons in the custom desktop UI" },
         { name = "qt6-imageformats", source = "pacman", purpose = "Decode additional wallpaper formats, including WebP" },
-        { name = "polkit", source = "pacman", purpose = "Desktop authorization backend; also needs an authentication agent" },
-
-        -- TODO: Replace this KDE agent with Luna's own Quickshell polkit UI.
-        { name = "polkit-kde-agent", source = "pacman", purpose = "Administrator password dialogs" },
+        { name = "polkit", source = "pacman", purpose = "Desktop authorization backend for Luna's authentication prompts" },
 
         -- Store application credentials through the desktop Secret Service.
         { name = "gnome-keyring", source = "pacman", purpose = "Store application passwords and provide Secret Service" },

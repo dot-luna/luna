@@ -1,9 +1,8 @@
 # Authentication prompts
 
-`luna auth start` imports the current Wayland session environment and starts the
-packaged KDE PolicyKit agent. Repeated starts keep the same service. `luna auth status`
-reports whether it is running.
+`luna auth` manages Luna's authentication agent and its user service.
 
-Hyprland starts it at login. The `polkit-kde-agent` package provides
-`plasma-polkit-agent.service`; administrator authentication stays inside its password
-dialog. Luna never reads or stores the password.
+Run `luna auth start` to activate it and `luna auth status` to check readiness.
+
+See [authentication documentation](../../luna-polkit/DOCS.md) for all commands,
+KDE replacement, and verification.

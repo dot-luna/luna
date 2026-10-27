@@ -193,7 +193,11 @@ The same actions are available under Luna's Trigger → Screenshot menu and thro
 
 Recordings save to `~/Videos/Recordings`; Trigger → Screen Recording and
 `luna record [region|screen|stop|toggle]` share the same worker and visible Stop control.
-The login hook also runs `luna auth start` for administrator password dialogs.
+The login hook also runs `luna auth start` for Luna's administrator password dialogs.
+Its dedicated user service replaces the KDE polkit agent after validating the new
+shell. `luna auth status` checks polkit registration; `restart` and `stop` control
+the agent. See [authentication](../../src/luna-polkit/DOCS.md#verify-in-a-desktop-session)
+for verification.
 
 ## Input and window rules
 

@@ -67,6 +67,13 @@ Package installation may upgrade the system and runs without package-manager con
 
 Core packages include Nautilus for graphical file browsing and Yazi for terminal file browsing. Setup leaves previously installed applications and their dependencies in place. Temporary build directories created during setup are removed when they are no longer needed.
 
+Luna provides its own themed administrator authentication prompts through
+Quickshell and polkit. Hyprland starts the agent at login; run `luna auth start`
+to activate it in the current desktop and `luna auth status` to check readiness.
+The KDE authentication agent is no longer a Luna dependency. See
+[authentication commands](src/luna-polkit/DOCS.md#commands) for service controls and
+verification.
+
 After the installation steps, setup replaces the installed Tokyo Night theme with the bundled copy and selects it, including on reruns. Theme setup failures warn and continue. It then installs app configurations, configures the keyring, links source directories, sets default applications, installs optional app extras, and reloads the configuration in an active Hyprland session.
 
 Core setup installs `gnome-keyring` and `libsecret`; main setup adds Seahorse (Passwords and Keys) for managing saved secrets. The `keyring` step selects GNOME Keyring through a user D-Bus service entry under `$XDG_DATA_HOME/dbus-1/services` (normally `~/.local/share/dbus-1/services`) and enables its user socket. Luna initializes its secrets and certificate components when Hyprland starts, publishing the display environment so graphical unlock prompts can open. Setup does not restart an existing secret-storage provider; log out and back in after installation.

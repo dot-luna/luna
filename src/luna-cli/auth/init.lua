@@ -1,28 +1,32 @@
--- Start the packaged authentication agent inside the current desktop session.
+-- Keep desktop authorization in its own supervised, themed Quickshell process.
 return function(common, directory)
+    local root = directory .. "/../../.."
+    local shell = dofile(root .. "/lib/quickshell.lua")(common, root,
+        directory .. "/../../luna-polkit/src/shell", "auth", "Luna authentication")
     local M = {}
 
     function M.register(parser)
-        local command = parser:command("auth", "Manage desktop administrator password prompts.")
-        command:argument("auth_action"):args("?"):default("start"):choices({ "start", "status" })
+        local command = parser:command("auth", "Manage Luna administrator password prompts.")
+        command:argument("auth_action", "Action"):args("?"):default("start")
+            :choices({ "start", "status", "stop", "restart", "serve" })
         return command
     end
 
     function M.run(options)
-        local unit = "plasma-polkit-agent.service"
-        if options.auth_action == "status" then
-            common.info(common.succeeds({ "systemctl", "--user", "is-active", "--quiet", unit }) and "running" or "stopped")
+        local action = options.auth_action or "start"
+        if action == "serve" then
+            shell.run("serve")
             return
         end
-        assert(os.getenv("WAYLAND_DISPLAY"), "Authentication prompts require a Wayland session")
-        local environment = { "systemctl", "--user", "import-environment" }
-        for _, name in ipairs({ "WAYLAND_DISPLAY", "DISPLAY", "XDG_CURRENT_DESKTOP", "XDG_SESSION_TYPE" }) do
-            if os.getenv(name) then
-                table.insert(environment, name)
-            end
+
+        local arguments = { "python", directory .. "/service.py", root, action }
+        if action == "start" or action == "restart" then
+            -- Resolve preferences before the service manager touches a working agent.
+            local snapshot = dofile(root .. "/lib/theme/shell.lua")(root).snapshot()
+            table.insert(arguments, 1, "LUNA_UI_THEME=" .. snapshot)
+            table.insert(arguments, 1, "env")
         end
-        common.run(environment)
-        common.run({ "systemctl", "--user", "start", unit })
+        common.run(arguments)
     end
 
     return M

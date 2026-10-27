@@ -14,7 +14,7 @@ every optional application. Work through it one stage at a time.
 - Keep the default installation lean: one preferred application per everyday
   role, with specialist tools available as optional installs.
 - Prefer GTK/GNOME applications or Luna's own UI. Avoid adding KDE components.
-  Replace the temporary `polkit-kde-agent` when Luna's own agent is ready.
+  Luna's own authentication agent replaces the KDE polkit UI.
 - Make important, frequent actions work entirely from the keyboard. Keep visible
   focus, discoverable shortcuts, and useful feedback.
 - Use modern, subtle animations with a natural spring feel where appropriate.
@@ -166,8 +166,8 @@ represent proposed work, including improvements to existing features.
 
 ### 15. Authentication and locking — Improve / Add
 
-- [ ] Build Luna's own polkit UI and replace the temporary KDE agent once the
-  replacement works reliably.
+- [x] Build Luna's own polkit UI with a dedicated authentication service,
+  keyboard controls, and checked handover from the KDE agent.
 - [ ] Refine the lock screen's appearance, feedback, and keyboard interaction.
 - [ ] Keep GNOME Keyring integration and consider optional fingerprint/security-key
   support with clear limits for each authentication flow.
