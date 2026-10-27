@@ -40,6 +40,13 @@ For the downloaded installer, pass the same option after `bash -s --`. It also w
 
 Only the named steps are skipped; the others keep their normal order and behavior. Dependencies needed by remaining steps must already be available when their installation step is skipped. System checks, Git bootstrap, and checkout preparation always run. The `mise` step also configures shell startup, even if the later `apps` step is skipped.
 
+The `lua` step installs system Lua, argparse, and `python-tomlkit` for parsing and
+editing TOML while preserving comments. TOML helpers use `/usr/bin/python3`,
+independently of mise. Run `bash /path/to/luna/scripts/setup/1-setup-lua.sh` to
+prepare just these dependencies; it skips installation when they already load.
+This installs TOML support for development; existing Luna preferences keep their
+current formats until their configuration helpers are migrated.
+
 The installer uses `LUNA_INSTALL_DIR` for the checkout, defaulting to `~/.local/src/luna` when unset or empty. Set it to an absolute path to use a coding checkout, for example `LUNA_INSTALL_DIR="$HOME/coding/luna" bash install.sh --ref dev`. It installs dependencies and fonts, then links source directories into `~/.local/src/` and the Luna launcher into `/usr/local/bin/luna`. The command uses the same checkout across shells without editing shell startup files. App setup installs Luna's Hyprland configuration and includes it from your personal Lua config. Run `luna --version` to check the installation.
 
 The `luna` command also respects `LUNA_INSTALL_DIR`, so `LUNA_INSTALL_DIR="$HOME/coding/luna" luna --version` uses your coding checkout. When unset or empty, it uses the checkout containing the launcher, following symlinks. Export the variable in your shell to use that checkout for subsequent commands.

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Bootstrap the system Lua runtime before Luna's Lua setup can run.
+# Bootstrap Lua and the TOML editor used by Luna's configuration helpers.
 # Invoke directly; package confirmations are automatic while sudo may authenticate.
 set -euo pipefail
 
@@ -18,8 +18,14 @@ lua_ready() {
     [[ -x /usr/bin/lua ]] && /usr/bin/lua -E -e 'require("argparse")' >/dev/null 2>&1
 }
 
-if lua_ready; then
-    luna_info "Lua and argparse are already available; skipping setup."
+# Use system Python in isolation so mise and user modules cannot hide a missing
+# package. TOMLKit provides both parsing and edits that preserve user comments.
+toml_ready() {
+    [[ -x /usr/bin/python3 ]] && /usr/bin/python3 -I -c 'import tomlkit' >/dev/null 2>&1
+}
+
+if lua_ready && toml_ready; then
+    luna_info "Lua, argparse, and TOMLKit are already available; skipping setup."
     exit 0
 fi
 
@@ -28,7 +34,7 @@ installer=(pacman)
 
 if (( EUID != 0 )); then
     if ! luna_available sudo; then
-        luna_error "sudo is missing. Run this script as root to bootstrap Lua."
+        luna_error "sudo is missing. Run this script as root to prepare Lua and TOMLKit."
         exit 1
     fi
 
@@ -37,8 +43,8 @@ fi
 
 # Refresh packages with a full upgrade, keeping Arch dependencies consistent.
 # Keep current versions without reinstalling them.
-luna_info "Setting up Lua and argparse (includes a system upgrade)."
-luna_run "${installer[@]}" -Syu --noconfirm --needed -- lua lua-argparse
+luna_info "Setting up Lua, argparse, and TOMLKit (includes a system upgrade)."
+luna_run "${installer[@]}" -Syu --noconfirm --needed -- lua lua-argparse python-tomlkit
 
 # Verify the runtime rather than assuming a successful transaction is enough.
 if ! lua_ready; then
@@ -46,4 +52,9 @@ if ! lua_ready; then
     exit 1
 fi
 
-luna_success "Lua and argparse are ready."
+if ! toml_ready; then
+    luna_error "Setup failed: system Python cannot load TOMLKit."
+    exit 1
+fi
+
+luna_success "Lua, argparse, and TOMLKit are ready."

@@ -266,8 +266,8 @@ print("Fixture " + tool + " package output")
                 self.assertFalse((self.root / "calls.jsonl").exists())
 
     def test_bootstrap_helpers_ignore_arguments_without_reinstalling_ready_dependencies(self):
-        self.mock_system_lua_probe()
-        for name in ("lua", "lua-argparse"):
+        self.mock_system_runtime_probes()
+        for name in ("lua", "lua-argparse", "python-tomlkit"):
             (self.installed / name).touch()
         for step in ("1-setup-lua.sh", "4-setup-aur-helper.sh"):
             with self.subTest(step=step):
@@ -319,44 +319,96 @@ print("Fixture " + tool + " package output")
         self.assertEqual(self.calls("yay"), [])
         self.assertNotIn("Dependencies ready", result.stdout)
 
-    def mock_system_lua_probe(self):
-        # Bash resolves this exact function name even for an absolute command.
-        # The fake package install makes the second probe pass without modifying /usr.
-        environment = self.root / "lua-probe-env"
+    def mock_system_runtime_probes(self):
+        # Bash resolves these exact function names even for absolute commands.
+        # Probe the fake install and require isolation from user interpreter settings.
+        environment = self.root / "runtime-probe-env"
         environment.write_text('''
 /usr/bin/lua() {
+    [[ "$#" -eq 3 && "$1" == "-E" && "$2" == "-e" && "$3" == 'require("argparse")' ]] || return 1
     [[ -f "$TEST_PACKAGE_ROOT/installed/lua" && -f "$TEST_PACKAGE_ROOT/installed/lua-argparse" ]]
+}
+/usr/bin/python3() {
+    [[ "$#" -eq 3 && "$1" == "-I" && "$2" == "-c" && "$3" == 'import tomlkit' ]] || return 1
+    [[ -f "$TEST_PACKAGE_ROOT/installed/python-tomlkit" ]]
 }
 ''')
         self.env["BASH_ENV"] = str(environment)
 
-    def test_lua_bootstrap_disables_package_confirmations(self):
-        self.mock_system_lua_probe()
+    def test_runtime_bootstrap_disables_package_confirmations(self):
+        self.mock_system_runtime_probes()
         result = self.run_setup("1-setup-lua.sh")
         self.assertEqual(result.returncode, 0, result.stderr)
         operation = next(call for call in self.calls("pacman") if "-Syu" in call)
         self.assertIn("--noconfirm", operation)
         self.assertIn("--needed", operation)
-        self.assertEqual(operation[-2:], ["lua", "lua-argparse"])
+        self.assertEqual(operation[operation.index("--") + 1:], ["lua", "lua-argparse", "python-tomlkit"])
 
-    def test_working_system_lua_skips_package_setup(self):
-        self.mock_system_lua_probe()
-        for name in ("lua", "lua-argparse"):
+    def test_working_system_runtimes_skip_package_setup_without_sudo(self):
+        self.mock_system_runtime_probes()
+        for name in ("lua", "lua-argparse", "python-tomlkit"):
             (self.installed / name).touch()
+        (self.bin / "sudo").unlink()
         result = self.run_setup("1-setup-lua.sh")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("already available", result.stdout)
         self.assertEqual(self.calls("pacman"), [])
         self.assertEqual(self.calls("sudo"), [])
 
+    def test_either_missing_runtime_triggers_package_setup(self):
+        self.mock_system_runtime_probes()
+        dependencies = ("lua", "lua-argparse", "python-tomlkit")
+        for missing in dependencies:
+            with self.subTest(missing=missing):
+                for name in dependencies:
+                    (self.installed / name).touch()
+                (self.installed / missing).unlink()
+                (self.root / "calls.jsonl").unlink(missing_ok=True)
+
+                result = self.run_setup("1-setup-lua.sh", "--unknown", "--help", "extra")
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                operation = next(call for call in self.calls("pacman") if "-Syu" in call)
+                self.assertEqual(operation[operation.index("--") + 1:], list(dependencies))
+                self.assertTrue((self.installed / missing).exists())
+
     def test_lua_bootstrap_checks_runtime_after_successful_package_command(self):
-        self.mock_system_lua_probe()
+        self.mock_system_runtime_probes()
         self.env["TEST_SKIP_INSTALL"] = "1"
         result = self.run_setup("1-setup-lua.sh")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("system Lua cannot load argparse", result.stderr)
         self.assertTrue(any("-Syu" in call for call in self.calls("pacman")))
-        self.assertNotIn("Lua and argparse are ready", result.stdout)
+        self.assertNotIn("are ready", result.stdout)
+
+    def test_toml_bootstrap_checks_import_after_successful_package_command(self):
+        self.mock_system_runtime_probes()
+        self.env["TEST_SKIP_PACKAGES"] = "python-tomlkit"
+        result = self.run_setup("1-setup-lua.sh")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("tomlkit", result.stderr.lower())
+        self.assertTrue(any("-Syu" in call for call in self.calls("pacman")))
+        self.assertTrue((self.installed / "lua-argparse").exists())
+        self.assertNotIn("are ready", result.stdout)
+
+    def test_runtime_bootstrap_propagates_package_failure(self):
+        self.mock_system_runtime_probes()
+        self.env["TEST_PACKAGE_FAILURE"] = "17"
+        result = self.run_setup("1-setup-lua.sh")
+        self.assertEqual(result.returncode, 17, result.stdout + result.stderr)
+        self.assertTrue(any("-Syu" in call for call in self.calls("pacman")))
+        self.assertEqual(list(self.installed.iterdir()), [])
+        self.assertNotIn("are ready", result.stdout)
+
+    @unittest.skipIf(os.geteuid() == 0, "Root bootstrap does not need sudo")
+    def test_missing_tomlkit_requires_sudo_for_a_regular_user(self):
+        self.mock_system_runtime_probes()
+        for name in ("lua", "lua-argparse"):
+            (self.installed / name).touch()
+        (self.bin / "sudo").unlink()
+        result = self.run_setup("1-setup-lua.sh")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("sudo is missing", result.stderr)
+        self.assertEqual(self.calls("pacman"), [])
 
     @unittest.skipIf(os.geteuid() == 0, "AUR bootstrap requires a real non-root user")
     def test_missing_aur_build_prerequisites_warn_and_skip_without_installing(self):

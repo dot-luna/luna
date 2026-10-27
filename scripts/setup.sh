@@ -24,7 +24,7 @@ for argument in "$@"; do
                 name=${remaining%%,*}
                 case "$name" in
                     # Each --skip name omits the corresponding work below:
-                    # lua: prepare Lua and argparse.
+                    # lua: prepare Lua, argparse, and TOMLKit.
                     # core: install setup tools and desktop dependencies.
                     # mise: install development tools and configure mise in shells.
                     # aur: prepare the AUR helper.
@@ -83,8 +83,8 @@ run_setup_step() {
 # Resolve the app destination before package installation begins.
 luna_resolve_config_dir
 
-# Step 1: prepare Lua and argparse before running any Lua setup logic.
-run_setup_step lua '1/15 — Prepare Lua' '' bash "$steps_dir/1-setup-lua.sh"
+# Step 1: prepare Lua and configuration dependencies before the remaining setup.
+run_setup_step lua '1/15 — Prepare Lua and TOMLKit' '' bash "$steps_dir/1-setup-lua.sh"
 
 # Step 2: install official setup tools and desktop dependencies.
 run_setup_step core '2/15 — Install core packages' '' bash "$steps_dir/2-install-core-deps.sh"

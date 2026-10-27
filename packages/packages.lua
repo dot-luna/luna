@@ -5,12 +5,11 @@
 -- Extra is reserved for optional additions outside the main setup.
 -- Package managers resolve transitive dependencies automatically.
 --
--- scripts/setup/1-setup-lua.sh bootstraps lua and lua-argparse before this file
--- can be read. Other core tools will be handled by the main setup later.
+-- scripts/setup/1-setup-lua.sh bootstraps lua, lua-argparse, and python-tomlkit
+-- before this file can be read. Other core tools are installed in the next step.
 return {
     -- Never put AUR packages in core: every core entry must use pacman.
-    -- Only Lua and argparse are installed by scripts/setup/1-setup-lua.sh; keep those two
-    -- entries in sync with that script.
+    -- Keep the Lua, argparse, and TOMLKit bootstrap entries in sync with step 1.
     core = {
         -- Bootstrap, repository, and package build tools.
         { name = "bash", source = "pacman", purpose = "Run the bootstrap entry script" },
@@ -20,6 +19,7 @@ return {
         { name = "curl", source = "pacman", purpose = "Download wallpapers from HTTP and HTTPS URLs" },
         { name = "lua", source = "pacman", purpose = "Run Lua setup scripts and read this manifest" },
         { name = "lua-argparse", source = "pacman", purpose = "Parse Luna CLI commands and generate help" },
+        { name = "python-tomlkit", source = "pacman", purpose = "Parse TOML and edit configuration while preserving comments" },
         { name = "base-devel", source = "pacman", purpose = "Build AUR packages when needed" },
         { name = "mise", source = "pacman", purpose = "Manage development tools and runtime versions" },
         { name = "ripgrep", source = "pacman", purpose = "Search files from the terminal" },
