@@ -24,6 +24,11 @@
 All modules are copied into the installed app config. Runtime toggles do not rewrite
 these files or personal overrides.
 
+Autostart runs `luna screensaver start` once at session startup. The hidden
+controller manages idle timers while a separate bundled or custom shell supplies
+screensaver visuals. Reloading Hyprland config does not restart the controller.
+See the [screensaver guide](../../src/screensaver/DOCS.md) for config and APIs.
+
 ## Load
 
 Requires Hyprland 0.55 or newer with Lua configuration support.

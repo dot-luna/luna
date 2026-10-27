@@ -1,8 +1,8 @@
 pragma Singleton
 import QtQuick
-import Quickshell.Io
 
-// Each UI reads the same session state from the screensaver's CLI bridge.
+// Widget state for Stay awake. The shared Screensaver API owns transport and the
+// session controller owns the value; this adapter tracks only its own requests.
 QtObject {
     id: awake
 
@@ -12,7 +12,7 @@ QtObject {
     readonly property string error: actionError || statusError
     property string actionError: ""
     property string statusError: ""
-    readonly property string lunaCli: decodeURIComponent(Qt.resolvedUrl("../../../bin/luna").toString().replace(/^file:\/\//, ""))
+    property string requestAction: "status"
 
     function refresh() {
         run("status");
@@ -21,51 +21,44 @@ QtObject {
         if (ready) run("toggle");
     }
     function run(action) {
-        if (busy) return;
-        // Reserve requests synchronously; Process only notifies running after startup.
+        // Wait for an empty shared queue so our response cannot be confused with
+        // an earlier request for the same method from another widget.
+        if (busy || Screensaver.busy) return;
         busy = true;
+        requestAction = action;
         if (action !== "status") actionError = "";
-        request.action = action;
-        request.running = true;
+        if (action === "status") Screensaver.getState();
+        else Screensaver.toggleStayAwake();
     }
 
-    // Serialize refreshes and changes so a stale status response cannot overwrite a toggle.
-    property Process process: Process {
-        id: request
-        property string action: "status"
-        command: [awake.lunaCli, "awake", action]
-        stdout: StdioCollector { id: response }
-        stderr: StdioCollector { id: failure }
-        onRunningChanged: {
-            // Failed startup emits runningChanged without exited; allow the next retry.
-            if (!running && awake.busy) {
-                if (action === "status") {
-                    awake.ready = false;
-                    awake.statusError = "Could not read Stay awake status.";
-                } else {
-                    awake.actionError = "Could not start the Stay awake command.";
-                }
-                awake.busy = false;
-            }
+    function failed(message) {
+        if (requestAction === "status") {
+            ready = false;
+            statusError = "Could not read Stay awake status.";
+        } else {
+            actionError = message || "Could not change Stay awake.";
         }
-        onExited: (code, status) => {
-            let state;
-            try {
-                if (code === 0) state = JSON.parse(response.text);
-            } catch (error) {}
+        busy = false;
+    }
 
-            if (state && typeof state.enabled === "boolean") {
-                awake.enabled = state.enabled;
-                awake.ready = true;
-                awake.statusError = "";
-                if (action !== "status") awake.actionError = "";
-            } else if (action === "status") {
-                awake.ready = false;
-                awake.statusError = "Could not read Stay awake status.";
-            } else {
-                awake.actionError = failure.text.trim() || "Could not change Stay awake.";
+    property Connections responses: Connections {
+        target: Screensaver
+        function onCompleted(method, result) {
+            const expected = awake.requestAction === "status" ? "getState" : "toggleStayAwake";
+            if (!awake.busy || method !== expected) return;
+            if (!result || typeof result.stayAwake !== "boolean") {
+                awake.failed("Could not change Stay awake.");
+                return;
             }
+            awake.enabled = result.stayAwake;
+            awake.ready = true;
+            awake.statusError = "";
+            if (awake.requestAction !== "status") awake.actionError = "";
             awake.busy = false;
+        }
+        function onFailed(method, message) {
+            const expected = awake.requestAction === "status" ? "getState" : "toggleStayAwake";
+            if (awake.busy && method === expected) awake.failed(message);
         }
     }
 }

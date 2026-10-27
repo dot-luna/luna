@@ -1,16 +1,18 @@
 #!/usr/bin/python3
-"""Plan the first personal wallpaper TOML during staged app configuration setup."""
+"""Seed personal Luna TOML files without replacing existing user settings."""
 
 import os
 from pathlib import Path
 
 
-def plan(staging, destination):
+def plan(staging, destination, app):
     """Return a missing-file seed; existing personal contents are never parsed."""
     config_home = Path(os.environ.get("XDG_CONFIG_HOME") or Path(os.environ["HOME"]) / ".config")
-    active = Path(os.environ.get("LUNA_WALLPAPER_CONFIG") or config_home / "luna/wallpaper.toml")
+    override = "LUNA_" + app.upper() + "_CONFIG"
+    filename = app + ".toml"
+    active = Path(os.environ.get(override) or config_home / "luna" / filename)
     if not active.is_absolute():
-        raise ValueError("LUNA_WALLPAPER_CONFIG must be an absolute path")
+        raise ValueError(f"{override} must be an absolute path")
     repo = Path(__file__).resolve().parents[2]
     installed = destination.resolve()
 
@@ -20,9 +22,9 @@ def plan(staging, destination):
     seen = set()
     while True:
         if target.is_relative_to(repo) or target.is_relative_to(installed) or installed.is_relative_to(target):
-            raise ValueError("Personal wallpaper config points into Luna's source or installed configs")
+            raise ValueError(f"Personal {app} config points into Luna's source or installed configs")
         if target in seen:
-            raise ValueError("Personal wallpaper config contains a symlink loop")
+            raise ValueError(f"Personal {app} config contains a symlink loop")
         seen.add(target)
         if not target.is_symlink():
             break
@@ -32,9 +34,9 @@ def plan(staging, destination):
 
     if target.exists():
         if not target.is_file():
-            raise ValueError(f"Expected a personal wallpaper config file: {active}")
+            raise ValueError(f"Expected a personal {app} config file: {active}")
         return []
 
-    content = (staging / "wallpaper.toml").read_bytes()
+    content = (staging / filename).read_bytes()
 
     return [(target, content, 0o600)]

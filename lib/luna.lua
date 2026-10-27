@@ -5,6 +5,7 @@ return function(root, common)
     local download = dofile(root .. "/lib/wallpapers/download.lua")(common)
     return {
         wallpaper = dofile(root .. "/src/wallpaper/src/api.lua")(common, root),
+        screensaver = dofile(root .. "/src/screensaver/src/api.lua")(common, root),
         wallpapers = dofile(root .. "/lib/wallpapers/files.lua")(common, download),
     }
 end

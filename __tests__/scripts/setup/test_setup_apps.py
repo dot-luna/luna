@@ -264,7 +264,8 @@ end
         result = self.setup()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual({path.name for path in self.destination.parent.iterdir()},
-                         {"hypr", "kitty", "mpv", "luna-wallpaper", "wallpaper.toml", "starship", "zen", "zsh"})
+                         {"hypr", "kitty", "mpv", "luna-wallpaper", "wallpaper.toml", "luna-screensaver",
+                          "screensaver.toml", "starship", "zen", "zsh"})
         self.assertTrue((profile / "chrome/userChrome.css").is_file())
         self.assertFalse((self.home / "extra-ran").exists())
         self.assertFalse((self.home / "command-ran").exists())

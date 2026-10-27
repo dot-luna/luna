@@ -2,5 +2,8 @@ module Luna
 singleton Theme 1.0 Theme.qml
 singleton StayAwake 1.0 StayAwake.qml
 singleton Wallpaper 1.0 ../../wallpaper/src/shell/Wallpaper.qml
+singleton Screensaver 1.0 ../../screensaver/src/shell/Screensaver.qml
+singleton ScreensaverSession 1.0 ../../screensaver/src/shell/ScreensaverSession.qml
+ScreensaverSurface 1.0 ../../screensaver/src/shell/ScreensaverSurface.qml
 Icon 1.0 Icon.qml
 Emoji 1.0 Emoji.qml

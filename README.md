@@ -74,6 +74,11 @@ The KDE authentication agent is no longer a Luna dependency. See
 [authentication commands](src/luna-polkit/DOCS.md#commands) for service controls and
 verification.
 
+Luna's screensaver controller starts with Hyprland and manages idle timers, Stay
+awake, display sleep, and locking independently of its replaceable QML renderer.
+Run `luna screensaver` to show it. See the [screensaver guide](src/screensaver/DOCS.md)
+for custom shells and the Lua, QML, and CLI APIs.
+
 After the installation steps, setup replaces the installed Tokyo Night theme with the bundled copy and selects it, including on reruns. Theme setup failures warn and continue. It then installs app configurations, configures the keyring, links source directories, sets default applications, installs optional app extras, and reloads the configuration in an active Hyprland session.
 
 Core setup installs `gnome-keyring` and `libsecret`; main setup adds Seahorse (Passwords and Keys) for managing saved secrets. The `keyring` step selects GNOME Keyring through a user D-Bus service entry under `$XDG_DATA_HOME/dbus-1/services` (normally `~/.local/share/dbus-1/services`) and enables its user socket. Luna initializes its secrets and certificate components when Hyprland starts, publishing the display environment so graphical unlock prompts can open. Setup does not restart an existing secret-storage provider; log out and back in after installation.

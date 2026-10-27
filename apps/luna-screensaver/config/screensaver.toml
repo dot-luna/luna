@@ -1,0 +1,17 @@
+# Shared Luna screensaver defaults. Setup copies these settings once to
+# $XDG_CONFIG_HOME/luna/screensaver.toml (or $LUNA_SCREENSAVER_CONFIG).
+# Later installs preserve that personal file. Run luna screensaver reload
+# after editing it to apply changes without resetting Stay awake.
+
+[idle]
+# Whole seconds, 0–86400. Zero disables each automatic action independently.
+screensaver_seconds = 300
+lock_seconds = 600
+display_off_seconds = 0
+
+[renderer]
+# Empty uses Luna's clock. Otherwise, use an absolute or ~/ path to a QML shell.
+shell = ""
+
+[settings]
+# Custom visual options are available to the rendering shell.

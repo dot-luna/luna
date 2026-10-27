@@ -1,0 +1,21 @@
+# Configuration reference; Luna does not load this file automatically.
+# Personal file: $XDG_CONFIG_HOME/luna/screensaver.toml (normally ~/.config/luna/screensaver.toml).
+# LUNA_SCREENSAVER_CONFIG=/absolute/path/screensaver.toml overrides the location.
+# Missing options use shared defaults. Invalid known values reject the whole update.
+# Config edits do not start or reload the controller; run luna screensaver reload.
+
+[idle]
+# Whole seconds, 0–86400. Zero disables each action independently.
+# All timers measure inactivity from the compositor, not from the previous action.
+screensaver_seconds = 300
+lock_seconds = 600
+display_off_seconds = 0
+
+[renderer]
+# Empty uses the bundled clock; otherwise, an absolute or ~/ path to a QML shell.
+# The renderer runs only while the screensaver is visible.
+shell = ""
+
+[settings]
+# Custom visual options, exposed as surface.settings and ScreensaverSession.settings.
+# These values belong to the renderer; Luna validates the table, not its contents.

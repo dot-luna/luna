@@ -4,6 +4,7 @@ return {
     "kitty",
     "mpv",
     "luna-wallpaper",
+    "luna-screensaver",
     "starship",
     "zsh",
     "zen",

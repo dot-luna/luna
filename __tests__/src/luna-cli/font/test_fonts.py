@@ -281,6 +281,16 @@ else:
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(result.stdout)["fonts"], expected)
 
+    def test_font_update_targets_the_screensaver_controller(self):
+        self.env["WAYLAND_DISPLAY"] = "test-wayland"
+        self.run_cli("set", "ui", "Test UI")
+        calls = [call for call in self.calls("qs") if "screensaver" in call]
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0][1:3], ["ipc", "-p"])
+        self.assertEqual(Path(calls[0][3]).resolve(), REPO / "src/screensaver/src/shell/controller.qml")
+        self.assertEqual(calls[0][4:7], ["call", "screensaver", "applyFonts"])
+        self.assertEqual(json.loads(calls[0][-1])["ui"], "Test UI")
+
     def test_batch_packages_skip_force_and_aur(self):
         self.run_cli("install", "ttf-one", "ttf-two")
         installs = [call for call in self.calls("pacman") if "-Syu" in call]

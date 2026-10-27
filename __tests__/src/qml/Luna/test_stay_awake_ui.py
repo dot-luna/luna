@@ -1,4 +1,4 @@
-"""Exercise the shared Stay awake controller against an isolated session CLI."""
+"""Exercise the Stay awake widget through the real QML client and a private bridge."""
 import json
 import os
 from pathlib import Path
@@ -6,7 +6,6 @@ import shutil
 import signal
 import subprocess
 import tempfile
-import textwrap
 import time
 import unittest
 
@@ -24,52 +23,69 @@ class StayAwakeUiTests(unittest.TestCase):
         module = self.root / "src/qml/Luna"
         module.mkdir(parents=True)
         shutil.copy(REPO / "src/qml/Luna/StayAwake.qml", module)
-        (module / "qmldir").write_text("module Luna\nsingleton StayAwake 1.0 StayAwake.qml\n")
+        client = self.root / "src/screensaver/src/shell"
+        client.mkdir(parents=True)
+        shutil.copy(REPO / "src/screensaver/src/shell/Screensaver.qml", client)
+        (module / "qmldir").write_text("module Luna\nsingleton StayAwake 1.0 StayAwake.qml\n"
+                                       "singleton Screensaver 1.0 ../../screensaver/src/shell/Screensaver.qml\n")
         (self.root / "shell.qml").write_text('''import QtQuick
 import Quickshell
 import Quickshell.Io
 import Luna as Luna
 ShellRoot {
+    Component.onCompleted: Quickshell.watchFiles = false
     IpcHandler {
         target: "test"
         function state(): string {
             return JSON.stringify({enabled: Luna.StayAwake.enabled, ready: Luna.StayAwake.ready,
-                busy: Luna.StayAwake.busy, error: Luna.StayAwake.error});
+                busy: Luna.StayAwake.busy, apiBusy: Luna.Screensaver.busy, error: Luna.StayAwake.error});
         }
         function run(actions: string): void {
             for (const action of actions.split(",")) {
                 if (action === "toggle") Luna.StayAwake.toggle();
+                else if (action === "external-status") Luna.Screensaver.getState();
+                else if (action === "external-toggle") Luna.Screensaver.toggleStayAwake();
                 else Luna.StayAwake.refresh();
             }
         }
     }
 }
 ''')
-
-        # Preserve the checkout layout so the real QML URL-to-path conversion is exercised.
-        cli = self.root / "bin/luna"
-        cli.parent.mkdir()
-        cli.write_text(textwrap.dedent('''\
-            #!/usr/bin/python3
-            import json, os, pathlib, sys, time
-            root = pathlib.Path(os.environ["LUNA_AWAKE_UI_TEST_ROOT"])
-            options = json.loads((root / "options").read_text())
-            with (root / "calls").open("a") as log:
-                log.write(json.dumps(sys.argv[1:]) + "\\n")
-            time.sleep(options.get("delay", 0))
-            if "output" in options:
-                print(options["output"])
-            elif options.get("exit", 0) == 0:
-                enabled = (root / "enabled").read_text() == "true"
-                if sys.argv[2] == "toggle":
-                    enabled = not enabled
-                    (root / "enabled").write_text(str(enabled).lower())
-                print(json.dumps({"enabled": enabled}))
-            if options.get("error"):
-                print(options["error"], file=sys.stderr)
-            sys.exit(options.get("exit", 0))
-        '''))
-        cli.chmod(0o755)
+        # The actual QML client locates this neighboring bridge. It records calls
+        # and never imports the production Lua runtime or contacts a live session.
+        self.bridge = client.parent / "bridge.lua"
+        self.bridge.write_text('''local json = dofile(os.getenv("TEST_REPO") .. "/lib/json.lua")
+local root = os.getenv("LUNA_AWAKE_UI_TEST_ROOT")
+local function read(path)
+    local file = assert(io.open(root .. "/" .. path, "r"))
+    local value = file:read("*a")
+    file:close()
+    return value
+end
+local function write(path, value, mode)
+    local file = assert(io.open(root .. "/" .. path, mode or "w"))
+    file:write(value)
+    file:close()
+end
+local options = json.decode(read("options"))
+local request = json.decode(arg[1])
+write("calls", json.encode(request) .. "\\n", "a")
+if options.delay then os.execute("sleep " .. tostring(tonumber(options.delay))) end
+if options.output then
+    print(options.output)
+elseif (options.exit or 0) == 0 then
+    local enabled = read("enabled") == "true"
+    if request.method == "toggleStayAwake" then
+        enabled = not enabled
+        write("enabled", tostring(enabled))
+    end
+    print(json.encode({ok = true, configPath = root .. "/config.toml", result = {
+        running = true, active = false, stayAwake = enabled, outputsOff = false,
+        rendererState = "hidden", error = ""}}))
+end
+if options.error then io.stderr:write(options.error, "\\n") end
+os.exit(options.exit or 0)
+''')
         (self.root / "enabled").write_text("false")
         self.options()
 
@@ -77,7 +93,7 @@ ShellRoot {
         runtime.mkdir(mode=0o700)
         self.environment = dict(os.environ, QT_QPA_PLATFORM="offscreen", XDG_RUNTIME_DIR=str(runtime),
                                 QML_IMPORT_PATH=str(self.root / "src/qml"), QS_NO_RELOAD_POPUP="1",
-                                LUNA_AWAKE_UI_TEST_ROOT=str(self.root),
+                                LUNA_AWAKE_UI_TEST_ROOT=str(self.root), TEST_REPO=str(REPO),
                                 DBUS_SYSTEM_BUS_ADDRESS="unix:path=/nonexistent-luna-test-system-bus")
         self.environment.pop("WAYLAND_DISPLAY", None)
         self.log = (self.root / "shell.log").open("w+")
@@ -107,7 +123,7 @@ ShellRoot {
 
     def calls(self):
         path = self.root / "calls"
-        return [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
+        return [json.loads(line)["method"] for line in path.read_text().splitlines()] if path.exists() else []
 
     def until(self, predicate):
         deadline = time.monotonic() + 4
@@ -121,35 +137,32 @@ ShellRoot {
 
     def run_action(self, action):
         self.ipc("run", action)
-        self.until(lambda: not self.state()["busy"])
+        self.until(lambda: not self.state()["busy"] and not self.state()["apiBusy"])
         return self.state()
 
-    def test_commands_serialize_and_external_state_refreshes(self):
+    def test_requests_serialize_and_external_state_refreshes(self):
         self.assertFalse(self.state()["ready"])
         self.run_action("toggle")
         self.assertEqual(self.calls(), [])
-
         self.options(delay=0.2)
         self.ipc("run", "status,status,toggle")
         self.assertTrue(self.state()["busy"])
         self.until(lambda: not self.state()["busy"])
         self.assertTrue(self.state()["ready"])
-        self.assertEqual(self.calls(), [["awake", "status"]])
-
+        self.assertEqual(self.calls(), ["getState"])
         self.ipc("run", "toggle,toggle,status")
         self.assertTrue(self.state()["busy"])
         self.assertFalse(self.state()["enabled"])
         self.until(lambda: not self.state()["busy"])
         self.assertTrue(self.state()["enabled"])
-        self.assertEqual(self.calls(), [["awake", "status"], ["awake", "toggle"]])
-
+        self.assertEqual(self.calls(), ["getState", "toggleStayAwake"])
         (self.root / "enabled").write_text("false")
         self.assertFalse(self.run_action("status")["enabled"])
 
     def test_invalid_status_preserves_state_and_prevents_toggling(self):
         (self.root / "enabled").write_text("true")
         self.assertTrue(self.run_action("status")["enabled"])
-        for output in ("not json", '{"enabled":"false"}', "null", "{}"):
+        for output in ("not json", '{"ok":true,"result":{"stayAwake":"false"},"configPath":"/tmp/x"}', "null", "{}"):
             with self.subTest(output=output):
                 self.options(output=output)
                 state = self.run_action("status")
@@ -159,7 +172,6 @@ ShellRoot {
                 calls = self.calls()
                 self.run_action("toggle")
                 self.assertEqual(self.calls(), calls)
-
         self.options()
         state = self.run_action("status")
         self.assertTrue(state["ready"])
@@ -167,32 +179,43 @@ ShellRoot {
 
     def test_failed_toggle_preserves_state_and_error_until_retry(self):
         self.run_action("status")
-        # A nonzero command result must not apply even an otherwise valid JSON payload.
-        self.options(exit=1, output='{"enabled":true}', error="Session unavailable")
+        # A nonzero bridge result cannot apply an otherwise valid state payload.
+        reply = {"ok": True, "configPath": "/tmp/config.toml", "result": {
+            "running": True, "active": False, "stayAwake": True, "outputsOff": False,
+            "rendererState": "hidden", "error": ""}}
+        self.options(exit=1, output=json.dumps(reply), error="Session unavailable")
         state = self.run_action("toggle")
         self.assertFalse(state["enabled"])
         self.assertTrue(state["ready"])
         self.assertEqual(state["error"], "Session unavailable")
-
         self.options()
         self.assertEqual(self.run_action("status")["error"], "Session unavailable")
         state = self.run_action("toggle")
         self.assertTrue(state["enabled"])
         self.assertEqual(state["error"], "")
 
-    def test_missing_cli_reports_failure_and_allows_retry(self):
-        cli = self.root / "bin/luna"
-        saved = self.root / "bin/luna-saved"
-        cli.rename(saved)
+    def test_missing_bridge_reports_failure_and_allows_retry(self):
+        saved = self.bridge.with_name("bridge-saved.lua")
+        self.bridge.rename(saved)
         state = self.run_action("status")
         self.assertFalse(state["ready"])
         self.assertFalse(state["busy"])
         self.assertIn("status", state["error"])
-
-        saved.rename(cli)
+        saved.rename(self.bridge)
         state = self.run_action("status")
         self.assertTrue(state["ready"])
         self.assertEqual(state["error"], "")
+
+    def test_other_consumers_requests_do_not_update_widget_or_absorb_its_reply(self):
+        self.options(delay=0.15)
+        self.run_action("external-status,status")
+        self.assertFalse(self.state()["ready"])
+        self.assertEqual(self.calls(), ["getState"])
+        self.run_action("status,external-toggle")
+        self.assertTrue(self.state()["ready"])
+        self.assertFalse(self.state()["enabled"])
+        self.assertEqual((self.root / "enabled").read_text(), "true")
+        self.assertTrue(self.run_action("status")["enabled"])
 
 
 if __name__ == "__main__":

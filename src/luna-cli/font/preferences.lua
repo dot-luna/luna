@@ -44,10 +44,11 @@ return function(common, directory)
         publish(preferences.path, json.encode(values))
         publish(resolved.path, json.encode(theme))
 
-        -- Running shells update in place; inactive shells read the saved JSON on startup.
+        -- The screensaver controller refreshes its renderer without resetting idle
+        -- state; other running shells update in place. Inactive shells read on startup.
         if common.available("qs") and os.getenv("WAYLAND_DISPLAY") then
             for _, item in ipairs({ { "launcher", "launcher" }, { "luna-bar", "bar" },
-                { "screensaver", "screensaver" }, { "luna-settings", "settings" } }) do
+                { "screensaver/src/shell/controller.qml", "screensaver" }, { "luna-settings", "settings" } }) do
                 common.capture({ "qs", "ipc", "-p", root .. "/src/" .. item[1],
                     "call", item[2], "applyFonts", json.encode(theme.fonts) }, true)
             end
