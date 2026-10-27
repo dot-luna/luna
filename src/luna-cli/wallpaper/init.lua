@@ -2,7 +2,7 @@
 return function(common, module_dir)
     local download = dofile(module_dir .. "/download.lua")(common)
     local files = dofile(module_dir .. "/files.lua")(common, download)
-    local renderer = module_dir .. "/../../wallpaper/shell.qml"
+    local renderer = module_dir .. "/../../wallpaper/src/shell.qml"
     local backend = dofile(module_dir .. "/backend.lua")(common, renderer)
     local M = {}
 
