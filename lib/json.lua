@@ -1,6 +1,11 @@
--- JSON codec for resolved themes; never evaluates generated content as Lua code.
+-- JSON codec shared by themes and config APIs; never evaluates content as Lua code.
 -- A sentinel preserves null object fields and array positions that Lua nil would erase.
-local M = { null = {} }
+local M = { null = setmetatable({}, { __json_kind = "null" }) }
+
+-- Lua's empty tables have no array/object distinction; callers can mark an array.
+function M.array(value)
+    return setmetatable(value or {}, { __json_kind = "array" })
+end
 
 local function quote(value)
     return '"' .. value:gsub('[%z\1-\31\\"]', function(character)
@@ -12,16 +17,20 @@ local function quote(value)
 end
 
 function M.encode(value, array)
-    if value == M.null then
+    local kind = type(value) == "table" and getmetatable(value)
+    kind = kind and kind.__json_kind
+    if value == M.null or kind == "null" then
         return "null"
     elseif type(value) == "string" then
         return quote(value)
     elseif type(value) == "number" or type(value) == "boolean" then
         return tostring(value)
     end
-    assert(type(value) == "table", "Unsupported theme JSON value")
+    assert(type(value) == "table", "Unsupported JSON value")
     local fields = {}
-    if array then
+    -- Preserve decoded empty arrays/objects across API transports. Ordinary Lua
+    -- sequences are arrays too; the array argument can explicitly encode an empty list.
+    if kind == "array" or kind ~= "object" and (array or #value > 0) then
         for _, item in ipairs(value) do
             table.insert(fields, M.encode(item))
         end
@@ -33,7 +42,7 @@ function M.encode(value, array)
     end
     table.sort(keys)
     for _, key in ipairs(keys) do
-        table.insert(fields, quote(key) .. ":" .. M.encode(value[key], key == "sources" or key == "world_clocks" or key == "targets"))
+        table.insert(fields, quote(key) .. ":" .. M.encode(value[key]))
     end
     return "{" .. table.concat(fields, ",") .. "}"
 end
@@ -90,12 +99,13 @@ function M.decode(source)
         error("Unterminated JSON string")
     end
     function parse(depth)
-        assert(depth < 32, "Theme JSON is nested too deeply")
+        assert(depth < 32, "JSON is nested too deeply")
         local c = character()
         if c == '"' then
             return string_value()
         elseif c == "{" or c == "[" then
-            local array, values, seen = c == "[", {}, {}
+            local array, seen = c == "[", {}
+            local values = setmetatable({}, { __json_kind = array and "array" or "object" })
             local closing = array and "]" or "}"
             position = position + 1
             if character() == closing then
@@ -129,13 +139,13 @@ function M.decode(source)
         end
         local token = source:sub(position):match("^%-?%d+%.?%d*[eE]?[+-]?%d*")
         local value = token and tonumber(token)
-        assert(value and value == value and math.abs(value) < math.huge, "Invalid theme JSON value")
+        assert(value and value == value and math.abs(value) < math.huge, "Invalid JSON value")
         position = position + #token
         return value
     end
     local result = parse(0)
     whitespace()
-    assert(position > #source, "Trailing theme JSON content")
+    assert(position > #source, "Trailing JSON content")
     return result
 end
 

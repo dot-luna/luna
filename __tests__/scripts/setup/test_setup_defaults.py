@@ -21,7 +21,7 @@ class SetupDefaultsTests(unittest.TestCase):
         self.config_home = self.home / ".config"
         self.checkout = self.root / "checkout"
         self.manifest = self.checkout / "default/apps.lua"
-        for name in ("scripts/setup/13-set-default-apps.sh", "scripts/setup/app-defaults.py", "default/apps.lua", "lib/common.sh", "lib/theme/json.lua"):
+        for name in ("scripts/setup/13-set-default-apps.sh", "scripts/setup/app-defaults.py", "default/apps.lua", "lib/common.sh", "lib/json.lua"):
             destination = self.checkout / name
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(REPO / name, destination)

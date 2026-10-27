@@ -1,6 +1,6 @@
 -- Validate user bar preferences before restarting the running shell.
 return function(common, root)
-    local json = dofile(root .. "/lib/theme/json.lua")
+    local json = dofile(root .. "/lib/json.lua")
     local directory = (os.getenv("XDG_CONFIG_HOME") or assert(os.getenv("HOME")) .. "/.config") .. "/luna"
     local path = directory .. "/bar.json"
     local M = {}
@@ -129,7 +129,7 @@ return function(common, root)
         end
         assert(count == #cities, "World clocks must be a contiguous list")
         result.clock = { format = format, use_24_hour = use_24_hour, week_start = week_start,
-            secondary_calendar = secondary_calendar, world_clocks = cities }
+            secondary_calendar = secondary_calendar, world_clocks = json.array(cities) }
         return json.encode(result)
     end
 

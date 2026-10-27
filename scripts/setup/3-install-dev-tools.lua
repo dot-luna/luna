@@ -7,7 +7,7 @@ local script_path = pipe:read("*a"):gsub("\n$", "")
 assert(pipe:close(), "Cannot resolve setup script: " .. arg[0])
 local script_dir = assert(script_path:match("^(.*)/"), "Cannot resolve setup script directory")
 local common = dofile(script_dir .. "/../../lib/common.lua")
-local json = dofile(script_dir .. "/../../lib/theme/json.lua")
+local json = dofile(script_dir .. "/../../lib/json.lua")
 common.setup_logging()
 
 local function install()

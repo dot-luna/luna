@@ -1,4 +1,5 @@
--- Wallpaper library operations use ordinary files, without an ownership database.
+-- Luna's media library, shared by wallpaper commands and theme installation.
+-- Import and discover ordinary files without controlling the wallpaper renderer.
 return function(common, download)
     local M = {}
     local home = assert(os.getenv("HOME"), "HOME is required")
@@ -71,6 +72,41 @@ return function(common, download)
         assert(#matches > 0, "Wallpaper not found: " .. name)
         assert(#matches == 1, "Ambiguous wallpaper; use its full library path: " .. name)
         return matches[1]
+    end
+
+    -- Pick another library entry when possible; applying it belongs to the wallpaper API.
+    function M.random(current)
+        local choices = M.list()
+        assert(#choices > 0, "Wallpaper library is empty")
+        if #choices > 1 then
+            for index = #choices, 1, -1 do
+                if choices[index] == current then
+                    table.remove(choices, index)
+                end
+            end
+        end
+        return choices[math.random(#choices)]
+    end
+
+    -- Resolve the whole batch before a prompt or deletion. Never remove external
+    -- files or the saved wallpaper; callers provide current state from the app API.
+    function M.removalPlan(names, current)
+        local paths, seen = {}, {}
+        for _, name in ipairs(names) do
+            local path = M.resolve(name, true)
+            assert(M.absolute(path) ~= current, "Select another wallpaper before removing the current image")
+            if not seen[path] then
+                table.insert(paths, path)
+                seen[path] = true
+            end
+        end
+        return paths
+    end
+
+    function M.remove(names, current)
+        for _, path in ipairs(M.removalPlan(names, current)) do
+            assert(os.remove(path))
+        end
     end
 
     local function add_local(options)

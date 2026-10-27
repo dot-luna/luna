@@ -1,16 +1,16 @@
-# Luna wallpaper defaults. Setup fills the selected theme's media and background.
+# Shared Luna wallpaper defaults. Setup adds the selected theme's media and background.
 # The first install copies these settings to $XDG_CONFIG_HOME/luna/wallpaper.toml
 # (or $LUNA_WALLPAPER_CONFIG). Later installs keep that personal file unchanged.
-# Edit the personal file, then restart the wallpaper app to apply changes.
+# Edit the personal file, then run luna wallpaper reload to apply changes.
 
 [wallpaper]
 # Absolute media path; an empty string shows only the background color.
-source = "{{source}}"
+source = ""
 # fill crops; fit shows all; stretch changes aspect; center keeps original size;
-# tile repeats images (videos use center). Default: center.
-fit = "center"
+# tile repeats images (videos use center). Default: fill.
+fit = "fill"
 # #RRGGBB, initially taken from the selected theme.
-background_color = "{{background}}"
+background_color = "#000000"
 
 [playback]
 # Pause animation/video while the output is inactive; true or false.

@@ -19,7 +19,7 @@ class BuildThemeTests(unittest.TestCase):
         # Use the complete shared schema while choosing test-specific values below.
         result = subprocess.run(
             ['/usr/bin/lua', '-E', '-', str(REPO)],
-            input='local root = arg[1]; print(dofile(root .. "/lib/theme/json.lua").encode('
+            input='local root = arg[1]; print(dofile(root .. "/lib/json.lua").encode('
                   'dofile(root .. "/lib/theme/defaults.lua")))',
             capture_output=True, text=True, check=True,
         )

@@ -1,6 +1,6 @@
 -- Generate the persistent Dockur macOS project without replacing an existing VM.
 return function(common, root)
-    local json = dofile(root .. "/lib/theme/json.lua")
+    local json = dofile(root .. "/lib/json.lua")
 
     -- Empty XDG variables use the same defaults as unset variables.
     local function absolute(value, name)

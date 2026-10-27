@@ -2,9 +2,10 @@
 # Reference for the user-managed TOML file; the app does not load or copy this file automatically.
 # Location: $XDG_CONFIG_HOME/luna/wallpaper.toml; XDG_CONFIG_HOME defaults to ~/.config.
 # LUNA_WALLPAPER_CONFIG=/path/to/wallpaper.toml overrides this location.
-# Missing or unsupported option values use their defaults; unknown options are ignored.
+# Missing options use defaults. Invalid known values fail validation; unknown options are retained.
+# Invalid updates leave the file unchanged; errors while rendering fall back to black.
 # Settings and manual edits use the same file.
-# Config is read once at startup. Restart the wallpaper app after editing it.
+# Config is read at startup or on request. Run luna wallpaper reload after editing it.
 
 [wallpaper]
 # Use an absolute media path; "" (the default) selects only the background color.
@@ -12,12 +13,12 @@
 source = "/path/to/wallpaper.jpg"
 
 # Values:
-# fill: preserve aspect ratio and crop to cover the output.
+# fill (default): preserve aspect ratio and crop to cover the output.
 # fit: preserve aspect ratio and show the whole image, leaving space where needed.
 # stretch: fill the output without preserving aspect ratio.
-# center (default): keep the original size, centered; crop anything outside the output.
+# center: keep the original size, centered; crop anything outside the output.
 # tile: repeat images at their original size; videos use center instead.
-fit = "center"
+fit = "fill"
 
 # Values: a hex color in #RRGGBB format; defaults to #000000 and fills uncovered areas.
 background_color = "#000000"

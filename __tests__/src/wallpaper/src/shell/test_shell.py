@@ -1,7 +1,7 @@
 """Test TOML loading, media routing, and image rendering without using the desktop.
 
 Run from the repository root:
-    python3 -m unittest discover -s __tests__/src/wallpaper -p test_shell.py -v
+    python3 -m unittest discover -s __tests__/src/wallpaper/src/shell -p test_shell.py -v
 
 Tests copy the production shell into a temporary directory, replace its layer
 window for offscreen Qt, and stub video playback. They do not verify Wayland
@@ -22,7 +22,7 @@ import unittest
 import zlib
 
 
-ROOT = Path(__file__).resolve().parents[3]
+ROOT = Path(__file__).resolve().parents[5]
 
 # Added only to the copied shell: expose renderer state and inject activity/errors
 # through IPC without adding test-only methods to production QML.
@@ -56,8 +56,8 @@ INSPECTOR = '''
                 status: shell.configStatus, kind: surface.kind, windows: windows, images: images, videos: videos,
                 settings: surface.settings, screens: Quickshell.screens.map(screen => screen.name)});
         }
-        function select(path: string): string {
-            wallpaperApi.set(path);
+        function reload(): string {
+            wallpaperApi.reload();
             return wallpaperApi.status();
         }
         function outputActive(value: bool): void {
@@ -78,11 +78,16 @@ class WallpaperShellTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory(prefix="luna wallpaper ' ")
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
-        self.renderer = self.root / "renderer"
+        self.renderer = self.root / "src/wallpaper/src/shell"
 
         # Instrument a private copy so tests cannot alter the user's installed shell.
-        shutil.copytree(ROOT / "src/wallpaper/src", self.renderer)
+        shutil.copytree(ROOT / "src/wallpaper/src", self.renderer.parent)
+        shutil.copytree(ROOT / "lib", self.root / "lib")
         shell = self.renderer / "shell.qml"
+        # Preserve the checkout layout so Lua uses the production defaults and schema.
+        self.defaults = self.root / "apps/luna-wallpaper/config/wallpaper.toml"
+        self.defaults.parent.mkdir(parents=True)
+        shutil.copy(ROOT / "apps/luna-wallpaper/config/wallpaper.toml", self.defaults)
         source = shell.read_text()
         self.assertTrue(source.rstrip().endswith("}"))
         source = source.replace('target: "wallpaper"', 'id: wallpaperApi\n        target: "wallpaper"', 1)
@@ -182,6 +187,31 @@ Item {
         self.env["PATH"] = str(directory) + ":" + os.environ["PATH"]
         self.env["LUNA_WALLPAPER_PROBE_TEST"] = str(self.root)
 
+    def hold_config_reads(self):
+        """Gate copied TOML reads to make reload cancellation races deterministic."""
+        parser = self.root / "lib/toml.lua"
+        source = parser.read_text().replace('import json, os, pathlib, stat, subprocess, sys, tempfile',
+                                            'import json, os, pathlib, stat, subprocess, sys, tempfile, time')
+        marker = '    # Merge tables recursively;'
+        source = source.replace(marker, '''    gate = pathlib.Path(str(path) + '.hold')
+    if gate.exists():
+        with pathlib.Path(str(path) + '.pids').open('a') as readers:
+            readers.write(str(os.getpid()) + '\\n')
+        pathlib.Path(str(path) + '.read').write_text(json.dumps(document.unwrap()))
+        while gate.exists(): time.sleep(0.01)
+
+''' + marker)
+        parser.write_text(source)
+
+    @staticmethod
+    def reader_alive(pid):
+        """Treat an exited child awaiting reaping as stopped too."""
+        try:
+            state = (Path('/proc') / str(pid) / 'stat').read_text().split(') ', 1)[1][0]
+            return state != 'Z'
+        except FileNotFoundError:
+            return False
+
     def start(self, wait_loaded=True):
         """Launch only the isolated shell and optionally wait for its initial config read."""
         self.stop()
@@ -212,6 +242,17 @@ Item {
                                method, *arguments], env=self.env, capture_output=True,
                               text=True, timeout=3, check=check)
 
+    def select(self, source):
+        """Edit only the fixture's user file, then explicitly reload the copied shell."""
+        path = self.state()["path"]
+        subprocess.run(["/usr/bin/lua", "-E", "-", str(ROOT), path, str(source)],
+                       input='local root, path, source = arg[1], arg[2], arg[3]\n'
+                             'local json = dofile(root .. "/lib/json.lua")\n'
+                             'local toml = dofile(root .. "/lib/toml.lua")(dofile(root .. "/lib/common.lua"), json)\n'
+                             'toml.update(path, {wallpaper = {source = source}})\n',
+                       env=self.env, text=True, capture_output=True, check=True, timeout=5)
+        return self.ipc("reload", target="test")
+
     def state(self):
         """Read the test-only snapshot of config, media, and window state."""
         return json.loads(self.ipc("state", target="test").stdout)
@@ -234,7 +275,7 @@ Item {
         self.assertTrue(all(window["visible"] and window["color"] == "#000000"
                             for window in state["windows"]))
 
-    # Config precedence, option fallbacks, and startup-only loading.
+    # Config precedence, validation errors, and explicit reloads.
     def test_explicit_config_path_preserves_nested_options_and_original_files(self):
         path = self.write_config(self.root / "custom ' wallpaper.toml", '''
 [playback]
@@ -312,98 +353,181 @@ fit = "center"
                     self.assertFalse(path.parent.exists())
                 self.stop()
 
-    def test_config_changes_are_loaded_only_after_restart(self):
+    def test_config_changes_are_loaded_only_after_manual_reload(self):
         path = self.write_config()
         first = self.start()["config"]
+        process = self.process.pid
         path.write_text(path.read_text().replace('fit = "fit"', 'fit = "tile"'))
         time.sleep(0.35)
         self.assertEqual(self.state()["config"], first)
-        self.stop()
-        self.assertEqual(self.start()["config"]["wallpaper"]["fit"], "tile")
+        self.assertEqual(self.ipc("reload", target="test").stdout.strip(), "loading")
+        self.until(lambda: self.ipc("status").stdout.strip() == "ready")
+        self.assertEqual(self.state()["config"]["wallpaper"]["fit"], "tile")
+        self.assertEqual(self.process.pid, process)
 
-    def test_empty_config_has_no_media_or_bundled_defaults(self):
+    def test_reload_applies_disk_settings(self):
+        path = self.write_config()
+        self.start()
+        self.until(lambda: self.ipc("status").stdout.strip() == "ready")
+
+        replacement = self.root / "replacement.png"
+        replacement.write_bytes(self.image_path.read_bytes())
+        content = path.read_text().replace(str(self.image_path), str(replacement))
+        content = content.replace('fit = "fit"', 'fit = "stretch"').replace("#102030", "#405060")
+        path.write_text(content)
+        self.ipc("reload")
+        self.until(lambda: self.ipc("status").stdout.strip() == "ready")
+        state = self.state()
+        self.assertEqual(state["settings"]["wallpaper"], {
+            "source": str(replacement), "fit": "stretch", "background_color": "#405060"})
+        self.assertEqual(state["windows"][0]["color"], "#405060")
+        self.until(lambda: len(self.state()["images"]) == 1)
+        self.assertTrue(self.state()["images"][0]["source"].endswith("/replacement.png"))
+        self.assertEqual(path.read_text(), content)
+
+    def test_reload_failure_clears_media_then_recovers(self):
+        path = self.write_config()
+        content = path.read_text()
+        self.start()
+        self.until(lambda: self.ipc("status").stdout.strip() == "ready")
+        path.write_text("[wallpaper\n")
+        self.ipc("reload")
+        self.until(lambda: self.ipc("status").stdout.strip() == "error")
+        state = self.state()
+        self.assertIsNone(state["config"])
+        self.assert_dark(state)
+        self.assertEqual(state["images"], [])
+        result = subprocess.run(["qs", "log", "-p", str(self.renderer), "--no-color"],
+                                env=self.env, text=True, capture_output=True, timeout=3, check=True)
+        self.assertIn("Wallpaper config " + str(path), result.stdout)
+
+        path.write_text(content)
+        self.ipc("reload")
+        self.until(lambda: self.ipc("status").stdout.strip() == "ready")
+        self.assertEqual(self.state()["settings"]["wallpaper"]["source"], str(self.image_path))
+
+    def test_file_edits_after_read_begins_need_another_explicit_reload(self):
+        path = self.write_config()
+        self.hold_config_reads()
+        self.start()
+        hold = Path(str(path) + ".hold")
+        read = Path(str(path) + ".read")
+        hold.touch()
+        self.addCleanup(hold.unlink, missing_ok=True)
+        path.write_text(path.read_text().replace('fit = "fit"', 'fit = "tile"'))
+        self.ipc("reload")
+        self.until(read.exists)
+        self.assertEqual(self.ipc("status").stdout.strip(), "loading")
+        path.write_text(path.read_text().replace(json.dumps(str(self.image_path)), '""'))
+        hold.unlink()
+        self.until(lambda: self.ipc("status").stdout.strip() == "ready")
+        self.assertEqual(self.state()["settings"]["wallpaper"]["source"], str(self.image_path))
+        self.ipc("reload")
+        self.until(lambda: self.ipc("status").stdout.strip() == "ready")
+        self.assertEqual(self.state()["settings"]["wallpaper"], {
+            "source": "", "fit": "tile", "background_color": "#102030"})
+
+    def test_repeated_reload_cancels_older_reads(self):
+        path = self.write_config()
+        self.hold_config_reads()
+        self.start()
+        hold = Path(str(path) + ".hold")
+        read = Path(str(path) + ".read")
+        hold.touch()
+        self.addCleanup(hold.unlink, missing_ok=True)
+        self.ipc("reload")
+        self.until(read.exists)
+
+        # The latest request must reread the new file and discard earlier parser results.
+        content = path.read_text().replace('fit = "fit"', 'fit = "center"').replace("#102030", "#708090")
+        path.write_text(content)
+        read.unlink()
+        for _ in range(4):
+            self.ipc("reload")
+        self.until(read.exists)
+        self.assertEqual(json.loads(read.read_text())["wallpaper"]["fit"], "center")
+        pids = [int(pid) for pid in Path(str(path) + ".pids").read_text().splitlines()]
+        self.assertGreaterEqual(len(pids), 2)
+        self.until(lambda: all(not self.reader_alive(pid) for pid in pids[:-1]))
+        self.assertTrue(self.reader_alive(pids[-1]))
+        hold.unlink()
+        self.until(lambda: self.ipc("status").stdout.strip() == "ready")
+        state = self.state()
+        self.assertEqual(state["settings"]["wallpaper"], {
+            "source": str(self.image_path), "fit": "center", "background_color": "#708090"})
+        self.assertNotIn("Could not run the config reader", self.log_path.read_text())
+
+    def test_reader_timeout_stops_children_and_recovers_after_reload(self):
+        path = self.write_config()
+        self.hold_config_reads()
+        shell = self.renderer / "shell.qml"
+        shell.write_text(shell.read_text().replace('"10s"', '"1s"'))
+        hold = Path(str(path) + ".hold")
+        hold.touch()
+        self.addCleanup(hold.unlink, missing_ok=True)
+        self.start(wait_loaded=False)
+        self.until(Path(str(path) + ".read").exists)
+        pid = int(Path(str(path) + ".pids").read_text().strip())
+        self.until(lambda: self.ipc("status").stdout.strip() == "error")
+        self.until(lambda: not self.reader_alive(pid))
+        self.assert_dark(self.state())
+        self.assertIn("Config reader timed out", self.log_path.read_text())
+
+        hold.unlink()
+        self.ipc("reload")
+        self.until(lambda: self.ipc("status").stdout.strip() == "ready")
+
+    def test_empty_config_uses_app_defaults_without_writing_them(self):
         self.write_config().write_text("")
         state = self.start()
         self.assertEqual(state["status"], "ready")
-        self.assertEqual(state["config"], {})
+        self.assertEqual(state["config"]["wallpaper"]["source"], "")
+        self.assertEqual(state["config"]["wallpaper"]["fit"], "fill")
         self.assert_dark(state)
         self.assertFalse(any(image["source"] for image in state["images"]))
 
-    def test_unsupported_options_default_without_discarding_valid_settings(self):
+    def test_renderer_uses_the_shared_app_defaults(self):
+        self.defaults.write_text(self.defaults.read_text().replace('fit = "fill"', 'fit = "tile"')
+                                 .replace('duration_ms = 200', 'duration_ms = 77'))
         path = self.write_config()
-        cases = (
-            (json.dumps(str(self.image_path)), '"invalid"', '"slow"', str(self.image_path), "center", 200),
-            (json.dumps(str(self.image_path)), '"fit"', "nan", str(self.image_path), "fit", 200),
-            (json.dumps(str(self.image_path)), '"fit"', "2026-10-27", str(self.image_path), "fit", 200),
-            ("12", '"fit"', "0", "", "fit", 0),
-        )
-        for source, fit, duration, expected_source, expected_fit, expected_duration in cases:
-            with self.subTest(source=source, fit=fit, duration=duration):
-                path.write_text(textwrap.dedent(f'''\
-                    # Keep valid settings even when another option is unsupported.
-                    [wallpaper]
-                    source = {source}
-                    fit = {fit}
-                    background_color = "#102030"
-                    [playback]
-                    pause_when_output_inactive = false
-                    [transition]
-                    type = "none"
-                    duration_ms = {duration}
-                '''))
+        path.write_text(path.read_text().replace('fit = "fit"\n', ''))
+        settings = self.start()["settings"]
+        self.assertEqual(settings["wallpaper"]["fit"], "tile")
+        self.assertEqual(settings["transition"]["duration_ms"], 77)
+        self.assertNotIn('fit =', path.read_text())
+
+    def test_invalid_values_and_section_types_fail_dark_without_rewriting(self):
+        path = self.write_config()
+        for invalid in ('[wallpaper]\nfit = "invalid"',
+                        '[wallpaper]\nsource = 12',
+                        '[transition]\nduration_ms = nan',
+                        '[transition]\nduration_ms = 2026-10-27',
+                        '[playback]\npause_when_output_inactive = "false"',
+                        'wallpaper = []', 'playback = ["wrong"]', 'transition = 12'):
+            with self.subTest(config=invalid):
+                path.write_text(invalid + '\n')
                 original = path.read_bytes()
                 state = self.start()
-                self.assertEqual(state["status"], "ready")
-                self.until(lambda: self.ipc("status").stdout.strip() == "ready")
-                self.assertEqual(state["settings"], {
-                    "wallpaper": {"source": expected_source, "fit": expected_fit, "background_color": "#102030"},
-                    "playback": {"pause_when_output_inactive": False},
-                    "transition": {"type": "none", "duration_ms": expected_duration},
-                })
-
-                # Defaults affect runtime settings only; preserve the user's supplied values.
-                self.assertEqual(state["config"]["wallpaper"]["source"], json.loads(source))
-                self.assertEqual(state["config"]["wallpaper"]["fit"], json.loads(fit))
+                self.assertEqual(state["status"], "error")
+                self.assertIsNone(state["config"])
+                self.assertIsNone(state["settings"])
+                self.assert_dark(state)
+                self.assertEqual(state["images"], [])
+                self.assertIn("Invalid wallpaper config", self.log_path.read_text())
                 self.assertEqual(path.read_bytes(), original)
-                self.assertEqual(bool(self.state()["images"]), bool(expected_source))
-                self.assertNotIn("Wallpaper config ", self.log_path.read_text())
                 self.stop()
 
-    def test_unknown_options_and_wrong_section_types_are_ignored(self):
-        path = self.write_config()
-        for wallpaper in ('{ source = ' + json.dumps(str(self.image_path)) + ', fit = "fit", extra = true }',
-                          '["not a table"]'):
-            with self.subTest(wallpaper=wallpaper):
-                path.write_text(textwrap.dedent(f'''\
-                    # Future fields must remain available in the parsed document.
-                    unknown = {{ enabled = true }}
-                    outputs = false
-                    playback = ["not a table"]
-                    transition = 12
-                    wallpaper = {wallpaper}
-                '''))
-                original = path.read_bytes()
-                state = self.start()
-                self.assertEqual(state["status"], "ready")
-                self.until(lambda: self.ipc("status").stdout.strip() == "ready")
-                self.assertEqual(state["config"]["unknown"], {"enabled": True})
-                self.assertFalse(state["config"]["outputs"])
-                self.assertEqual(state["config"]["playback"], ["not a table"])
-                self.assertEqual(state["settings"]["playback"], {"pause_when_output_inactive": True})
-                self.assertEqual(state["settings"]["transition"], {"type": "fade", "duration_ms": 200})
-                if wallpaper.startswith("{"):
-                    self.assertEqual(state["settings"]["wallpaper"]["source"], str(self.image_path))
-                    self.assertEqual(state["settings"]["wallpaper"]["fit"], "fit")
-                    self.assertNotIn("extra", state["settings"]["wallpaper"])
-                    self.assertTrue(self.state()["images"])
-                else:
-                    self.assertEqual(state["settings"]["wallpaper"], {
-                        "source": "", "fit": "center", "background_color": "#000000"})
-                    self.assert_dark(self.state())
-                    self.assertEqual(self.state()["images"], [])
-                self.assertEqual(path.read_bytes(), original)
-                self.assertNotIn("Wallpaper config ", self.log_path.read_text())
-                self.stop()
+    def test_unknown_options_remain_in_the_lua_result(self):
+        path = self.write_config(extra='[future]\nvalues = [1, 2]\n')
+        path.write_text('outputs = false\n' + path.read_text().replace('fit = "fit"', 'fit = "fit"\nextra = true'))
+        before = path.read_bytes()
+        state = self.start()
+        self.assertEqual(state["status"], "ready")
+        self.assertEqual(state["settings"], state["config"])
+        self.assertEqual(state["settings"]["future"]["values"], [1, 2])
+        self.assertTrue(state["settings"]["wallpaper"]["extra"])
+        self.assertIs(state["settings"]["outputs"], False)
+        self.assertEqual(path.read_bytes(), before)
 
     def test_unreadable_media_falls_back_to_dark_after_valid_config(self):
         self.write_config()
@@ -451,7 +575,7 @@ fit = "center"
         self.ipc("outputActive", "true", target="test")
         self.until(lambda: not self.state()["images"][0]["paused"])
 
-    def test_ipc_selection_waits_for_new_media_fades_and_recovers_from_failure(self):
+    def test_reloaded_selection_waits_for_new_media_fades_and_recovers_from_failure(self):
         path = self.write_config(extra='\n[transition]\ntype = "fade"\nduration_ms = 500\n')
         original = path.read_bytes()
         self.start()
@@ -460,7 +584,7 @@ fit = "center"
         replacement.write_bytes(self.image_path.read_bytes())
 
         # The old image being ready must not make a new selection report ready early.
-        self.assertEqual(self.ipc("select", str(replacement), target="test").stdout.strip(), "loading")
+        self.assertEqual(self.select(replacement).stdout.strip(), "loading")
         self.until(lambda: self.ipc("status").stdout.strip() == "ready")
         self.until(lambda: any(0 < image["opacity"] < 1 for image in self.state()["images"]))
         images = self.state()["images"]
@@ -469,27 +593,26 @@ fit = "center"
         # Keep the lower image opaque during the fade to avoid exposing the background.
         self.assertEqual(next(image["opacity"] for image in images if image["z"] == 0), 1)
         self.until(lambda: len(self.state()["images"]) == 1)
-        self.assertEqual(self.ipc("select", str(self.root / "missing.png"), target="test").stdout.strip(), "loading")
+        self.assertEqual(self.select(self.root / "missing.png").stdout.strip(), "loading")
         self.until(lambda: self.ipc("status").stdout.strip() == "error")
         self.assert_dark(self.state())
         self.assertEqual(self.state()["images"], [])
-        self.assertEqual(self.ipc("select", str(self.image_path), target="test").stdout.strip(), "loading")
+        self.assertEqual(self.select(self.image_path).stdout.strip(), "loading")
         self.until(lambda: self.ipc("status").stdout.strip() == "ready")
         self.assertEqual(path.read_bytes(), original)
 
-    def test_ipc_selection_recovers_from_missing_config_without_writing_it(self):
+    def test_reload_recovers_after_user_creates_missing_config(self):
         self.assertEqual(self.start()["status"], "error")
-        self.assertEqual(self.ipc("select", str(self.image_path), target="test").stdout.strip(), "loading")
+        self.assertEqual(self.select(self.image_path).stdout.strip(), "loading")
         self.until(lambda: self.ipc("status").stdout.strip() == "ready")
-        self.assertFalse(Path(self.state()["path"]).exists())
+        self.assertTrue(Path(self.state()["path"]).exists())
 
-    def test_startup_parser_does_not_overwrite_a_new_ipc_selection(self):
+    def test_explicit_reload_replaces_pending_startup_read(self):
         config = self.write_config()
-        shell = self.renderer / "shell.qml"
-
-        # Delay the copied parser to force a selection while startup config is still pending.
-        shell.write_text(shell.read_text().replace('"import json, pathlib, sys"',
-                                                  '"import json, pathlib, sys, time; time.sleep(0.3)"'))
+        # Delay before the existence check so the missing-file case also starts pending.
+        reader = self.renderer.parent / "read.lua"
+        reader.write_text(reader.read_text().replace('local ok, result = pcall(function()',
+                            'local ok, result = pcall(function()\n    os.execute("/usr/bin/sleep 0.3")'))
         replacement = self.root / "early.png"
         replacement.write_bytes(self.image_path.read_bytes())
         for missing in (False, True):
@@ -497,7 +620,7 @@ fit = "center"
                 if missing:
                     config.unlink()
                 self.assertEqual(self.start(wait_loaded=False)["status"], "loading")
-                self.ipc("set", str(replacement))
+                self.select(replacement)
                 self.until(lambda: self.state()["status"] in ("ready", "error"))
                 self.until(lambda: self.ipc("status").stdout.strip() == "ready")
                 self.assertEqual(self.state()["config"]["wallpaper"]["source"], str(replacement))
@@ -563,7 +686,7 @@ fit = "center"
         self.assertEqual(self.state()["videos"], [{"source": str(self.image_path)}])
 
         # The previous player must not receive an unclassified source or report it ready.
-        self.ipc("set", str(replacement))
+        self.select(replacement)
         self.until(lambda: str(replacement) in (self.root / "probe-calls").read_text())
         self.assertEqual(self.state()["videos"], [])
         self.assertEqual(self.ipc("status").stdout.strip(), "loading")
@@ -585,7 +708,7 @@ fit = "center"
 
         # Replace the source after the old probe starts, then allow its delayed reply to arrive.
         self.until(lambda: (self.root / "probe-calls").exists())
-        self.ipc("set", str(replacement))
+        self.select(replacement)
         self.until(lambda: self.ipc("status").stdout.strip() == "ready")
         time.sleep(0.4)
         state = self.state()

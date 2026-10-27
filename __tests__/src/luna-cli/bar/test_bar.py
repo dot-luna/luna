@@ -22,7 +22,7 @@ class BarTests(unittest.TestCase):
         self.env = dict(os.environ, PATH=str(tools) + ':' + os.environ['PATH'],
                         XDG_CONFIG_HOME=str(self.root / 'config'),
                         XDG_DATA_HOME=str(self.root / 'data'), WAYLAND_DISPLAY='test',
-                        TEST_ROOT=str(self.root))
+                        TEST_ROOT=str(self.root), TEST_RENDERER=str(REPO / 'src/luna-bar/shell.qml'))
         mock = tools / 'qs'
         mock.write_text('''#!/usr/bin/python3
 import json, os, pathlib, sys
@@ -31,6 +31,13 @@ args = sys.argv[1:]
 with (root / 'commands').open('a') as out:
     out.write(json.dumps({'args': args, 'theme': os.getenv('LUNA_UI_THEME'), 'bar': os.getenv('LUNA_BAR_CONFIG')}) + '\\n')
 running = root / 'running'
+if sys.argv[1] == 'list':
+    print(json.dumps([{'id': 'fixture', 'pid': 123, 'config_path': str(pathlib.Path(os.environ['TEST_RENDERER']))}] if running.exists() else []))
+    sys.exit(0)
+if sys.argv[1] == 'kill':
+    assert sys.argv[2:] == ['--pid', '123']
+    running.unlink(missing_ok=True)
+    sys.exit(0)
 if args[0] == 'ipc':
     if not running.exists():
         sys.exit(1)
@@ -81,8 +88,8 @@ file:close()
         calls = self.commands()
         launch = next(call for call in calls if call['args'][0] == '-p')
         self.assertEqual(json.loads(launch['theme'])['colors']['accent'], '#7aa2f7')
-        self.assertEqual(Path(launch['args'][1]).resolve(), REPO / 'src/luna-bar')
-        self.assertTrue((Path(launch['args'][1]) / 'shell.qml').is_file())
+        self.assertEqual(Path(launch['args'][1]).resolve(), REPO / 'src/luna-bar/shell.qml')
+        self.assertTrue(Path(launch['args'][1]).is_file())
         self.assertEqual(calls[-1]['args'][-1], 'focus')
         self.cli('controls')
         self.assertEqual(self.commands()[-1]['args'][-1], 'controls')
@@ -148,7 +155,7 @@ import os, pathlib
         self.assertEqual(payload['colors']['accent'], '#82aaff')
         self.assertEqual(payload['hyprland']['decoration']['rounding'], 8)
         self.assertEqual(payload['hyprland']['decoration']['active_opacity'], 0.9)
-        self.assertTrue(any(call['args'][-1] == 'stop' for call in calls))
+        self.assertTrue(any(call['args'][0] == 'kill' for call in calls))
         self.cli('stop')
         self.cli('stop')
         self.assertFalse((self.root / 'running').exists())

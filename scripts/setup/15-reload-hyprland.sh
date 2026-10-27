@@ -30,7 +30,7 @@ else
     luna_warn 'Hyprland configuration reload skipped: hyprctl is unavailable.'
 fi
 
-# Hyprland reload does not rerun autostart. Replace only the old/new wallpaper
+# Hyprland reload does not rerun autostart. Replace only the wallpaper
 # instances through this checkout's CLI so the newly installed TOML is loaded now.
 if [[ -z "${WAYLAND_DISPLAY:-}" ]] || ! luna_available qs; then
     luna_info 'Wallpaper restart skipped; it will start at the next desktop login.'

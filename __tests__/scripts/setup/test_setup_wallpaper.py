@@ -22,7 +22,7 @@ class SetupWallpaperTests(unittest.TestCase):
         # Reuse the complete theme schema; the tests only customize its sources.
         result = subprocess.run(
             ["/usr/bin/lua", "-E", "-", str(REPO)],
-            input='local root = arg[1]; print(dofile(root .. "/lib/theme/json.lua").encode('
+            input='local root = arg[1]; print(dofile(root .. "/lib/json.lua").encode('
                   'dofile(root .. "/lib/theme/defaults.lua")))',
             capture_output=True, text=True, check=True,
         )
@@ -78,7 +78,7 @@ class SetupWallpaperTests(unittest.TestCase):
         self.assert_success(self.setup())
         settings = tomllib.loads(self.active.read_text())
         self.assertEqual(settings["wallpaper"], {
-            "source": str(source), "fit": "center", "background_color": "#123456",
+            "source": str(source), "fit": "fill", "background_color": "#123456",
         })
         self.assertEqual(settings["playback"], {"pause_when_output_inactive": True})
         self.assertEqual(settings["transition"], {"type": "fade", "duration_ms": 200})
@@ -88,13 +88,12 @@ class SetupWallpaperTests(unittest.TestCase):
         self.assertEqual({path.name for path in self.destination.iterdir()}, {"wallpaper.toml"})
         self.assertFalse((self.root / "INJECTED").exists())
 
-    def test_no_source_keeps_theme_background_without_creating_legacy_selection(self):
+    def test_no_source_keeps_theme_background(self):
         self.select(["missing.png", "https://example.invalid/wallpaper.png"])
         self.assert_success(self.setup())
         wallpaper = tomllib.loads(self.active.read_text())["wallpaper"]
         self.assertEqual(wallpaper["source"], "")
         self.assertEqual(wallpaper["background_color"], "#123456")
-        self.assertFalse(self.active.with_name("wallpaper").exists())
 
     def test_existing_valid_and_malformed_files_are_preserved_byte_for_byte(self):
         self.select()
@@ -151,31 +150,6 @@ class SetupWallpaperTests(unittest.TestCase):
         self.assertTrue((store / "luna-wallpaper/wallpaper.toml").is_file())
         self.assertFalse(self.active.exists())
         self.assertFalse((store / "wallpaper.toml").exists())
-
-    def test_legacy_selection_seeds_missing_toml_and_survives_reruns(self):
-        self.select([str(self.image("theme.png").relative_to(self.installed_theme))])
-        legacy = self.active.with_name("wallpaper")
-        source = '/personal/café "wallpaper".webm'
-        original = (source + "\n").encode()
-        legacy.write_bytes(original)
-        self.assert_success(self.setup())
-        self.assertEqual(tomllib.loads(self.active.read_text())["wallpaper"]["source"], source)
-        self.assertEqual(legacy.read_bytes(), original)
-        personal = self.active.read_bytes()
-        legacy.write_text("/another/image.png\n")
-        self.assert_success(self.setup())
-        self.assertEqual(self.active.read_bytes(), personal)
-
-    def test_invalid_legacy_selections_use_theme_defaults(self):
-        self.select()
-        legacy = self.active.with_name("wallpaper")
-        for value in (b"", b"relative.png\n", b"/one\n/two\n", b"\xff"):
-            with self.subTest(value=value):
-                legacy.write_bytes(value)
-                self.active.unlink(missing_ok=True)
-                self.assert_success(self.setup())
-                self.assertEqual(tomllib.loads(self.active.read_text())["wallpaper"]["source"], "")
-                self.assertEqual(legacy.read_bytes(), value)
 
     def test_personal_symlinks_preserve_existing_and_seed_missing_targets(self):
         self.select()

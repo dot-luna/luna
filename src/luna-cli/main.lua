@@ -149,7 +149,8 @@ elseif not options.font and not options.wallpaper and not options.theme then
 elseif options.font and not (options.search or options.install or options.remove or options.list or options.refresh or options.families or options.set) then
     common.info(font_parser:get_help())
 elseif options.wallpaper and not (options.add or options.set or options.remove or options.list
-    or options.random or options.current or options.dir or options.open or options.start or options.restart) then
+    or options.random or options.dir or options.open or options.start or options.stop or options.restart or options.reload
+    or options.get_config or options.update_config or options.get_config_file or options.status) then
     common.info(wallpaper_parser:get_help())
 elseif options.theme and not (options.install or options.list or options.current or options.path
     or options.set or options.remove or options.mode or options.toggle) then

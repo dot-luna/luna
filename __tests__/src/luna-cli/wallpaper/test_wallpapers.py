@@ -24,7 +24,6 @@ class WallpaperTests(unittest.TestCase):
         self.bin.mkdir()
         self.library = self.root / 'data/luna/wallpapers'
         self.selection = self.root / 'config/luna/wallpaper.toml'
-        self.legacy = self.root / 'config/luna/wallpaper'
         self.env = dict(os.environ, PATH=str(self.bin) + ':' + os.environ['PATH'],
                         HOME=str(self.root / 'home'), LUNA_WALLPAPER_CONFIG='',
                         XDG_DATA_HOME=str(self.root / 'data'),
@@ -40,9 +39,9 @@ if sys.argv[-1] == 'status':
     print('error' if (root / 'fail').exists() else 'ready')
 elif sys.argv[1:4] == ['list', '-a', '-j']:
     print((root / 'instances').read_text() if (root / 'instances').exists() else '[]')
-elif sys.argv[1:3] == ['kill', '-i']:
+elif sys.argv[1:3] == ['kill', '--pid']:
     path = root / 'instances'
-    remaining = [item for item in json.loads(path.read_text()) if item['id'] != sys.argv[3]]
+    remaining = [item for item in json.loads(path.read_text()) if str(item['pid']) != sys.argv[3]]
     path.write_text(json.dumps(remaining))
 '''
         for tool in ('qs', 'xdg-open'):
@@ -82,6 +81,35 @@ elif sys.argv[1:3] == ['kill', '-i']:
         self.assertEqual(list(self.library.iterdir()), [])
         self.assertTrue(self.a.exists())
 
+    def test_config_commands_print_resolved_values_and_deep_merge_without_renderer(self):
+        resolved = json.loads(self.cli('get-config'))
+        self.assertEqual(resolved['wallpaper']['fit'], 'fill')
+        self.assertEqual(self.cli('get-config', 'missing'), '')
+        self.assertEqual(self.cli('getConfig', 'wallpaper.source'), '')
+        self.assertEqual(self.cli('get-config-file'), str(self.selection) + '\n')
+        self.assertFalse(self.selection.exists())
+        self.cli('update-config', json.dumps({'playback': {'pause_when_output_inactive': False},
+                                             'transition': {'duration_ms': 0},
+                                             'custom': {'nested': {'first': 1, 'second': 2}, 'values': [[], {}]}}))
+        self.cli('updateConfig', json.dumps({'custom': {'nested': {'second': 3}, 'values': [4]}}))
+        self.assertEqual(self.cli('get-config', 'playback.pause_when_output_inactive'), 'false\n')
+        self.assertEqual(self.cli('get-config', 'transition.duration_ms'), '0\n')
+        self.assertEqual(json.loads(self.cli('get-config', 'custom')), {'nested': {'first': 1, 'second': 3}, 'values': [4]})
+        self.assertNotIn('wallpaper', tomllib.loads(self.selection.read_text()))
+        self.assertFalse((self.root / 'commands').exists())
+        self.selection.write_text('[broken')
+        self.assertEqual(self.cli('getConfigFile'), str(self.selection) + '\n')
+        self.cli('get-config', ok=False)
+
+    def test_invalid_config_updates_fail_without_writing_or_reloading(self):
+        self.cli('update-config', '{"wallpaper":{"fit":"invalid"}}', ok=False)
+        self.assertFalse(self.selection.exists())
+        self.cli('update-config', '{"wallpaper":{"fit":"fit"}}')
+        before = self.selection.read_bytes()
+        self.cli('update-config', '{"wallpaper":{"fit":"invalid","background_color":"#123456"}}', ok=False)
+        self.assertEqual(self.selection.read_bytes(), before)
+        self.assertFalse((self.root / 'commands').exists())
+
     def test_recursive_and_preflight(self):
         folder = self.root / 'images'
         (folder / 'nested').mkdir(parents=True)
@@ -102,11 +130,11 @@ elif sys.argv[1:3] == ['kill', '-i']:
         self.assertFalse((self.library / self.a.name).exists())
 
     def test_selection_random_and_failure(self):
-        self.cli('current', ok=False)
+        self.assertEqual(self.cli('get-config', 'wallpaper.source'), '')
         self.cli('add', self.a, self.b)
         self.cli('set', self.a.name)
         saved = str(self.library / self.a.name)
-        self.assertEqual(self.cli('current').strip(), saved)
+        self.assertEqual(self.cli('get-config', 'wallpaper.source').strip(), saved)
         self.assertIn('* ' + saved, self.cli('list'))
         self.cli('remove', self.a.name, ok=False, answer='y\n')
         self.cli('random')
@@ -115,7 +143,7 @@ elif sys.argv[1:3] == ['kill', '-i']:
         (self.root / 'fail').touch()
         self.cli('set', self.a, ok=False)
         self.assertEqual(self.selection.read_bytes(), before)
-        self.assertEqual(self.commands()[-1][-2:], ['set', str(self.library / self.b.name)])
+        self.assertEqual(self.commands()[-1][-1], 'status')
         (self.root / 'fail').unlink()
         self.cli('set', self.a)
         self.assertEqual(self.saved_source(), str(self.a))
@@ -148,7 +176,7 @@ future = true # Keep unknown options
                      'background_color = "#123456"', '[outputs."DP-1".wallpaper]',
                      'source = "/reserved.png"', 'future = true # Keep unknown options'):
             self.assertIn(text, after)
-        self.assertEqual(list(target.parent.glob('.wallpaper-*')), [])
+        self.assertEqual(list(target.parent.glob('.luna-toml-*')), [])
 
     def test_explicit_config_and_empty_environment_fallbacks(self):
         explicit = self.root / "config with ' quotes/wallpaper.toml"
@@ -156,26 +184,13 @@ future = true # Keep unknown options
         self.cli('set', self.a)
         self.assertEqual(self.saved_source(explicit), str(self.a))
         self.assertFalse(self.selection.exists())
-        self.assertEqual(self.cli('current').strip(), str(self.a))
+        self.assertEqual(self.cli('get-config', 'wallpaper.source').strip(), str(self.a))
 
         self.env.update(LUNA_WALLPAPER_CONFIG='', XDG_CONFIG_HOME='', XDG_DATA_HOME='')
         self.cli('set', self.b)
         default = self.root / 'home/.config/luna/wallpaper.toml'
         self.assertEqual(self.saved_source(default), str(self.b))
         self.assertEqual(self.cli('dir').strip(), str(self.root / 'home/.local/share/luna/wallpapers'))
-
-    def test_legacy_selection_migrates_only_without_toml(self):
-        self.legacy.parent.mkdir(parents=True)
-        self.legacy.write_text(str(self.a) + '\n')
-        self.assertEqual(self.cli('current').strip(), str(self.a))
-        self.assertFalse(self.selection.exists())
-        self.cli('start')
-        self.assertEqual(self.saved_source(), str(self.a))
-        self.assertEqual(self.legacy.read_text(), str(self.a) + '\n')
-        self.selection.write_text('[wallpaper]\nsource = ""\n')
-        self.cli('current', ok=False)
-        self.cli('start')
-        self.assertEqual(self.saved_source(), '')
 
     def test_bad_config_or_failed_media_never_replaces_user_data(self):
         self.selection.parent.mkdir(parents=True)
@@ -193,36 +208,64 @@ future = true # Keep unknown options
         self.selection.unlink()
         (self.root / 'fail').touch()
         self.cli('set', self.a, ok=False)
-        self.assertFalse(self.selection.exists())
-        self.assertEqual(self.commands()[-1][-2:], ['set', ''])
+        self.assertEqual(self.saved_source(), '')
+        self.assertEqual(self.commands()[-1][-1], 'status')
 
     def test_repo_reference_is_not_rewritten_through_symlink(self):
         reference = REPO / 'src/wallpaper/config.toml'
         before = reference.read_bytes()
         self.selection.parent.mkdir(parents=True)
         self.selection.symlink_to(reference)
-        previous = self.cli('current').strip()
         self.cli('set', self.a, ok=False)
         self.assertEqual(reference.read_bytes(), before)
         self.assertTrue(self.selection.is_symlink())
-        self.assertEqual(self.commands()[-1][-2:], ['set', previous])
+        self.assertFalse((self.root / 'commands').exists())
 
-    def test_restart_stops_only_old_and_new_wallpaper_instances(self):
+    def test_restart_stops_only_exact_wallpaper_instances(self):
         instances = [
-            {'id': 'old-wallpaper', 'config_path': str(REPO / 'src/wallpaper/shell.qml')},
-            {'id': 'new-wallpaper', 'config_path': str(REPO / 'src/wallpaper/src/shell.qml')},
-            {'id': 'bar', 'config_path': str(REPO / 'src/luna-bar/shell.qml')},
-            {'id': 'other-wallpaper', 'config_path': '/other/checkout/src/wallpaper/shell.qml'},
+            {'id': 'current-wallpaper', 'pid': 301, 'config_path': str(REPO / 'src/wallpaper/src/shell/shell.qml')},
+            {'id': 'bar', 'pid': 203, 'config_path': str(REPO / 'src/luna-bar/shell.qml')},
+            {'id': 'other-wallpaper', 'pid': 302, 'config_path': '/other/checkout/src/wallpaper/src/shell/shell.qml'},
         ]
         (self.root / 'instances').write_text(json.dumps(instances))
         self.cli('restart')
         commands = self.commands()
         self.assertEqual([c for c in commands if c[0] == 'kill'],
-                         [['kill', '-i', 'old-wallpaper'], ['kill', '-i', 'new-wallpaper']])
-        self.assertEqual(json.loads((self.root / 'instances').read_text()), instances[2:])
+                         [['kill', '--pid', '301']])
+        self.assertEqual(json.loads((self.root / 'instances').read_text()), instances[1:])
         self.assertEqual(commands[-1][0], '-p')
-        self.assertEqual(Path(commands[-1][1]).resolve(), REPO / 'src/wallpaper/src/shell.qml')
+        self.assertEqual(Path(commands[-1][1]).resolve(), REPO / 'src/wallpaper/src/shell/shell.qml')
         self.assertIn('--no-duplicate', commands[-1])
+
+    def test_reload_calls_the_app_api_without_restarting_or_saving(self):
+        self.selection.parent.mkdir(parents=True)
+        original = '[wallpaper]\nsource = ""\nfit = "tile"\n'
+        self.selection.write_text(original)
+        self.assertIn('reloaded', self.cli('reload'))
+        self.assertTrue(any(command[-1] == 'reload' for command in self.commands()))
+        self.assertFalse(any(command[0] in ('kill', 'list') for command in self.commands()))
+        self.assertEqual(self.selection.read_text(), original)
+        (self.root / 'fail').touch()
+        self.cli('reload', ok=False)
+        self.assertEqual(self.selection.read_text(), original)
+
+    def test_stop_command_never_launches_or_changes_config(self):
+        self.selection.parent.mkdir(parents=True)
+        original = '# Preserve even unfinished edits\n[wallpaper\n'
+        self.selection.write_text(original)
+        self.env['WAYLAND_DISPLAY'] = ''
+        instances = [
+            {'id': 'wallpaper', 'pid': 201, 'config_path': str(REPO / 'src/wallpaper/src/shell/shell.qml')},
+            {'id': 'bar', 'pid': 203, 'config_path': str(REPO / 'src/luna-bar/shell.qml')},
+        ]
+        state = self.root / 'instances'
+        state.write_text(json.dumps(instances))
+        self.cli('stop')
+        self.cli('stop')
+        self.assertEqual(json.loads(state.read_text()), instances[1:])
+        self.assertEqual(self.selection.read_text(), original)
+        self.assertEqual([call for call in self.commands() if call[0] == 'kill'], [['kill', '--pid', '201']])
+        self.assertTrue(all(call[0] in ('list', 'kill') for call in self.commands()))
 
     def test_local_animations_videos_and_mislabeled_images(self):
         gif = self.root / 'animation.gif'
@@ -254,42 +297,6 @@ future = true # Keep unknown options
         self.cli('set', self.a)
         self.cli('remove', *(path.name for path in media), answer='y\n')
         self.assertEqual(list(self.library.iterdir()), [])
-
-    def test_renderer_deadlines_allow_slow_loading_and_remain_bounded(self):
-        # Stub process calls in Lua so the full timeout path takes no wall-clock minute.
-        script = '''
-local source = "/previous.svg"
-local status_calls, sleeps, writes, reverted = 0, 0, 0, false
-local mode = "slow"
-local common = {
-    available = function() return true end,
-    info = function() end,
-    run = function(args) if args[1] == "sleep" then sleeps = sleeps + 1 end end,
-    capture = function(args)
-        if args[#args] == "status" then
-            status_calls = status_calls + 1
-            return mode == "slow" and status_calls == 400 and "ready" or "loading", true
-        end
-        if args[#args - 1] == "set" and args[#args] == source then reverted = true end
-        return "", true
-    end,
-}
-local config = {
-    current = function() return source end,
-    migrate = function() error("apply must not rewrite config before media succeeds") end,
-    write = function() writes = writes + 1 end,
-}
-local backend = dofile(arg[1])(common, "/fake/shell.qml", config)
-backend.apply("/new.mp4")
-assert(status_calls == 400 and writes == 1 and sleeps == 399)
-mode, status_calls, sleeps, writes = "timeout", 0, 0, 0
-local ok = pcall(backend.apply, "/broken.mp4")
-assert(not ok and status_calls == 600 and sleeps == 600 and writes == 0 and reverted)
-'''
-        result = subprocess.run(['/usr/bin/lua', '-E', '-',
-                                 str(REPO / 'src/luna-cli/wallpaper/backend.lua')],
-                                input=script, env=self.env, capture_output=True, text=True)
-        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_url_downloads_and_cleanup(self):
         class Handler(BaseHTTPRequestHandler):
@@ -328,33 +335,6 @@ assert(not ok and status_calls == 600 and sleeps == 600 and writes == 0 and reve
         self.cli('add', self.a, base + '/missing', ok=False)
         self.assertFalse((self.library / self.a.name).exists())
         self.assertEqual(list(temporary.iterdir()), [])
-
-    def test_missing_curl_bootstrap(self):
-        # Inject availability and install calls so bootstrap never invokes host pacman.
-        script = '''
-local installed = false
-local calls = {}
-local common = {
-    available = function(name)
-        return name ~= "curl" or installed
-    end,
-    is_root = function() return false end,
-    info = function() end,
-    run = function(args)
-        table.insert(calls, table.concat(args, " "))
-        installed = true
-    end,
-}
-local download = dofile(arg[1])(common)
-download.prepare()
-assert(calls[1] == "sudo pacman -Syu --needed curl")
-download.prepare()
-assert(#calls == 1)
-'''
-        result = subprocess.run(['/usr/bin/lua', '-E', '-',
-                                 str(REPO / 'src/luna-cli/wallpaper/download.lua')],
-                                input=script, capture_output=True, text=True)
-        self.assertEqual(result.returncode, 0, result.stderr)
 
 
 if __name__ == '__main__':

@@ -1,6 +1,6 @@
 -- Seconds of inactivity; zero disables a timer independently.
 return function(common, root)
-    local json = dofile(root .. "/lib/theme/json.lua")
+    local json = dofile(root .. "/lib/json.lua")
     local directory = (os.getenv("XDG_CONFIG_HOME") or assert(os.getenv("HOME")) .. "/.config") .. "/luna"
     local M = { path = directory .. "/idle.json" }
 

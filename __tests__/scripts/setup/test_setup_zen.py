@@ -53,7 +53,7 @@ class SetupZenTests(unittest.TestCase):
     def set_styles(self):
         self.builder.write_text(
             'return function(ctx)\n'
-            '    local json = dofile(ctx.root .. "/lib/theme/json.lua")\n'
+            '    local json = dofile(ctx.root .. "/lib/json.lua")\n'
             '    local styles = json.decode([==[' + json.dumps(self.styles) + ']==])\n'
             '    ctx.write("generated/userChrome.css", styles.chrome)\n'
             '    ctx.write("generated/userContent.css", styles.content)\n'

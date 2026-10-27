@@ -1,7 +1,7 @@
 """Test video controller readiness, IPC, and cleanup without launching mpvpaper.
 
 Run from the repository root:
-    python3 -m unittest discover -s __tests__/src/wallpaper -p test_video_wallpaper.py -v
+    python3 -m unittest discover -s __tests__/src/wallpaper/src/shell -p test_video_wallpaper.py -v
 
 The real QML controller runs offscreen against a fake player on a local Unix
 socket. These tests verify process arguments and lifecycle, not video quality or
@@ -20,7 +20,7 @@ import time
 import unittest
 
 
-ROOT = Path(__file__).resolve().parents[3]
+ROOT = Path(__file__).resolve().parents[5]
 
 
 @unittest.skipUnless(shutil.which("qs"), "Quickshell required")
@@ -35,7 +35,7 @@ class VideoWallpaperTests(unittest.TestCase):
 
         # Copy the production controller and expose only test controls through a small shell.
         for name in ("VideoWallpaper.qml", "Video.js"):
-            shutil.copyfile(ROOT / "src/wallpaper/src" / name, self.renderer / name)
+            shutil.copyfile(ROOT / "src/wallpaper/src/shell" / name, self.renderer / name)
         (self.renderer / "shell.qml").write_text('''import QtQuick
 import Quickshell
 import Quickshell.Io
@@ -79,6 +79,8 @@ ShellRoot {
             #!/usr/bin/python3
             import json, os, pathlib, signal, socket, sys, time
             root = pathlib.Path(os.environ["TEST_VIDEO_ROOT"])
+            stubborn = (root / "ignore-stop").exists()
+            if stubborn: signal.signal(signal.SIGTERM, signal.SIG_IGN)
             with (root / "launches").open("a") as file:
                 file.write(json.dumps({"args": sys.argv[1:], "pid": os.getpid(),
                     "cwd": os.getcwd(), "home": os.environ["HOME"]}) + "\\n")
@@ -96,7 +98,9 @@ ShellRoot {
                     (root / "event").unlink()
                 try: chunk = client.recv(4096)
                 except socket.timeout: continue
-                if not chunk: break
+                if not chunk:
+                    if stubborn: time.sleep(10)
+                    else: break
                 data += chunk
                 while b"\\n" in data:
                     line, data = data.split(b"\\n", 1)
@@ -229,13 +233,14 @@ ShellRoot {
         self.until(lambda: self.state()["status"] == "error")
         self.assertIn("exited (3)", self.state()["error"])
 
-    def test_unsupported_video_fit_uses_center(self):
-        # Image-only tiling and unknown values should use a normal video fit, not reject playback.
+    def test_video_tile_uses_center_and_unknown_fit_uses_fill(self):
+        # Image tiling keeps its centered-video behavior; invalid modes use the fill default.
         for fit in ("tile", "unknown", "toString"):
             with self.subTest(fit=fit):
                 self.start(fit)
                 self.until(lambda: self.state()["status"] == "ready")
-                self.assertIn("video-unscaled=yes", self.rows("launches")[-1]["args"][3])
+                expected = "video-unscaled=yes" if fit == "tile" else "panscan=1"
+                self.assertIn(expected, self.rows("launches")[-1]["args"][3])
                 self.assertEqual(self.state()["error"], "")
                 directory = Path(self.state()["directory"])
                 self.ipc("stop")
@@ -273,6 +278,43 @@ ShellRoot {
         self.ipc("destroy")
         self.until(lambda: not directory.exists())
         self.assertEqual(self.state(), {})
+
+    def check_runtime_stop(self):
+        """Exercise the real stop operation against this offscreen shell and fake player."""
+        self.start()
+        self.until(lambda: self.state()["status"] == "ready")
+        directory = Path(self.state()["directory"])
+        player = self.rows("launches")[-1]["pid"]
+        # Installed directories may be symlinks, and stop must work outside Wayland.
+        alias = self.root / "installed wallpaper"
+        alias.symlink_to(self.renderer, target_is_directory=True)
+        environment = dict(self.env, WAYLAND_DISPLAY="")
+        command = ["/usr/bin/lua", "-E", "-", str(ROOT), str(alias)]
+        source = ('local root, renderer = arg[1], arg[2]\n'
+                  'local common = dofile(root .. "/lib/common.lua")\n'
+                  'dofile(root .. "/src/wallpaper/src/runtime.lua")(common, root, renderer).stop()\n')
+        result = subprocess.run(command, input=source, env=environment,
+                                capture_output=True, text=True, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.process.wait(timeout=5)
+
+        # Directory removal is detached; allow it to finish after the shell exits.
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline and (directory.exists() or Path(f"/proc/{player}").exists()):
+            time.sleep(0.025)
+        self.assertFalse(directory.exists(), "Stopping left the player socket directory behind")
+        self.assertFalse(Path(f"/proc/{player}").exists(), "Stopping left the video player running")
+        repeated = subprocess.run(command, input=source, env=environment,
+                                  capture_output=True, text=True, timeout=10)
+        self.assertEqual(repeated.returncode, 0, repeated.stdout + repeated.stderr)
+        self.assertEqual(len(self.rows("launches")), 1)
+
+    def test_runtime_stop_cleans_up_shell_player_and_socket(self):
+        self.check_runtime_stop()
+
+    def test_runtime_stop_terminates_player_that_ignores_graceful_shutdown(self):
+        (self.root / "ignore-stop").touch()
+        self.check_runtime_stop()
 
     def test_fit_modes_use_distinct_player_sizing(self):
         for fit, expected in (("fit", "panscan=0"), ("stretch", "keepaspect=no"), ("center", "video-unscaled=yes")):

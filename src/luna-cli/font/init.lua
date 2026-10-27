@@ -2,7 +2,7 @@
 return function(common, module_dir)
     local packages = dofile(module_dir .. "/packages.lua")(common)
     local local_fonts = dofile(module_dir .. "/local.lua")(common)
-    local json = dofile(module_dir .. "/../../../lib/theme/json.lua")
+    local json = dofile(module_dir .. "/../../../lib/json.lua")
     local search = dofile(module_dir .. "/search.lua")(common, packages, json)
     local preferences = dofile(module_dir .. "/preferences.lua")(common, module_dir)
     local M = {}

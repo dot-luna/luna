@@ -2,7 +2,7 @@
 return function(common, module_dir)
     local resolved = dofile(module_dir .. "/../../../lib/theme/resolved.lua")(module_dir .. "/../../..")
     local validate = dofile(module_dir .. "/../../../lib/theme/validate.lua")()
-    local wallpaper_dir = module_dir .. "/../wallpaper"
+    local wallpaper_dir = module_dir .. "/../../../lib/wallpapers"
     local download = dofile(wallpaper_dir .. "/download.lua")(common)
     local wallpapers = dofile(wallpaper_dir .. "/files.lua")(common, download)
     local ini = dofile(module_dir .. "/../../../lib/ini.lua")

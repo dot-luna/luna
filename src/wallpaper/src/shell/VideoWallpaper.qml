@@ -121,7 +121,7 @@ Item {
             return;
         }
 
-        // Build playback options; unsupported fit modes use the helper's center default.
+        // Build playback options; unsupported fit modes use the helper's fill default.
         playerOptions = Video.options(fit, backgroundColor.toString(), paused);
 
         // mktemp creates a private directory even when XDG_RUNTIME_DIR is unavailable.

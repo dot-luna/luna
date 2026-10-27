@@ -32,6 +32,13 @@ if args[0] != 'ipc':
 with (root / 'commands').open('a') as out:
     out.write(json.dumps(call) + '\\n')
 running = root / 'running'
+if sys.argv[1] == 'list':
+    print(json.dumps([{'id': 'fixture', 'pid': 123, 'config_path': str(pathlib.Path(os.environ['TEST_RENDERER']))}] if running.exists() else []))
+    sys.exit(0)
+if sys.argv[1] == 'kill':
+    assert sys.argv[2:] == ['--pid', '123']
+    running.unlink(missing_ok=True)
+    sys.exit(0)
 if args[0] == 'ipc':
     if not running.exists():
         sys.exit(1)
@@ -43,7 +50,7 @@ else:
         tool.chmod(0o755)
         self.extra_import = str(self.root / 'extra qml')
         self.env = dict(os.environ, PATH=str(self.root) + ':' + os.environ['PATH'],
-                        TEST_SETTINGS_ROOT=str(self.root), WAYLAND_DISPLAY='test',
+                        TEST_SETTINGS_ROOT=str(self.root), TEST_RENDERER=str(REPO / 'src/luna-settings/shell.qml'), WAYLAND_DISPLAY='test',
                         XDG_CONFIG_HOME=str(self.root / 'config'),
                         XDG_DATA_HOME=str(self.root / 'data'),
                         QML_IMPORT_PATH=self.extra_import)
@@ -62,11 +69,11 @@ else:
         return self.calls()[before:]
 
     def snapshot(self, calls):
-        launches = [call for call in calls if call['args'][0] != 'ipc']
+        launches = [call for call in calls if call['args'][0] == '-p']
         self.assertEqual(len(launches), 1)
         launch = launches[0]
         args = launch['args']
-        self.assertEqual(Path(args[args.index('-p') + 1]).resolve(), REPO / 'src/luna-settings')
+        self.assertEqual(Path(args[args.index('-p') + 1]).resolve(), REPO / 'src/luna-settings/shell.qml')
         self.assertIn('--no-duplicate', args)
         self.assertIn('--daemonize', args)
         imports = launch['imports'].split(':')
@@ -91,16 +98,16 @@ else:
                 self.assertEqual(calls[-1]['args'][-2:], ['settings', method])
                 if action == 'reload':
                     stop = next(index for index, call in enumerate(calls)
-                                if call['args'][-1] == 'stop')
+                                if call['args'][0] == 'kill')
                     launch = next(index for index, call in enumerate(calls)
-                                  if call['args'][0] != 'ipc')
+                                  if call['args'][0] == '-p')
                     self.assertLess(stop, launch)
                 self.assertTrue(self.running.exists())
 
         calls = self.cli('stop')
         self.assertFalse(self.running.exists())
-        self.assertTrue(all(call['args'][0] == 'ipc' for call in calls))
-        self.assertIn('stop', [call['args'][-1] for call in calls])
+        self.assertTrue(all(call['args'][0] in ('list', 'kill') for call in calls))
+        self.assertIn('kill', [call['args'][0] for call in calls])
 
     def test_active_theme_and_personal_font_reach_reloaded_window(self):
         theme = self.snapshot(self.cli())

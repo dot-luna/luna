@@ -7,7 +7,7 @@
  * Translate the wallpaper fit mode into mpv settings and configure silent, looping playback.
  * User mpv configuration and scripts are disabled so they cannot change wallpaper behavior.
  *
- * @param {string} fit Video fit mode; unsupported values use center.
+ * @param {string} fit Video fit mode; unsupported values use fill.
  * @param {string} background Qt's normalized hexadecimal color.
  * @param {boolean} paused Whether playback starts paused.
  * @returns {string} mpvpaper's configuration options, without user-controlled paths.
@@ -34,8 +34,8 @@ function options(fit, background, paused) {
         // VideoWallpaper sets the working directory to a private mktemp directory before launch.
         "input-ipc-server=./ipc",
 
-        // Tiling is image-only; it and unknown fit modes use centered video instead.
-        Object.prototype.hasOwnProperty.call(sizing, fit) ? sizing[fit] : sizing.center
+        // Tiling is image-only and uses centered video; unknown modes use fill.
+        fit === "tile" ? sizing.center : Object.prototype.hasOwnProperty.call(sizing, fit) ? sizing[fit] : sizing.fill
     ].join(" ");
 }
 

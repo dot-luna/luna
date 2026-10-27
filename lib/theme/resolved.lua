@@ -2,24 +2,14 @@
 return function(root)
     local M = {}
     local validate = dofile(root .. "/lib/theme/validate.lua")()
-    local json = dofile(root .. "/lib/theme/json.lua")
+    local json = dofile(root .. "/lib/json.lua")
+    local config = dofile(root .. "/lib/config.lua")(json)
     local defaults = dofile(root .. "/lib/theme/defaults.lua")
     local fonts = dofile(root .. "/lib/theme/fonts.lua")(root)
     local home = assert(os.getenv("HOME"), "HOME is required")
     local config_home = os.getenv("XDG_CONFIG_HOME")
-    local config = (config_home and config_home ~= "" and config_home or home .. "/.config") .. "/luna"
-    M.path = config .. "/theme.json"
-
-    local function merge(base, overrides)
-        local result = {}
-        for key, value in pairs(base) do
-            result[key] = type(value) == "table" and merge(value, {}) or value
-        end
-        for key, value in pairs(overrides) do
-            result[key] = type(value) == "table" and merge(result[key] or {}, value) or value
-        end
-        return result
-    end
+    local directory = (config_home and config_home ~= "" and config_home or home .. "/.config") .. "/luna"
+    M.path = directory .. "/theme.json"
 
     local function foreground(fill)
         local luminance = 0
@@ -35,9 +25,9 @@ return function(root)
         validate.values(exports)
         local base = defaults
         if exports.colors and exports.colors.mode == "light" then
-            base = merge(defaults, { colors = dofile(root .. "/lib/theme/light.lua") })
+            base = config.merge(defaults, { colors = dofile(root .. "/lib/theme/light.lua") })
         end
-        local result = merge(base, exports)
+        local result = config.merge(base, exports)
         local colors = exports.colors or {}
         -- An overridden fill needs a readable foreground unless the author supplies one.
         for _, role in ipairs({ "accent", "selection", "secondary_accent", "error", "warning", "notice", "success", "info" }) do
@@ -50,8 +40,8 @@ return function(root)
                 result.colors[role .. "_emphasis"] = colors[role]
             end
         end
-        -- Wallpaper lists replace defaults rather than merging by numeric index.
-        result.wallpaper.sources = (exports.wallpaper or {}).sources or {}
+        -- Preserve the array shape even for an empty Lua wallpaper list.
+        result.wallpaper.sources = json.array(result.wallpaper.sources)
         result.version = 1
         result.name = name or "tokyo-night"
         validate.values(result)
@@ -84,7 +74,7 @@ return function(root)
     end
 
     function M.active()
-        local file, failure, code = io.open(config .. "/theme", "r")
+        local file, failure, code = io.open(directory .. "/theme", "r")
         if not file then
             assert(code == 2, failure)
             return M.resolve({})

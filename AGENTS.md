@@ -2,6 +2,11 @@
 
 Look in `.agents/skills/` for project skills and apply those relevant to the task.
 
+Luna is in active development. Do not add backward-compatibility functions,
+legacy aliases, fallback code for old APIs or formats, or migration layers unless
+explicitly requested. Update affected callers to the current API and remove obsolete
+code when changing it.
+
 Prefer GTK/GNOME applications or Luna's own UI. Avoid KDE applications and desktop
 components wherever possible; do not introduce new KDE apps. Replace existing KDE
 components when a working alternative is available. `polkit-kde-agent` is temporary

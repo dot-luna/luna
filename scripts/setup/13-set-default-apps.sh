@@ -15,7 +15,7 @@ export XDG_CONFIG_HOME="$config_home"
 
 # Validate the whole declarative manifest before touching user preferences. JSON
 # carries only data to Python; manifest output is never evaluated as shell code.
-preferences_json=$(/usr/bin/lua -E - "$setup_dir/../../default/apps.lua" "$setup_dir/../../lib/theme/json.lua" <<'LUA'
+preferences_json=$(/usr/bin/lua -E - "$setup_dir/../../default/apps.lua" "$setup_dir/../../lib/json.lua" <<'LUA'
 local ok, result = pcall(function()
     local manifest = assert(loadfile(arg[1], "t", {}))()
     assert(type(manifest) == "table", "Expected a key-value table")

@@ -2,7 +2,7 @@
 return function(common, directory)
     local root = directory .. "/../../.."
     local renderer = directory .. "/../../screensaver"
-    local json = dofile(root .. "/lib/theme/json.lua")
+    local json = dofile(root .. "/lib/json.lua")
     local config = dofile(directory .. "/config.lua")(common, root)
     local shell = dofile(root .. "/lib/quickshell.lua")(common, root, renderer, "screensaver", "Luna Screensaver")
     local M = {}

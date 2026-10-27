@@ -27,13 +27,28 @@ luna wallpaper list
 luna wallpaper set mountain.jpg
 luna wallpaper set ~/Pictures/forest.png
 luna wallpaper random
-luna wallpaper current
+luna wallpaper get-config wallpaper.source
 ```
 
 - Quickshell renders on the first available monitor using the TOML fit setting.
-- Selection is saved in `[wallpaper].source` after successful media loading, preserving comments and other options.
+- Selection updates `[wallpaper].source` and reloads the renderer, preserving comments and other options. Failed loading restores the previous source.
 - `random` avoids the current image when other images are available.
-- `current` prints the saved selection, even when the renderer is stopped.
+- `get-config wallpaper.source` prints the saved selection in any renderer state.
+
+## Config
+
+```sh
+luna wallpaper get-config
+luna wallpaper get-config wallpaper.fit
+luna wallpaper get-config-file
+luna wallpaper update-config '{"wallpaper":{"fit":"fill"}}'
+luna wallpaper reload
+luna wallpaper status
+```
+
+`get-config` reads the user file and prints the resolved config as JSON. A dotted key prints its value: scalars are plain text, tables/arrays are JSON, and missing keys produce empty stdout. `get-config-file` prints the absolute path.
+
+`update-config` deep-merges the supplied JSON object directly into the user file and prints the resolved result. Nested tables merge; arrays replace. Both config operations work whether the renderer is running or stopped. Changes appear after an explicit `reload`. The API-name aliases `getConfig`, `updateConfig`, and `getConfigFile` are also available.
 
 ## Library
 
@@ -52,12 +67,16 @@ luna wallpaper remove mountain.jpg forest.png
 
 ```sh
 luna wallpaper start
+luna wallpaper reload
 luna wallpaper restart
+luna wallpaper stop
 ```
 
 - Add this command to your compositor's startup commands to restore the saved wallpaper on login.
 - Repeated starts reuse Luna's running Quickshell instance.
-- `restart` rereads the config and replaces old/new Luna wallpaper instances without stopping other Quickshell apps.
+- `stop` shuts down Luna's wallpaper renderer and its media playback, preserving the config. Calling it again is harmless.
+- `reload` applies manual TOML edits in the running renderer; a stopped renderer starts first.
+- `restart` rereads the config and replaces Luna wallpaper instances without stopping other Quickshell apps.
 - Config: `$LUNA_WALLPAPER_CONFIG`, otherwise `$XDG_CONFIG_HOME/luna/wallpaper.toml` (default `~/.config/luna/wallpaper.toml`). See [available options](../../wallpaper/config.toml).
-- Installation creates the user config. Standalone starts migrate the old `luna/wallpaper` selection only when TOML is absent.
+- Installation creates the initial user config from theme defaults.
 - Requires Wayland layer shell, Quickshell, TOMLKit, `file`, and `ffmpeg`; videos also require `mpvpaper`. Library `open` uses `xdg-utils`.

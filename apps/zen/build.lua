@@ -1,7 +1,7 @@
 -- Substitute theme values into CSS; profile edits belong to the shared installer.
 return function(ctx)
     local theme = ctx.theme()
-    local json = dofile(ctx.root .. "/lib/theme/json.lua")
+    local json = dofile(ctx.root .. "/lib/json.lua")
 
     -- Font families are CSS strings, so quote their delimiters before insertion.
     local ui_font = '"' .. theme.fonts.ui:gsub('[\\"]', function(character)

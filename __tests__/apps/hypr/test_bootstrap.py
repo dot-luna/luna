@@ -44,7 +44,7 @@ class BootstrapKeyringTests(unittest.TestCase):
         # are inert handlers; registering or dispatching never executes a command.
         capture = '''
 local load = dofile
-local json = dofile(arg[2] .. "/lib/theme/json.lua")
+local json = dofile(arg[2] .. "/lib/json.lua")
 local root = arg[2]
 local config_dir = arg[3]
 local callbacks, commands = {}, {}

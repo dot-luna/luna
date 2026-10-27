@@ -2,7 +2,7 @@
 return function(common, directory)
     local root = directory .. "/../../.."
     local config = dofile(directory .. "/config.lua")(common, root)
-    local json = dofile(root .. "/lib/theme/json.lua")
+    local json = dofile(root .. "/lib/json.lua")
     local M = {}
 
     function M.register(parser)

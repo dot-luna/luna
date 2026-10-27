@@ -1,6 +1,6 @@
 -- Unicode data stays local; curl talks directly to GIPHY without exposing keys in argv.
 return function(common, directory)
-    local json = dofile(directory .. "/../../../lib/theme/json.lua")
+    local json = dofile(directory .. "/../../../lib/json.lua")
     local config_dir = (os.getenv("XDG_CONFIG_HOME") or os.getenv("HOME") .. "/.config") .. "/luna"
     local M = {}
 

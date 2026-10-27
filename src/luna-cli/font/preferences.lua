@@ -1,7 +1,7 @@
 -- Expose installed family choices and persist UI/mono preferences for all Luna consumers.
 return function(common, directory)
     local root = directory .. "/../../.."
-    local json = dofile(root .. "/lib/theme/json.lua")
+    local json = dofile(root .. "/lib/json.lua")
     local preferences = dofile(root .. "/lib/theme/fonts.lua")(root)
     local resolved = dofile(root .. "/lib/theme/resolved.lua")(root)
     local M = {}

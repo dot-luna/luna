@@ -302,7 +302,7 @@ PanelWindow {
             VideoWallpaper {
                 sourcePath: surface.settings?.wallpaper.source || ""
                 outputName: surface.screen ? surface.screen.name : ""
-                fit: surface.settings?.wallpaper.fit || "center"
+                fit: surface.settings?.wallpaper.fit || "fill"
                 backgroundColor: surface.settings?.wallpaper.background_color || "#000000"
                 paused: surface.pauseMedia
                 active: true

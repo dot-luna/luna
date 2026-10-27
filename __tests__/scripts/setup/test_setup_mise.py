@@ -27,7 +27,7 @@ class MiseSetupTests(unittest.TestCase):
         self.bin = self.root / "bin"
         self.bin.mkdir()
 
-        for name in ("scripts/setup/3-install-dev-tools.lua", "packages/packages.mise.lua", "lib/common.lua", "lib/theme/json.lua"):
+        for name in ("scripts/setup/3-install-dev-tools.lua", "packages/packages.mise.lua", "lib/common.lua", "lib/json.lua"):
             destination = self.checkout / name
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(REPO / name, destination)

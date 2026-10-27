@@ -486,7 +486,7 @@ end
         defaults = subprocess.run(
             ["/usr/bin/lua", "-E", "-", str(self.checkout)], env=self.env,
             cwd=self.root, capture_output=True, text=True, check=True, timeout=10,
-            input='local root = arg[1]; print(dofile(root .. "/lib/theme/json.lua").encode('
+            input='local root = arg[1]; print(dofile(root .. "/lib/json.lua").encode('
                   'dofile(root .. "/lib/theme/defaults.lua")))',
         )
         theme = dict(json.loads(defaults.stdout), version=1, name="integration")

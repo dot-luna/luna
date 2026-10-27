@@ -39,7 +39,7 @@ class BuildConfigTests(unittest.TestCase):
         decoded = subprocess.run(['/usr/bin/lua', '-E', '-', str(generated), str(REPO)],
                                  input='local file = assert(io.open(arg[1])); '
                                        'local paths = assert(load(file:read("*a"), "generated paths", "t", {}))(); '
-                                       'file:close(); print(dofile(arg[2] .. "/lib/theme/json.lua").encode(paths))',
+                                       'file:close(); print(dofile(arg[2] .. "/lib/json.lua").encode(paths))',
                                  cwd=self.root, text=True, capture_output=True, timeout=10)
         self.assertEqual(decoded.returncode, 0, decoded.stdout + decoded.stderr)
         return json.loads(decoded.stdout)

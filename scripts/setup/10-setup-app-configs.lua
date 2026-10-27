@@ -6,7 +6,7 @@ local path = pipe:read("*a"):gsub("\n$", "")
 assert(pipe:close(), "Cannot locate application setup")
 local root = assert(path:match("^(.*)/scripts/setup/[^/]+$"))
 local common = dofile(root .. "/lib/common.lua")
-local json = dofile(root .. "/lib/theme/json.lua")
+local json = dofile(root .. "/lib/json.lua")
 common.setup_logging()
 
 local function install()

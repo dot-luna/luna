@@ -1,6 +1,6 @@
 -- Generate one persistent Compose project; installation never overwrites an existing VM.
 return function(common, root)
-    local json = dofile(root .. "/lib/theme/json.lua")
+    local json = dofile(root .. "/lib/json.lua")
     local home = assert(os.getenv("HOME"))
     local config_home = os.getenv("XDG_CONFIG_HOME") or home .. "/.config"
     local data_home = os.getenv("XDG_DATA_HOME") or home .. "/.local/share"

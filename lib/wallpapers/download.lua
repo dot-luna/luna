@@ -1,4 +1,5 @@
--- Stage HTTP images outside the library; filenames come from URLs, never headers.
+-- Luna's wallpaper downloads stage HTTP images outside the media library.
+-- Filenames come from URLs, never headers; this helper never starts a renderer.
 return function(common)
     local M = {}
     local formats = {

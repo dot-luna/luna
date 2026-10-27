@@ -3,7 +3,6 @@
 
 import os
 from pathlib import Path
-import sys
 
 
 def plan(staging, destination):
@@ -37,21 +36,5 @@ def plan(staging, destination):
         return []
 
     content = (staging / "wallpaper.toml").read_bytes()
-
-    # Keep a previous CLI selection when upgrading from the plain path file.
-    # This is a one-time seed; leave that legacy file and all existing TOML alone.
-    legacy = config_home / "luna/wallpaper"
-    if legacy.is_file():
-        try:
-            source = legacy.read_text(encoding="utf-8").rstrip("\r\n")
-        except (OSError, UnicodeError):
-            print("Warning: Cannot read the previous wallpaper selection; using theme defaults.", file=sys.stderr)
-        else:
-            if source.startswith("/") and not any(ord(character) < 32 for character in source):
-                import tomlkit
-
-                document = tomlkit.parse(content.decode("utf-8"))
-                document["wallpaper"]["source"] = source
-                content = tomlkit.dumps(document).encode("utf-8")
 
     return [(target, content, 0o600)]

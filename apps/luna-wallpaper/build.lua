@@ -1,7 +1,8 @@
 -- Generate the initial wallpaper settings from the theme installed in step 9.
 return function(ctx)
     local theme = ctx.theme()
-    local json = dofile(ctx.root .. "/lib/theme/json.lua")
+    local json = dofile(ctx.root .. "/lib/json.lua")
+    local toml = dofile(ctx.root .. "/lib/toml.lua")(dofile(ctx.root .. "/lib/common.lua"), json)
     local data_home = os.getenv("XDG_DATA_HOME")
     data_home = data_home and data_home ~= "" and data_home or os.getenv("HOME") .. "/.local/share"
     assert(data_home:sub(1, 1) == "/", "XDG_DATA_HOME must be an absolute path")
@@ -23,10 +24,10 @@ return function(ctx)
         end
     end
 
-    -- JSON string escaping also works inside TOML basic strings. Remove only the
-    -- surrounding quotes because the native template already provides them.
-    ctx.render("config/wallpaper.toml", "wallpaper.toml", {
-        source = json.encode(source):sub(2, -2),
-        background = json.encode(theme.colors.background):sub(2, -2),
+    -- Start with the shared defaults and let TOMLKit encode the theme-specific edits.
+    -- Only this staged copy changes; the checked-in defaults stay untouched.
+    ctx.write("wallpaper.toml", ctx.read("config/wallpaper.toml"))
+    toml.update(ctx.output .. "/wallpaper.toml", {
+        wallpaper = { source = source, background_color = theme.colors.background },
     })
 end
