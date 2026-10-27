@@ -20,15 +20,16 @@ class SetupSourceTests(unittest.TestCase):
         self.home.mkdir()
         self.checkout = self.root / "checkout"
         self.source_target = self.home / ".local/src"
-        # Linking whole source directories needs only Bash and coreutils.
+        # Desktop registration uses system Python; source linking needs coreutils.
         self.bin = self.root / "bin"
         self.bin.mkdir()
         for name in ("bash", "readlink", "mkdir", "rm", "ln"):
             (self.bin / name).symlink_to(shutil.which(name))
-        self.env = dict(os.environ, HOME=str(self.home), PATH=str(self.bin))
+        self.env = dict(os.environ, HOME=str(self.home), PATH=str(self.bin),
+                        XDG_DATA_HOME=str(self.home / ".local/share"))
 
         # Copy only the deployment files; source packages need no running apps.
-        for name in ("scripts/setup/12-link-sources.sh", "lib/common.sh"):
+        for name in ("scripts/setup/12-link-sources.sh", "scripts/setup/desktop-apps.py", "lib/common.sh"):
             destination = self.checkout / name
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(REPO / name, destination)
@@ -37,6 +38,13 @@ class SetupSourceTests(unittest.TestCase):
             directory = self.checkout / "src" / name
             directory.mkdir(parents=True)
             (directory / "entry.lua").write_text("-- Source fixture\n")
+        command = self.checkout / "bin/luna"
+        command.parent.mkdir()
+        command.write_text("#!/bin/sh\nexit 0\n")
+        command.chmod(0o755)
+        settings = self.checkout / "src/luna-settings/shell.qml"
+        settings.parent.mkdir(exist_ok=True)
+        settings.write_text("// Settings fixture\n")
 
     def setup(self, *arguments):
         # Closed stdin verifies that source deployment needs no confirmation.
@@ -63,6 +71,7 @@ class SetupSourceTests(unittest.TestCase):
         for _ in range(2):
             self.setup()
             self.assert_links()
+        self.assertTrue((self.home / ".local/share/applications/luna-settings.desktop").is_file())
         self.assertTrue(personal.is_dir())
         self.assertEqual(list(self.home.rglob("*.luna-backup*")), [])
         self.assertEqual((self.source_target / "luna-cli/../../lib/common.sh").resolve(),
@@ -181,6 +190,18 @@ class SetupSourceTests(unittest.TestCase):
 
         self.assertEqual(result.returncode, 73, result.stdout + result.stderr)
         self.assertNotIn("Linked Luna source directories", result.stdout)
+
+    def test_desktop_registration_failure_is_required(self):
+        destination = self.home / ".local/share/applications/luna-settings.desktop"
+        destination.mkdir(parents=True)
+        personal = destination / "personal.txt"
+        personal.write_text("Keep me\n")
+
+        result = self.run_setup()
+
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Cannot install Luna Settings launcher", result.stderr)
+        self.assertEqual(personal.read_text(), "Keep me\n")
 
 
 if __name__ == "__main__":

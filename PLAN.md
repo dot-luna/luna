@@ -39,9 +39,10 @@ app directories may only be placeholders. In particular, a `tmux` directory
 does not mean tmux is installed or configured, and packaging T3 Code or Zed does
 not mean their Luna configuration is finished.
 
-The twelve Settings pages and many launcher installation/removal actions are
-still placeholders. Theme generation exists, but coordinated live updates across
-all consumers and wallpaper application still need work.
+Settings is installed as a five-page interactive preview; its controls and many
+launcher installation/removal actions are still placeholders. Theme generation
+exists, but coordinated live updates across all consumers and wallpaper
+application still need work.
 
 ## Build order
 
@@ -111,7 +112,8 @@ represent proposed work, including improvements to existing features.
 
 ### 8. Real Settings — Finish
 
-- [ ] Replace the twelve placeholder pages with working controls.
+- [ ] Connect the preview controls to real settings and expand to the twelve
+  planned pages in the [Settings roadmap](src/luna-settings/ROADMAP.md).
 - [ ] Add searchable settings, persistence, and consistent behavior between the
   CLI and UI.
 - [ ] Explain or hide unsupported hardware controls appropriately.

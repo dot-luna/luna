@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Link each Luna source directory into ~/.local/src, replacing conflicting paths.
+# Link Luna's source packages and register the Settings desktop launcher.
 set -euo pipefail
 
 script_path=$(readlink -f -- "${BASH_SOURCE[0]}")
@@ -50,3 +50,5 @@ for source_package in "$repo_dir/src"/*; do
 done
 
 luna_success "Linked Luna source directories: $source_target"
+
+/usr/bin/python3 "$setup_dir/desktop-apps.py"

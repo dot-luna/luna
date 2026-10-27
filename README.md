@@ -44,6 +44,14 @@ The installer uses `LUNA_INSTALL_DIR` for the checkout, defaulting to `~/.local/
 
 The `luna` command also respects `LUNA_INSTALL_DIR`, so `LUNA_INSTALL_DIR="$HOME/coding/luna" luna --version` uses your coding checkout. When unset or empty, it uses the checkout containing the launcher, following symlinks. Export the variable in your shell to use that checkout for subsequent commands.
 
+The `src` step also installs **Luna Settings** in the app launcher. Open it there
+or run `luna settings`. Its five pages currently provide a preview; controls do
+not change system settings. The desktop entry lives in
+`$XDG_DATA_HOME/applications` (normally `~/.local/share/applications`) and opens the
+checkout that installed it. Run `bash /path/to/luna/scripts/setup/12-link-sources.sh`
+to refresh source links and the entry after moving the checkout. See the
+[Settings guide](src/luna-settings/README.md) for navigation and the roadmap.
+
 Development tools are listed in `packages/packages.mise.lua`: Node.js LTS, plus the latest Bun, pnpm, Python, and uv. After installing core packages, setup uses [mise](https://mise.jdx.dev/) to install them as global defaults, preserving unrelated mise settings and tools. Edit the manifest to change version requests; project mise configurations can override the defaults. Setup adds mise activation to your Bash or Zsh startup file while preserving existing contents. Open a new terminal afterward. Luna's Bluetooth helper uses the system Python so its Arch dependencies remain available.
 
 Git apps are listed in `packages/packages.git.lua` and installed after fonts. Setup clones each repository into `~/.local/src/<name>` and runs its declared install script with `--prefix "$HOME/.local" --non-interactive`. The app manages its own dependencies and native build. Reinstalling replaces that app's source checkout without a backup. Whatly is included from [our personal fork](https://github.com/dot-luna/whatly), with a **WhatsApp** desktop launcher.
