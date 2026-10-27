@@ -130,7 +130,7 @@ def plan(source_path, destination_path):
         if previous != updated:
             writes.append((path, updated, mode))
     if custom_input:
-        print("Warning: Personal mpv input-conf settings override Luna's volume bindings; "
+        print("Warning: Personal mpv input-conf settings override Luna's key bindings; "
               "add the bindings to your selected input file if needed.", file=sys.stderr)
     return writes
 

@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+import wave
 
 from __tests__.scripts.setup.app_fixture import copy_app_setup
 
@@ -27,7 +28,9 @@ class SetupMpvTests(unittest.TestCase):
         self.config_home = self.home / ".config"
         self.active = self.config_home / "mpv"
         self.destination = self.config_home / "luna/mpv"
-        self.env = dict(os.environ, HOME=str(self.home), XDG_CONFIG_HOME=str(self.config_home))
+        self.env = dict(os.environ, HOME=str(self.home), XDG_CONFIG_HOME=str(self.config_home),
+                        XDG_STATE_HOME=str(self.home / ".local/state"),
+                        XDG_CACHE_HOME=str(self.home / ".cache"))
         for name in ("LUNA_CONFIG_DIR", "MPV_HOME"):
             self.env.pop(name, None)
 
@@ -43,30 +46,44 @@ class SetupMpvTests(unittest.TestCase):
             self.assertFalse(path.is_symlink())
             self.assertEqual(path.read_bytes(), (self.source / name).read_bytes())
 
-    def report(self):
+    def run_mpv(self, source, *arguments):
         script = self.root / "report.lua"
         script.write_text('''
 local utils = require("mp.utils")
-mp.add_timeout(0, function()
+local function report(data)
     local output = assert(io.open(os.getenv("MPV_TEST_REPORT"), "w"))
-    output:write(utils.format_json({
-        speed = mp.get_property_number("speed"),
-        fullscreen = mp.get_property_bool("fullscreen"),
-        osc = mp.get_property_bool("options/osc"),
-        bindings = mp.get_property_native("input-bindings"),
-    }))
+    output:write(utils.format_json(data))
     output:close()
-    mp.commandv("quit")
-end)
-''')
+end
+''' + source)
         report = self.root / "report.json"
+        report.unlink(missing_ok=True)
         result = subprocess.run(
             [shutil.which("mpv"), "--idle=yes", "--vo=null", "--ao=null", "--load-scripts=no",
-             "--terminal=no", "--script=" + str(script)], cwd=self.root,
+             "--terminal=no", "--script=" + str(script), *arguments], cwd=self.root,
             env=dict(self.env, MPV_TEST_REPORT=str(report)), capture_output=True, text=True, timeout=10,
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        data = json.loads(report.read_text())
+        return json.loads(report.read_text())
+
+    def report(self):
+        data = self.run_mpv('''
+mp.add_timeout(0, function()
+    report({
+        speed = mp.get_property_number("speed"),
+        fullscreen = mp.get_property_bool("fullscreen"),
+        osc = mp.get_property_bool("options/osc"),
+        hwdec = mp.get_property("options/hwdec"),
+        osd_scale_by_window = mp.get_property_bool("options/osd-scale-by-window"),
+        osd_font_size = mp.get_property_number("options/osd-font-size"),
+        osd_bar_w = mp.get_property_number("options/osd-bar-w"),
+        osd_bar_h = mp.get_property_number("options/osd-bar-h"),
+        osd_bar_align_y = mp.get_property_number("options/osd-bar-align-y"),
+        bindings = mp.get_property_native("input-bindings"),
+    })
+    mp.commandv("quit")
+end)
+''')
         data["bindings"] = {binding["key"]: binding["cmd"] for binding in data["bindings"]
                             if not binding["is_weak"]}
         return data
@@ -215,20 +232,26 @@ end)
         (self.active / "mpv.conf").write_text('input-conf="' + str(custom) + '"\n')
         result = self.setup()
         self.assert_installed(result)
-        self.assertIn("input-conf settings override Luna's volume bindings", result.stderr)
+        self.assertIn("input-conf settings override Luna's key bindings", result.stderr)
         self.assertEqual(custom.read_text(), "UP add volume 3\n")
 
     @unittest.skipUnless(shutil.which("mpv"), "mpv is required for playback configuration validation")
     def test_real_mpv_loads_defaults_and_personal_overrides(self):
         self.assert_installed(self.setup())
         report = self.report()
-        self.assertEqual(report["speed"], 1.75)
+        self.assertEqual(report["speed"], 2)
         self.assertTrue(report["fullscreen"])
         self.assertFalse(report["osc"])
+        self.assertEqual(report["hwdec"], "auto-safe")
+        self.assertFalse(report["osd_scale_by_window"])
+        self.assertEqual(report["osd_font_size"], 24)
+        self.assertEqual(report["osd_bar_w"], 50)
+        self.assertEqual(report["osd_bar_h"], 1)
+        self.assertAlmostEqual(report["osd_bar_align_y"], 0.8)
         self.assertEqual(report["bindings"]["UP"], "add volume 5")
         self.assertEqual(report["bindings"]["DOWN"], "add volume -5")
         with (self.active / "mpv.conf").open("a") as config:
-            config.write("speed=1.25\nfullscreen=no\nosc=yes\n")
+            config.write("speed=1.25\nfullscreen=no\nosc=yes\nosd-font-size=30\n")
         with (self.active / "input.conf").open("a") as config:
             config.write("UP add volume 2\n")
         self.assert_installed(self.setup())
@@ -236,7 +259,84 @@ end)
         self.assertEqual(report["speed"], 1.25)
         self.assertFalse(report["fullscreen"])
         self.assertTrue(report["osc"])
+        self.assertEqual(report["osd_font_size"], 30)
         self.assertEqual(report["bindings"]["UP"], "add volume 2")
+
+    @unittest.skipUnless(shutil.which("mpv"), "mpv is required for playback configuration validation")
+    def test_real_mpv_bracket_keys_change_speed_by_quarter_steps(self):
+        self.assert_installed(self.setup())
+        report = self.run_mpv('''
+mp.add_timeout(0, function()
+    local speeds = {mp.get_property_number("speed")}
+    mp.commandv("keypress", "]")
+    mp.add_timeout(0.05, function()
+        speeds[#speeds + 1] = mp.get_property_number("speed")
+        mp.commandv("keypress", "[")
+        mp.add_timeout(0.05, function()
+            speeds[#speeds + 1] = mp.get_property_number("speed")
+            report(speeds)
+            mp.commandv("quit")
+        end)
+    end)
+end)
+''')
+        self.assertEqual(report, [2, 2.25, 2])
+
+    @unittest.skipUnless(shutil.which("mpv"), "mpv is required for playback configuration validation")
+    def test_real_mpv_resumes_position_speed_and_volume_after_quit_or_first_close(self):
+        self.assert_installed(self.setup())
+        # A small local silence file exercises real seeks and watch-later state
+        # without touching the user's media, audio device, or desktop windows.
+        media = self.root / "resume sample.wav"
+        with wave.open(str(media), "wb") as output:
+            output.setparams((1, 1, 8000, 0, "NONE", "not compressed"))
+            output.writeframes(b"\x80" * 8000 * 30)
+
+        snapshot = '''
+mp.register_event("file-loaded", function()
+    mp.add_timeout(0.1, function()
+        report({position = mp.get_property_number("time-pos"),
+                speed = mp.get_property_number("speed"),
+                volume = mp.get_property_number("volume")})
+        mp.commandv("quit")
+    end)
+end)
+'''
+        for close in ('mp.commandv("quit")', 'mp.commandv("keypress", "CLOSE_WIN")',
+                      'mp.commandv("keypress", "Meta+w")'):
+            with self.subTest(close=close):
+                before = self.run_mpv('''
+mp.register_event("file-loaded", function()
+    mp.set_property_number("speed", 2.75)
+    mp.set_property_number("volume", 37)
+    mp.commandv("seek", "12", "absolute+exact")
+    mp.add_timeout(0.1, function()
+        report({position = mp.get_property_number("time-pos"),
+                speed = mp.get_property_number("speed"),
+                volume = mp.get_property_number("volume")})
+        ''' + close + '''
+    end)
+end)
+''', "--pause=yes", str(media))
+                self.assertAlmostEqual(before["position"], 12, delta=0.25)
+                self.assertEqual(before["speed"], 2.75)
+                self.assertEqual(before["volume"], 37)
+
+                after = self.run_mpv(snapshot, "--pause=yes", str(media))
+                # Audio buffering can round a paused seek by a fraction of a second.
+                self.assertAlmostEqual(after["position"], before["position"], delta=0.25)
+                self.assertEqual(after["speed"], 2.75)
+                self.assertEqual(after["volume"], 37)
+
+        # Remember settings per file, while keeping explicit launch overrides usable.
+        other = self.root / "another sample.wav"
+        shutil.copyfile(media, other)
+        fresh = self.run_mpv(snapshot, "--pause=yes", str(other))
+        self.assertEqual(fresh["speed"], 2)
+        self.assertEqual(fresh["volume"], 100)
+        overridden = self.run_mpv(snapshot, "--pause=yes", "--speed=1.5", "--volume=42", str(media))
+        self.assertEqual(overridden["speed"], 1.5)
+        self.assertEqual(overridden["volume"], 42)
 
     @unittest.skipUnless(shutil.which("mpv"), "mpv is required for playback configuration validation")
     def test_real_mpv_uses_legacy_settings_and_input_fallback_with_xdg_directory(self):
@@ -259,7 +359,7 @@ end)
     def test_real_mpv_configuration_accepts_unusual_paths(self):
         self.env["LUNA_CONFIG_DIR"] = str(self.root / "Luna caf\u00e9 # $HOME % \' \" \\ configs")
         self.assert_installed(self.setup(), Path(self.env["LUNA_CONFIG_DIR"]) / "mpv")
-        self.assertEqual(self.report()["speed"], 1.75)
+        self.assertEqual(self.report()["speed"], 2)
 
 
 if __name__ == "__main__":
