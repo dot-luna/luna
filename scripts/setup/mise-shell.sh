@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Called by 3-install-dev-tools.lua after installing tools to activate them in new terminals.
+# Called by 3-install-dev-tools.lua to configure Bash; Luna Next owns Zsh startup.
 set -euo pipefail
 
 script_path=$(readlink -f -- "${BASH_SOURCE[0]}")
@@ -18,8 +18,7 @@ case "$shell_name" in
         shell_config="$HOME/.bashrc"
         ;;
     zsh)
-        # Zsh keeps activation and generated completions in Luna's modular config.
-        bash "${script_path%/*}/zsh.sh"
+        luna_info 'Zsh configuration is managed by Luna Next; leaving startup files unchanged.'
         exit 0
         ;;
     *)

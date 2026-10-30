@@ -11,7 +11,6 @@ import unittest
 from __tests__.scripts.setup.app_fixture import copy_app_setup
 
 
-REPO = Path(__file__).resolve().parents[3]
 BLOCK_START = "# >>> Luna mise activation >>>"
 
 
@@ -83,7 +82,7 @@ esac
         self.assertEqual(list(self.home.rglob("*.luna-backup*")), [prior_backup])
         self.assertFalse(self.log.exists())
 
-    def test_zdotdir_symlink_keeps_target_without_creating_backups(self):
+    def test_zsh_leaves_custom_startup_symlink_and_target_unchanged(self):
         self.env["SHELL"] = "/usr/bin/zsh"
         custom = self.root / "zsh config"
         custom.mkdir()
@@ -97,15 +96,18 @@ esac
         old_backup = config.with_name(".zshrc.luna-backup")
         old_backup.write_text("Earlier backup\n")
 
-        self.assert_success(self.setup())
+        result = self.setup()
+        self.assert_success(result)
+        self.assertIn("managed by Luna Next", result.stdout)
         self.assertTrue(config.is_symlink())
         self.assertEqual(config.stat().st_mode & 0o777, 0o600)
-        self.assertTrue(config.read_text().endswith(original))
-        self.assertIn("source ", config.read_text().splitlines()[0])
+        self.assertEqual(config.read_text(), original)
         self.assertEqual(list(custom.glob("*.luna-backup*")), [old_backup])
         self.assertEqual(old_backup.read_text(), "Earlier backup\n")
         self.assertEqual(foreign.read_bytes(), config.read_bytes())
         self.assertFalse((self.home / ".zshrc").exists())
+        self.assertFalse((self.home / ".config/luna/zsh").exists())
+        self.assertFalse(self.log.exists())
 
     def check_shell_activation(self, shell, arguments, command):
         self.env["SHELL"] = shutil.which(shell)
@@ -114,21 +116,19 @@ esac
                                 cwd=self.root, input="", capture_output=True, text=True, timeout=10)
         self.assert_success(result)
         self.assertEqual(result.stdout.strip(), shell)
-        if shell == "zsh":
-            self.assertEqual(self.log.read_text(), f"--cd {self.home} completion zsh\n"
-                             "activate zsh\n")
-        else:
-            self.assertEqual(self.log.read_text(), f"activate {shell}\n")
+        self.assertEqual(self.log.read_text(), f"activate {shell}\n")
 
     def test_bash_activates_in_new_interactive_shell(self):
         self.check_shell_activation("bash", ["--noprofile", "-i", "-c"],
                                     'printf "%s\\n" "$LUNA_MISE_TEST_ACTIVE"')
 
-    @unittest.skipUnless(shutil.which("zsh"), "Zsh is required")
-    def test_zsh_activates_from_custom_zdotdir(self):
-        self.env["ZDOTDIR"] = str(self.root / "zsh config")
-        self.check_shell_activation("zsh", ["-d", "-i", "-c"],
-                                    'printf "%s\\n" "$LUNA_MISE_TEST_ACTIVE"')
+    def test_zsh_leaves_missing_startup_files_uncreated(self):
+        self.env["SHELL"] = "/usr/bin/zsh"
+        result = self.setup()
+        self.assert_success(result)
+        self.assertIn("managed by Luna Next", result.stdout)
+        self.assertEqual(list(self.home.iterdir()), [])
+        self.assertFalse(self.log.exists())
 
     def test_noninteractive_source_and_removed_mise_are_quiet(self):
         self.assert_success(self.setup())

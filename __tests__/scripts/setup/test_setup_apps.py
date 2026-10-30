@@ -11,9 +11,6 @@ import unittest
 from __tests__.scripts.setup.app_fixture import copy_app_setup
 
 
-REPO = Path(__file__).resolve().parents[3]
-
-
 @unittest.skipUnless(Path("/usr/bin/lua").is_file(), "The generator requires /usr/bin/lua")
 class SetupAppsTests(unittest.TestCase):
     def setUp(self):
@@ -24,11 +21,25 @@ class SetupAppsTests(unittest.TestCase):
         self.home.mkdir()
         self.checkout = self.root / "checkout"
         copy_app_setup(self.checkout)
-        # Keep Kitty cases focused while retaining the shared production runner.
+        # Exercise the generic include adapter without a production Kitty app.
         self.order = ["kitty"]
         self.write_order()
         self.app = self.checkout / "apps/kitty"
         self.source = self.app / "config"
+        self.source.mkdir(parents=True)
+        (self.app / "app.lua").write_text('''return {
+    config = "config",
+    builder = "build.lua",
+    connections = {
+        {
+            type = "kitty",
+            source = "kitty.conf",
+            target = "kitty/kitty.conf",
+            directory_env = "KITTY_CONFIG_DIRECTORY",
+        },
+    },
+}
+''')
         (self.source / "kitty.conf").write_text("# Static fixture\ninclude generated/theme.conf\n")
         (self.app / "theme.conf").write_text("# App metadata must not be copied\n")
 
@@ -237,7 +248,7 @@ end
         # Restore the production order and app descriptors for this smoke test.
         copy_app_setup(self.checkout)
         # Old installers and optional extras must never run from the config step.
-        for name in ("hypr.sh", "kitty.sh", "mpv.sh", "starship.sh", "zsh.sh", "zen.sh", "zen-extensions.sh"):
+        for name in ("hypr.sh", "mpv.sh", "zen.sh", "zen-extensions.sh"):
             (self.checkout / "scripts/setup" / name).write_text(
                 '#!/bin/sh\nprintf forbidden > "$HOME/extra-ran"\nexit 99\n')
         (self.checkout / "scripts/setup/zen_mods.py").write_text(
@@ -261,16 +272,26 @@ end
         profile.mkdir()
         (profile / "prefs.js").write_text("// Existing browser profile\n")
         self.env["ZEN_PROFILE_DIR"] = str(profile)
+        next_configs = {
+            self.config_home / "kitty/kitty.conf": "# Luna Next Kitty\n",
+            self.config_home / "starship.toml": "# Luna Next Starship\n",
+            self.home / ".zshrc": "# Luna Next Zsh\n",
+        }
+        for path, content in next_configs.items():
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(content)
         result = self.setup()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual({path.name for path in self.destination.parent.iterdir()},
-                         {"hypr", "kitty", "mpv", "luna-wallpaper", "wallpaper.toml", "luna-screensaver",
-                          "screensaver.toml", "starship", "zen", "zsh"})
+                         {"hypr", "mpv", "luna-wallpaper", "wallpaper.toml", "luna-screensaver",
+                          "screensaver.toml", "zen"})
+        for path, content in next_configs.items():
+            self.assertEqual(path.read_text(), content)
         self.assertTrue((profile / "chrome/userChrome.css").is_file())
         self.assertFalse((self.home / "extra-ran").exists())
         self.assertFalse((self.home / "command-ran").exists())
 
-    def test_default_kitty_deployment_copies_only_configuration(self):
+    def test_fixture_deployment_copies_only_configuration(self):
         self.env.pop("XDG_CONFIG_HOME")
         self.assert_installed(self.setup())
         self.assertEqual({path.name for path in self.destination.iterdir()},
@@ -279,42 +300,6 @@ end
         self.assertFalse((self.config_home / "luna/zsh").exists())
         self.assertFalse((self.config_home / "luna/starship").exists())
         self.assertEqual(list(self.home.rglob("*.luna-backup*")), [])
-
-    @unittest.skipUnless(shutil.which("zsh"), "Zsh is required")
-    def test_installed_zsh_selects_starship_config_and_preserves_personal_file(self):
-        self.order.extend(("starship", "zsh"))
-        self.write_order()
-
-        # Keep actual installation and shell wiring, replacing only external tools.
-        fixture_bin = self.root / "bin"
-        fixture_bin.mkdir()
-        for name, body in {
-            "mise": 'printf "# Optional mise fixture\\n"\n',
-            "starship": 'printf "prompt_starship_precmd() { return 0; }\\n"\n',
-        }.items():
-            executable = fixture_bin / name
-            executable.write_text("#!/bin/sh\n" + body)
-            executable.chmod(0o755)
-        self.env["PATH"] = str(fixture_bin) + os.pathsep + self.env["PATH"]
-        for name in ("STARSHIP_CONFIG", "ZDOTDIR", "ANDROID_HOME", "PNPM_HOME"):
-            self.env.pop(name, None)
-        personal = self.root / "personal-starship.toml"
-        personal.write_text("add_newline = false\n")
-        self.config_home.mkdir()
-        (self.config_home / "starship.toml").symlink_to(personal)
-
-        self.assert_installed(self.setup())
-        installed = self.config_home / "luna/starship/starship.toml"
-        self.assertEqual(installed.read_bytes(), (REPO / "apps/starship/config/starship.toml").read_bytes())
-        shell = subprocess.run(
-            [shutil.which("zsh"), "-d", "-f", "-i", "-c",
-             'source "$HOME/.zshrc"; print -r -- "$STARSHIP_CONFIG"'],
-            env=self.env, cwd=self.root, input="", capture_output=True, text=True, timeout=10,
-        )
-        self.assertEqual(shell.returncode, 0, shell.stdout + shell.stderr)
-        self.assertEqual(shell.stdout.strip(), str(installed))
-        self.assertTrue((self.config_home / "starship.toml").is_symlink())
-        self.assertEqual(personal.read_text(), "add_newline = false\n")
 
     def test_xdg_config_home_controls_default_destination(self):
         config_home = self.root / "custom config"
@@ -480,57 +465,6 @@ end
             self.assertEqual((active / "kitty.conf").read_bytes(),
                              self.include_prefix(config_dir / "kitty"))
         self.assertFalse((self.config_home / "kitty").exists())
-
-    def test_real_generator_installs_selected_theme_and_personal_font(self):
-        # Exercise setup and generation together while retaining disposable state.
-        shutil.copytree(REPO / "apps/kitty", self.app, dirs_exist_ok=True)
-        defaults = subprocess.run(
-            ["/usr/bin/lua", "-E", "-", str(self.checkout)], env=self.env,
-            cwd=self.root, capture_output=True, text=True, check=True, timeout=10,
-            input='local root = arg[1]; print(dofile(root .. "/lib/json.lua").encode('
-                  'dofile(root .. "/lib/theme/defaults.lua")))',
-        )
-        theme = dict(json.loads(defaults.stdout), version=1, name="integration")
-        theme["fonts"]["mono"] = "Selected Theme Mono"
-        theme["colors"].update(background="#102030", foreground="#aabbcc",
-                               accent="#abcdef", error="#dd2233")
-        state = self.config_home / "luna"
-        state.mkdir(parents=True)
-        (state / "theme").write_text("integration\n")
-        (state / "fonts.json").write_text(json.dumps({"mono": "Personal Integration Mono"}))
-        live = self.config_home / "kitty"
-        live.mkdir()
-        sentinel = live / "kitty.conf"
-        sentinel.write_text("# Keep the active Kitty configuration\n")
-        config_dir = self.root / "generated configs"
-        self.env["LUNA_CONFIG_DIR"] = str(config_dir)
-        installed = config_dir / "kitty"
-
-        # Changing the selected snapshot must refresh the installed theme on rerun.
-        for background in ("#102030", "#405060"):
-            with self.subTest(background=background):
-                theme["colors"]["background"] = background
-                (state / "theme.json").write_text(json.dumps(theme))
-                result = self.setup()
-                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-                self.assertEqual((installed / "kitty.conf").read_bytes(),
-                                 (REPO / "apps/kitty/config/kitty.conf").read_bytes())
-                self.assertIn("remember_window_size no\n", (installed / "kitty.conf").read_text())
-                for name in ("kitty.conf", "generated/theme.conf"):
-                    self.assertFalse((installed / name).is_symlink())
-                options = dict(line.split(maxsplit=1)
-                               for line in (installed / "generated/theme.conf").read_text().splitlines()
-                               if line.strip() and not line.startswith("#"))
-                self.assertEqual(options["background"], background)
-                self.assertEqual(options["foreground"], "#aabbcc")
-                self.assertEqual(options["cursor"], "#abcdef")
-                self.assertEqual(options["color1"], "#dd2233")
-                self.assertEqual(options["font_family"], "Personal Integration Mono")
-                self.assertEqual(sentinel.read_bytes(), self.include_prefix(installed)
-                                 + b"# Keep the active Kitty configuration\n")
-                self.assertEqual(set(live.iterdir()), {sentinel})
-                self.assertEqual(json.loads((state / "theme.json").read_text()), theme)
-                self.assertFalse((state / "kitty").exists())
 
     def test_failed_generation_preserves_previously_installed_files(self):
         self.assert_installed(self.setup())

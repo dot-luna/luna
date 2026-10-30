@@ -38,7 +38,7 @@ bash install.sh --skip=git-apps,fonts,mise
 
 For the downloaded installer, pass the same option after `bash -s --`. It also works with `--ref`. Available step names are `lua`, `core`, `mise`, `aur`, `main`, `fonts`, `git-apps`, `command`, `postinstall`, `apps`, `keyring`, `src`, `defaults`, `app-extras`, and `session`. `main` installs application packages; `apps` installs app configurations; `app-extras` installs optional browser extensions and mods; `postinstall` selects the bundled Tokyo Night theme; `keyring` configures desktop secret storage; `defaults` sets default applications. The installer forwards skip values unchanged. After checkout preparation, `scripts/setup.sh` rejects empty or unknown names before running any setup steps.
 
-Only the named steps are skipped; the others keep their normal order and behavior. Dependencies needed by remaining steps must already be available when their installation step is skipped. System checks, Git bootstrap, and checkout preparation always run. The `mise` step also configures shell startup, even if the later `apps` step is skipped.
+Only the named steps are skipped; the others keep their normal order and behavior. Dependencies needed by remaining steps must already be available when their installation step is skipped. System checks, Git bootstrap, and checkout preparation always run. The `mise` step also configures Bash startup, even if the later `apps` step is skipped. Zsh startup is managed by Luna Next.
 
 The `lua` step installs system Lua, argparse, and `python-tomlkit` for parsing and
 editing TOML while preserving comments. TOML helpers use `/usr/bin/python3`,
@@ -59,7 +59,7 @@ checkout that installed it. Run `bash /path/to/luna/scripts/setup/12-link-source
 to refresh source links and the entry after moving the checkout. See the
 [Settings guide](src/luna-settings/README.md) for navigation and the roadmap.
 
-Development tools are listed in `packages/packages.mise.lua`: Node.js LTS, plus the latest Bun, pnpm, Python, and uv. After installing core packages, setup uses [mise](https://mise.jdx.dev/) to install them as global defaults, preserving unrelated mise settings and tools. Edit the manifest to change version requests; project mise configurations can override the defaults. Setup adds mise activation to your Bash or Zsh startup file while preserving existing contents. Open a new terminal afterward. Luna's Bluetooth helper uses the system Python so its Arch dependencies remain available.
+Development tools are listed in `packages/packages.mise.lua`: Node.js LTS, plus the latest Bun, pnpm, Python, and uv. After installing core packages, setup uses [mise](https://mise.jdx.dev/) to install them as global defaults, preserving unrelated mise settings and tools. Edit the manifest to change version requests; project mise configurations can override the defaults. Setup adds mise activation to your Bash startup file while preserving existing contents. Luna Next manages Zsh activation. Open a new terminal afterward. Luna's Bluetooth helper uses the system Python so its Arch dependencies remain available.
 
 Git apps are listed in `packages/packages.git.lua` and installed after fonts. Setup clones each repository into `~/.local/src/<name>` and runs its declared install script with `--prefix "$HOME/.local" --non-interactive`. The app manages its own dependencies and native build. Reinstalling replaces that app's source checkout without a backup. Whatly is included from [our personal fork](https://github.com/dot-luna/whatly), with a **WhatsApp** desktop launcher.
 
@@ -127,11 +127,9 @@ Archives use CLI tools: `tar` and Arch's compression utilities, plus the bundled
 
 Each app has an `apps/<app>/app.lua` descriptor, a `config/` folder, and an optional `build.lua`. Step 10 reads `apps/order.lua` and configures only the listed apps, in that order. Place any setup prerequisites before the apps that need them. For each app, setup stages the files, runs the builder, then installs the config and connects its personal entry points. Builders use simple templates with `{{name}}` placeholders. See the [app configuration guide](apps/README.md) to add or customize an app.
 
-`LUNA_CONFIG_DIR` sets the absolute directory for installed app configs. It defaults to `$XDG_CONFIG_HOME/luna`, or `~/.config/luna` when `XDG_CONFIG_HOME` is unset or empty. An unset or empty `LUNA_CONFIG_DIR` uses this default. Setup installs Kitty under `kitty/`, mpv under `mpv/`, Starship under `starship/`, Zsh under `zsh/`, Zen styles under `zen/`, and Hyprland under `hypr/` inside that directory.
+`LUNA_CONFIG_DIR` sets the absolute directory for installed app configs. It defaults to `$XDG_CONFIG_HOME/luna`, or `~/.config/luna` when `XDG_CONFIG_HOME` is unset or empty. An unset or empty `LUNA_CONFIG_DIR` uses this default. Setup installs mpv under `mpv/`, Zen styles under `zen/`, and Hyprland under `hypr/` inside that directory.
 
-Setup copies `apps/kitty/config/kitty.conf` to `$LUNA_CONFIG_DIR/kitty/kitty.conf` and renders `generated/theme.conf` from its template from Luna's selected theme and font preferences. Font size and window behavior stay in the static config.
-
-Setup prepends an `include` for the installed Luna config to `$XDG_CONFIG_HOME/kitty/kitty.conf` when it is missing, creating the file if needed. `KITTY_CONFIG_DIRECTORY` can select a different absolute Kitty config directory. Existing contents and symlinks are preserved; a matching include anywhere in the file is left as-is. Personal settings remain below a newly added include, so they can override Luna's defaults. Setup does not reload Kitty.
+Kitty, Zsh and its plugins, and Starship are configured by [Luna Next](../luna-next/apps/README.md). This checkout no longer installs their configurations.
 
 mpv setup copies `apps/mpv/config/mpv.conf` and `input.conf` into `$LUNA_CONFIG_DIR/mpv` and refreshes managed defaults blocks in mpv's active personal configuration, normally under `$XDG_CONFIG_HOME/mpv`. Existing `~/.mpv` configuration and an absolute `MPV_HOME` override are respected. Personal settings, bindings, symlinks, and permissions are preserved; personal settings following Luna's defaults can override them. A custom `input-conf` setting warns because it selects a separate bindings file.
 
@@ -142,8 +140,6 @@ Super+W normally closes through Hyprland; mpv also handles `Meta+w` directly if 
 Hyprland follows the same installed-config pattern: `apps/hypr/config/` contains the maintained Lua entry point and modules, copied to `$LUNA_CONFIG_DIR/hypr`. Setup generates the checkout location in `hypr/generated/paths.lua` and prepends a managed `dofile` block to `$XDG_CONFIG_HOME/hypr/hyprland.lua`, creating it if absent. Personal settings remain after the include, and existing personal symlinks and file modes are preserved. `HYPRLAND_CONFIG` can select an absolute custom Lua file. The recognized old Luna loader is migrated while keeping its personal settings; old symlinks into the checkout are detached. Deleted old targets are recovered from local Git history when available, otherwise setup reports a migration error instead of discarding settings.
 
 A legacy `.conf`-only configuration is preserved and activation is skipped with a warning until it is converted to Lua. Run `bash /path/to/luna/scripts/setup/hypr.sh` to install just this app config; it does not reload the desktop. The full setup's `session` step attempts a reload afterward. Hyprland continues reading the latest resolved Luna theme on startup or manual reload. See the [Hyprland app guide](apps/hypr/README.md) for configuration and migration details.
-
-Setup copies `apps/starship/config/starship.toml` to `$LUNA_CONFIG_DIR/starship/starship.toml`. It preserves the original prompt's bracketed modules, two-level directory display, cyan repository root, and 200 ms command timeout. Zsh selects the installed file through `STARSHIP_CONFIG`, preserving a nonempty override. The existing `~/.config/starship.toml` and its symlink are left intact. Refresh only this config with `bash /path/to/luna/scripts/setup/starship.sh`.
 
 Zen setup generates `$LUNA_CONFIG_DIR/zen/generated/userChrome.css` and `userContent.css` from Luna's selected theme. Browser colors and the UI font follow Luna's palette and font preferences. The browser stylesheet targets Zen's tabs, sidebar, toolbar, address bar, and menus; website colors remain their own. This uses local CSS and does not require a Zen Mod or extension.
 
@@ -157,27 +153,7 @@ The separate `app-extras` step requests **uBlock Origin**, **Dark Reader**, and 
 
 The profile is selected from Zen's existing profile registry. Native Linux installations use `~/.zen` when that directory exists, otherwise `$XDG_CONFIG_HOME/zen`. If there is no profile yet, open Zen once, close it, and rerun `bash /path/to/luna/scripts/setup/zen.sh`. Ambiguous profiles are skipped with a warning; use `ZEN_PROFILE_DIR=/absolute/path/to/profile bash /path/to/luna/scripts/setup/zen.sh` to select an existing profile explicitly, including one in a different installation. Setup never launches Zen or creates browser profile registries. Restart Zen to load the updated configuration.
 
-For Zsh, setup prepends a source line for `$LUNA_CONFIG_DIR/zsh/zshrc` to `${ZDOTDIR:-$HOME}/.zshrc`, preserving the existing contents, permissions, and symlinks. Repeated setup does not duplicate the source line. There are four maintained files:
-
-- `zshrc`: loads the generated environment and other files, adds `~/.local/bin` and pnpm's installed `bin` to `PATH`, and sets history and Emacs keybindings. `PNPM_HOME` defaults to `$XDG_DATA_HOME/pnpm` (normally `~/.local/share/pnpm`), preserving an existing value. History defaults to `~/.histfile` with 32,768 entries. Each shell appends its commands on exit, skipping consecutive duplicates and commands starting with a space.
-- `completion.zsh`: adds packaged completion definitions and initializes Zsh completions once, including when mise is unavailable.
-- `tools.zsh`: activates mise, configures zoxide's `cd=z` and `cdi=zi` aliases, adds eza shortcuts, enables fzf with fd/bat/eza integration, and selects and initializes Starship. Existing `FZF_*` settings take precedence, including empty values that disable shortcuts.
-- `plugins.zsh`: loads fzf-tab, command suggestions, and syntax highlighting before the first prompt, after personal startup files have finished configuring completion and keybindings.
-
-Setup keeps generated output under `$LUNA_CONFIG_DIR/zsh/generated/`. Other apps can use the same `generated/` convention; directories with that name are ignored by Git throughout the repository.
-
-- `env.zsh`: exports `LUNA_INSTALL_DIR` and `LUNA_CONFIG_DIR`, using the setup checkout and destination as defaults. Nonempty shell overrides take precedence.
-- `mise-completion.zsh`: generated by `mise --cd "$HOME" completion zsh`. Missing mise or generation failure warns and preserves an existing completion file.
-
-Rerunning setup migrates saved completions from the previous `autogenerated/` or flat layout into `generated/` if needed and removes retired Luna files. Other files in the installed directory are preserved.
-
-The main package group installs `zsh-autosuggestions`, `zsh-syntax-highlighting`, `zsh-completions`, `fzf`, `zoxide`, `bat`, `eza`, and `fd` from Arch's repositories, plus `fzf-tab` from the AUR. Missing optional tools or plugins are skipped during shell startup. There is no plugin download step when opening a terminal.
-
-Use Up/Down to search history matching the text before the cursor (for example, type `git` then press Up), or browse all history on an empty line. The arrows still move between lines while editing multiline input. Use Right Arrow to accept a history suggestion, Tab for fuzzy completion, `Ctrl-R` to search command history, `Ctrl-T` to insert a file path, and `Alt-C` to select a directory. `ll` lists files with details, `la` includes hidden files, and `lt` shows a tree. `bat FILE` displays highlighted file contents. These integrations apply to interactive Zsh shells; personal settings after Luna's source line can override them.
-
-Mise activation runs from `tools.zsh` when a shell starts, so it uses the current environment. It is not saved as a snapshot of the installer's `PATH`. Personal settings after Luna's source line can override its defaults. Flutter and Dart remain managed by mise. To refresh only Zsh's files, run `bash /path/to/luna/scripts/setup/zsh.sh`; open a new terminal afterward.
-
-The config-directory override controls app output only; Luna's theme selection, resolved `theme.json`, and font preferences remain under `$XDG_CONFIG_HOME/luna`. The Kitty and Zen generators use Luna's defaults when no theme is selected. After changing themes, rounding, or font preferences, refresh app configs with `/usr/bin/lua -E /path/to/luna/scripts/setup/10-setup-app-configs.lua`, using the same `LUNA_CONFIG_DIR` override if you set one. This replaces installed app files from the checkout and refreshes their includes; it does not reload Kitty, Zen, or the current shell.
+The config-directory override controls app output only; Luna's theme selection, resolved `theme.json`, and font preferences remain under `$XDG_CONFIG_HOME/luna`. The Zen generator uses Luna's defaults when no theme is selected. After changing themes, rounding, or font preferences, refresh app configs with `/usr/bin/lua -E /path/to/luna/scripts/setup/10-setup-app-configs.lua`, using the same `LUNA_CONFIG_DIR` override if you set one. This replaces installed app files from the checkout and refreshes their includes; it does not reload Zen or the current shell.
 
 Luna's terminal messages use colors and separated steps; external tool output is muted gray. Set `NO_COLOR=1` to disable colors. Plain-text logs are saved in `~/.local/state/luna/`, or `$XDG_STATE_HOME/luna/` when set.
 
